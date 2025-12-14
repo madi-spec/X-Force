@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -22,6 +22,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { TeamSection } from '@/components/deals/TeamSection';
+import { ActivityLogger } from '@/components/deals/ActivityLogger';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   getHealthScoreColor,
@@ -44,6 +45,19 @@ const teamConfig: Record<SalesTeam, { label: string; color: string }> = {
 export default async function DealPage({ params }: DealPageProps) {
   const { id } = await params;
   const supabase = await createClient();
+
+  // Get current user
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    redirect('/login');
+  }
+
+  // Get user profile
+  const { data: profile } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', user.id)
+    .single();
 
   const { data: deal, error } = await supabase
     .from('deals')
@@ -349,6 +363,14 @@ export default async function DealPage({ params }: DealPageProps) {
               <p className="text-sm text-gray-500">No contacts added yet</p>
             )}
           </div>
+
+          {/* Activity Logger */}
+          <ActivityLogger
+            dealId={id}
+            companyId={deal.company_id}
+            userId={profile?.id || ''}
+            contacts={contacts || []}
+          />
 
           {/* Activity Feed */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

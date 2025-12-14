@@ -47,8 +47,26 @@ export type SignalType =
 
 export type SignalStatus = 'new' | 'acted_on' | 'dismissed';
 
-export type ActivityType = 'email_sent' | 'email_received' | 'meeting' | 'note' | 'call';
+export type ActivityType = 'email_sent' | 'email_received' | 'meeting_held' | 'call_made' | 'proposal_sent' | 'note' | 'stage_change';
 export type Sentiment = 'positive' | 'neutral' | 'negative' | null;
+
+// Activity Type Info
+export interface ActivityTypeInfo {
+  id: ActivityType;
+  name: string;
+  icon: string;
+  color: string;
+}
+
+export const ACTIVITY_TYPES: ActivityTypeInfo[] = [
+  { id: 'email_sent', name: 'Email Sent', icon: 'mail', color: 'bg-blue-100 text-blue-700' },
+  { id: 'email_received', name: 'Email Received', icon: 'inbox', color: 'bg-blue-50 text-blue-600' },
+  { id: 'meeting_held', name: 'Meeting', icon: 'users', color: 'bg-purple-100 text-purple-700' },
+  { id: 'call_made', name: 'Call', icon: 'phone', color: 'bg-green-100 text-green-700' },
+  { id: 'proposal_sent', name: 'Proposal Sent', icon: 'file-text', color: 'bg-amber-100 text-amber-700' },
+  { id: 'note', name: 'Note', icon: 'sticky-note', color: 'bg-gray-100 text-gray-700' },
+  { id: 'stage_change', name: 'Stage Change', icon: 'arrow-right', color: 'bg-indigo-100 text-indigo-700' },
+];
 
 export type UserRole = 'rep' | 'manager' | 'admin';
 export type UserLevel = 'l1_foundation' | 'l2_established' | 'l3_senior';

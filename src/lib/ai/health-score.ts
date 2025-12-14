@@ -141,7 +141,7 @@ function calculateActivityQuality(activities: Activity[]): number {
   for (const activity of recentActivities) {
     if (activity.sentiment === 'positive') positiveCount++;
     if (activity.sentiment === 'negative') negativeCount++;
-    if (activity.type === 'meeting') meetingCount++;
+    if (activity.type === 'meeting_held') meetingCount++;
   }
 
   // Calculate base score from sentiment
