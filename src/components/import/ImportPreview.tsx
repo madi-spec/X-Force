@@ -82,20 +82,20 @@ export function ImportPreview({
 }: ImportPreviewProps) {
   const [activeTab, setActiveTab] = useState<'summary' | 'preview' | 'skipped'>('summary');
 
-  // Get the column for a given field
-  const getColumnForField = (field: string): string | null => {
-    const entry = Object.entries(columnMapping).find(([_, value]) => value === field);
-    return entry ? entry[0] : null;
-  };
-
-  // Get value from row for a field
-  const getFieldValue = (row: Record<string, string>, field: string): string | undefined => {
-    const column = getColumnForField(field);
-    return column ? row[column]?.trim() : undefined;
-  };
-
   // Transform and analyze all rows
   const { transformedRows, preview } = useMemo(() => {
+    // Helper: Get the column for a given field
+    const getColumnForField = (field: string): string | null => {
+      const entry = Object.entries(columnMapping).find(([, value]) => value === field);
+      return entry ? entry[0] : null;
+    };
+
+    // Helper: Get value from row for a field
+    const getFieldValue = (row: Record<string, string>, field: string): string | undefined => {
+      const column = getColumnForField(field);
+      return column ? row[column]?.trim() : undefined;
+    };
+
     const rows: TransformedRow[] = [];
     const skippedRows: Array<{ row: number; reason: string }> = [];
     const companyNames = new Set<string>();

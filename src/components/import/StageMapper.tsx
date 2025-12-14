@@ -21,7 +21,7 @@ export function StageMapper({
 }: StageMapperProps) {
   // Find the column mapped to deal_stage
   const stageColumn = useMemo(() => {
-    return Object.entries(columnMapping).find(([_, value]) => value === 'deal_stage')?.[0];
+    return Object.entries(columnMapping).find(([, value]) => value === 'deal_stage')?.[0];
   }, [columnMapping]);
 
   // Get unique stage values from the data

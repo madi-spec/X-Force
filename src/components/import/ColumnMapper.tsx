@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
 import {
   ALL_FIELDS,
@@ -219,7 +219,7 @@ export function ColumnMapper({
         <h4 className="font-medium text-gray-900 mb-2">Mapping Summary</h4>
         <div className="flex flex-wrap gap-2">
           {Object.entries(mapping)
-            .filter(([_, value]) => value !== 'skip')
+            .filter(([, value]) => value !== 'skip')
             .map(([col, field]) => {
               const fieldDef = ALL_FIELDS.find(f => f.id === field);
               return (

@@ -10,7 +10,6 @@ interface ImportProgressProps {
   stageMapping: Record<string, string>;
   ownerMapping: Record<string, string>;
   existingCompanies: Array<{ id: string; name: string }>;
-  users: Array<{ id: string; name: string; email: string }>;
   currentUserId: string;
   onComplete: (
     results: { companies: number; contacts: number; deals: number; activities: number },
@@ -32,7 +31,6 @@ export function ImportProgress({
   stageMapping,
   ownerMapping,
   existingCompanies,
-  users,
   currentUserId,
   onComplete,
 }: ImportProgressProps) {
@@ -51,6 +49,7 @@ export function ImportProgress({
     activities: 0,
   });
 
+  // Run import once on mount
   useEffect(() => {
     const runImport = async () => {
       try {
@@ -60,7 +59,6 @@ export function ImportProgress({
           stageMapping,
           ownerMapping,
           existingCompanies,
-          users,
           currentUserId,
           onProgress: (update) => {
             setProgress((prev) => ({
@@ -90,6 +88,7 @@ export function ImportProgress({
     };
 
     runImport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const phaseLabels = {

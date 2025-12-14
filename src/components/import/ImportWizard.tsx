@@ -11,7 +11,6 @@ import { ImportComplete } from './ImportComplete';
 import type {
   ImportState,
   ImportStep,
-  ImportType,
 } from '@/lib/import/types';
 
 interface ImportWizardProps {
@@ -251,7 +250,6 @@ export function ImportWizard({ currentUserId, users, existingCompanies }: Import
             stageMapping={state.stageMapping}
             ownerMapping={state.ownerMapping}
             existingCompanies={existingCompanies}
-            users={users}
             currentUserId={currentUserId}
             onComplete={handleImportComplete}
           />

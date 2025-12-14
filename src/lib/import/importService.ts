@@ -7,7 +7,6 @@ interface ImportOptions {
   stageMapping: Record<string, string>;
   ownerMapping: Record<string, string>;
   existingCompanies: Array<{ id: string; name: string }>;
-  users: Array<{ id: string; name: string; email: string }>;
   currentUserId: string;
   onProgress: (update: {
     phase: 'companies' | 'contacts' | 'deals' | 'activities';
@@ -34,7 +33,6 @@ export async function importData(options: ImportOptions): Promise<ImportResult> 
     stageMapping,
     ownerMapping,
     existingCompanies,
-    users,
     currentUserId,
     onProgress,
   } = options;
@@ -51,7 +49,7 @@ export async function importData(options: ImportOptions): Promise<ImportResult> 
 
   // Helper to get column value
   const getField = (row: Record<string, string>, field: string): string | undefined => {
-    const col = Object.entries(columnMapping).find(([_, v]) => v === field)?.[0];
+    const col = Object.entries(columnMapping).find(([, v]) => v === field)?.[0];
     return col ? row[col]?.trim() : undefined;
   };
 
@@ -145,9 +143,9 @@ export async function importData(options: ImportOptions): Promise<ImportResult> 
       // 3. Create deal if data exists
       const dealName = getField(row, 'deal_name');
       const dealValue = getField(row, 'deal_value');
-      const stageCol = Object.entries(columnMapping).find(([_, v]) => v === 'deal_stage')?.[0];
+      const stageCol = Object.entries(columnMapping).find(([, v]) => v === 'deal_stage')?.[0];
       const rawStage = stageCol ? row[stageCol]?.trim() : undefined;
-      const ownerCol = Object.entries(columnMapping).find(([_, v]) => v === 'deal_owner')?.[0];
+      const ownerCol = Object.entries(columnMapping).find(([, v]) => v === 'deal_owner')?.[0];
       const rawOwner = ownerCol ? row[ownerCol]?.trim() : undefined;
 
       if (dealName || dealValue || rawStage) {

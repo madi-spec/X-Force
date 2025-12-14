@@ -24,7 +24,7 @@ export function OwnerMapper({
 }: OwnerMapperProps) {
   // Find the column mapped to deal_owner
   const ownerColumn = useMemo(() => {
-    return Object.entries(columnMapping).find(([_, value]) => value === 'deal_owner')?.[0];
+    return Object.entries(columnMapping).find(([, value]) => value === 'deal_owner')?.[0];
   }, [columnMapping]);
 
   // Get unique owner values from the data
