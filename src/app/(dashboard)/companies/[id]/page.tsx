@@ -52,7 +52,7 @@ export default async function CompanyPage({ params }: CompanyPageProps) {
     .from('company_products')
     .select(`
       *,
-      product:products(id, name, slug, base_price, pricing_model, category:product_categories(id, name, slug))
+      product:products(id, name, display_name, description, typical_mrr_low, typical_mrr_high, category:product_categories(id, name, display_name, owner))
     `)
     .eq('company_id', id);
 
@@ -61,10 +61,11 @@ export default async function CompanyPage({ params }: CompanyPageProps) {
     .from('products')
     .select(`
       *,
-      category:product_categories(id, name, slug)
+      category:product_categories(id, name, display_name, owner)
     `)
+    .eq('is_active', true)
     .order('category_id')
-    .order('name');
+    .order('sort_order');
 
   // Get product categories
   const { data: productCategories } = await supabase

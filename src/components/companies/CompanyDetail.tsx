@@ -251,7 +251,7 @@ export function CompanyDetail({
               {productsByCategory.map(({ category, owned }) => (
                 <div key={category.id}>
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                    {category.name}
+                    {category.display_name || category.name}
                   </h3>
                   {owned.length > 0 ? (
                     <div className="space-y-2">
@@ -268,7 +268,7 @@ export function CompanyDetail({
                           ) : (
                             <XCircle className="h-4 w-4 text-gray-400" />
                           )}
-                          <span>{cp.product?.name}</span>
+                          <span>{cp.product?.display_name || cp.product?.name}</span>
                           {cp.mrr > 0 && (
                             <span className="text-gray-500 ml-auto">
                               {formatCurrency(cp.mrr)}/mo
@@ -357,7 +357,7 @@ export function CompanyDetail({
                         <div>
                           <p className="font-medium text-gray-900 flex items-center gap-1">
                             <Target className="h-4 w-4 text-blue-600" />
-                            {signal.product?.name || 'Unknown Product'}
+                            {signal.product?.display_name || signal.product?.name || 'Unknown Product'}
                           </p>
                           <p className="text-sm text-gray-600 mt-1">{signal.description}</p>
                         </div>
@@ -382,7 +382,7 @@ export function CompanyDetail({
               <div className="space-y-1">
                 {productsByCategory.flatMap(({ available }) => available).slice(0, 3).map(product => (
                   <div key={product.id} className="flex items-center justify-between py-2 text-sm">
-                    <span className="text-gray-600">{product.name}</span>
+                    <span className="text-gray-600">{product.display_name || product.name}</span>
                     <Link
                       href={`/deals/new?company=${company.id}&product=${product.id}`}
                       className="text-blue-600 hover:text-blue-700"
@@ -631,7 +631,7 @@ export function CompanyDetail({
             {productsByCategory.map(({ category, owned, available }) => (
               <div key={category.id}>
                 <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
-                  {category.name}
+                  {category.display_name || category.name}
                 </h3>
                 <div className="space-y-2">
                   {owned.map(cp => (
@@ -652,7 +652,7 @@ export function CompanyDetail({
                             'font-medium',
                             cp.status === 'active' ? 'text-gray-900' : 'text-gray-500'
                           )}>
-                            {cp.product?.name}
+                            {cp.product?.display_name || cp.product?.name}
                           </span>
                         </div>
                         <span className={cn(
@@ -665,7 +665,7 @@ export function CompanyDetail({
                         </span>
                       </div>
                       <p className="text-sm text-gray-500 mt-1">
-                        Since {formatDate(cp.start_date || cp.created_at)}
+                        Since {formatDate(cp.started_at || cp.created_at)}
                         {cp.mrr > 0 && ` • MRR: ${formatCurrency(cp.mrr)}`}
                       </p>
                     </div>
@@ -678,7 +678,7 @@ export function CompanyDetail({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="h-4 w-4 rounded-full border border-gray-300" />
-                          <span className="text-gray-500">{product.name}</span>
+                          <span className="text-gray-500">{product.display_name || product.name}</span>
                         </div>
                         <Link
                           href={`/deals/new?company=${company.id}&product=${product.id}`}
