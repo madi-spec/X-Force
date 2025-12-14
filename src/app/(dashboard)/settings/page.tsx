@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { Award, User, Shield, Bell } from 'lucide-react';
+import { Award, User, Shield, Bell, Upload } from 'lucide-react';
+import Link from 'next/link';
 import { cn, formatDate } from '@/lib/utils';
 import { TeamManagement } from '@/components/settings/TeamManagement';
 
@@ -126,6 +127,31 @@ export default async function SettingsPage() {
           users={allUsers || []}
           currentUserId={profile?.id || ''}
         />
+
+        {/* Data Management Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Upload className="h-5 w-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900">Data Management</h2>
+          </div>
+
+          <div className="space-y-4">
+            <Link
+              href="/settings/import"
+              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+            >
+              <div>
+                <p className="font-medium text-gray-900 group-hover:text-blue-700">
+                  Import Data
+                </p>
+                <p className="text-sm text-gray-500">
+                  Import companies, contacts, and deals from CSV files
+                </p>
+              </div>
+              <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
+            </Link>
+          </div>
+        </div>
 
         {/* Certifications Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
