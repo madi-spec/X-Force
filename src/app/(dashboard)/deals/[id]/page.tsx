@@ -19,9 +19,9 @@ import {
   Star,
   UserCheck,
   UserX,
-  UserPlus,
   Eye,
 } from 'lucide-react';
+import { TeamSection } from '@/components/deals/TeamSection';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   getHealthScoreColor,
@@ -90,6 +90,12 @@ export default async function DealPage({ params }: DealPageProps) {
     .select('*, user:users(id, name, email)')
     .eq('deal_id', id);
 
+  // Get all users for the add collaborator dropdown
+  const { data: allUsers } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .order('name');
+
   const currentStage = PIPELINE_STAGES.find((s) => s.id === deal.stage);
 
   // Role display config
@@ -103,8 +109,8 @@ export default async function DealPage({ params }: DealPageProps) {
 
   // Build team list (owner + collaborators)
   const teamList = [
-    { user: deal.owner, role: 'owner' as const },
-    ...(collaborators || []).map(c => ({ user: c.user, role: c.role })),
+    { user: deal.owner, role: 'owner' as const, collaborator_id: undefined as string | undefined },
+    ...(collaborators || []).map(c => ({ user: c.user, role: c.role, collaborator_id: c.id })),
   ].filter(t => t.user);
 
   // Get products being quoted in this deal
@@ -218,43 +224,12 @@ export default async function DealPage({ params }: DealPageProps) {
           </div>
 
           {/* Team Section */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-900">Team</h2>
-              <button className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
-                <UserPlus className="h-4 w-4" />
-                Add Person
-              </button>
-            </div>
-            <div className="space-y-3">
-              {teamList.map((member, idx) => (
-                <div
-                  key={member.user.id + idx}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <User className="h-5 w-5 text-gray-500" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{member.user.name}</p>
-                      <p className="text-sm text-gray-500 capitalize">
-                        {member.role === 'owner' ? 'Owner' : member.role.replace('_', ' ')}
-                        {member.user.email && deal.sales_team && member.role === 'owner' && (
-                          <span className="ml-1">({teamConfig[deal.sales_team as SalesTeam]?.label})</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  {member.role !== 'owner' && (
-                    <button className="text-sm text-gray-400 hover:text-gray-600">
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+          <TeamSection
+            dealId={id}
+            salesTeam={deal.sales_team as SalesTeam | null}
+            teamList={teamList}
+            availableUsers={allUsers || []}
+          />
 
           {/* Products in Deal */}
           {quotedProducts.length > 0 && (
