@@ -88,12 +88,12 @@ export default async function CompanyPage({ params }: CompanyPageProps) {
     .order('created_at', { ascending: false })
     .limit(5);
 
-  // Get deal collaborators for active deals
+  // Get deal collaborators for active deals - explicitly specify the foreign key since there are two (user_id and added_by)
   const activeDealIds = deals?.filter(d => !['closed_won', 'closed_lost'].includes(d.stage)).map(d => d.id) || [];
   const { data: collaborators } = activeDealIds.length > 0
     ? await supabase
         .from('deal_collaborators')
-        .select('*, user:users(id, name, email), deal:deals(id, name)')
+        .select('*, user:users!deal_collaborators_user_id_fkey(id, name, email), deal:deals(id, name)')
         .in('deal_id', activeDealIds)
     : { data: [] };
 

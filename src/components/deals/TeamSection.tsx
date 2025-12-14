@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, UserPlus, X, Crown } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { User, UserPlus, X, Crown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { addTeamMember, removeTeamMember } from '@/app/(dashboard)/deals/[id]/actions';
 import type { SalesTeam } from '@/types';
 
 interface TeamMember {
@@ -34,15 +34,14 @@ const collaboratorRoles = [
   { id: 'owner', label: 'Owner (Transfer ownership)', isOwner: true },
   { id: 'collaborator', label: 'Collaborator' },
   { id: 'informed', label: 'Informed' },
-  { id: 'approver', label: 'Approver' },
 ];
 
 export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: TeamSectionProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedRole, setSelectedRole] = useState('collaborator');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // For adding, we can pick from all users (they might replace owner or be added as collaborator)
@@ -53,101 +52,48 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
   const handleAddTeamMember = async () => {
     if (!selectedUserId) return;
 
-    setLoading(true);
     setError(null);
 
-    try {
-      const supabase = createClient();
+    startTransition(async () => {
+      const result = await addTeamMember(dealId, selectedUserId, selectedRole);
 
-      if (selectedRole === 'owner') {
-        // Transfer ownership - update the deal's owner_id
-        const { error: updateError } = await supabase
-          .from('deals')
-          .update({ owner_id: selectedUserId })
-          .eq('id', dealId);
-
-        if (updateError) {
-          setError(updateError.message);
-          setLoading(false);
-          return;
-        }
-      } else {
-        // Add as collaborator
-        // First check if this user is already a collaborator
-        const { data: existing } = await supabase
-          .from('deal_collaborators')
-          .select('id')
-          .eq('deal_id', dealId)
-          .eq('user_id', selectedUserId)
-          .single();
-
-        if (existing) {
-          // Update existing collaborator role
-          const { error: updateError } = await supabase
-            .from('deal_collaborators')
-            .update({ role: selectedRole })
-            .eq('id', existing.id);
-
-          if (updateError) {
-            setError(updateError.message);
-            setLoading(false);
-            return;
-          }
-        } else {
-          // Insert new collaborator
-          const { error: insertError } = await supabase
-            .from('deal_collaborators')
-            .insert({
-              deal_id: dealId,
-              user_id: selectedUserId,
-              role: selectedRole,
-            });
-
-          if (insertError) {
-            setError(insertError.message);
-            setLoading(false);
-            return;
-          }
-        }
+      if (!result.success) {
+        setError(result.error || 'Failed to update team');
+        return;
       }
 
       setIsModalOpen(false);
       setSelectedUserId('');
       setSelectedRole('collaborator');
+
+      // Refresh the page to show updated data
       router.refresh();
-    } catch (err) {
-      setError('Failed to update team');
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const handleRemoveCollaborator = async (collaboratorId: string) => {
     if (!confirm('Remove this team member?')) return;
 
-    try {
-      const supabase = createClient();
+    startTransition(async () => {
+      const result = await removeTeamMember(dealId, collaboratorId);
 
-      const { error: deleteError } = await supabase
-        .from('deal_collaborators')
-        .delete()
-        .eq('id', collaboratorId);
-
-      if (deleteError) {
-        console.error('Failed to remove collaborator:', deleteError);
+      if (!result.success) {
+        console.error('Failed to remove collaborator:', result.error);
         return;
       }
 
+      // Refresh the page to show updated data
       router.refresh();
-    } catch (err) {
-      console.error('Failed to remove collaborator:', err);
-    }
+    });
   };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-semibold text-gray-900">Team</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold text-gray-900">Team</h2>
+          {isPending && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+        </div>
         <button
           onClick={() => setIsModalOpen(true)}
           className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
@@ -276,10 +222,10 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
               </button>
               <button
                 onClick={handleAddTeamMember}
-                disabled={loading || !selectedUserId}
+                disabled={isPending || !selectedUserId}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Saving...' : selectedRole === 'owner' ? 'Transfer Ownership' : 'Add to Team'}
+                {isPending ? 'Saving...' : selectedRole === 'owner' ? 'Transfer Ownership' : 'Add to Team'}
               </button>
             </div>
           </div>

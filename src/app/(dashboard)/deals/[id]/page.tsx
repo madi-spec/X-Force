@@ -1,6 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+
+// Disable caching for this page to always get fresh data
+export const dynamic = 'force-dynamic';
 import {
   ArrowLeft,
   Building2,
@@ -43,6 +47,9 @@ const teamConfig: Record<SalesTeam, { label: string; color: string }> = {
 };
 
 export default async function DealPage({ params }: DealPageProps) {
+  // Disable all caching for this page
+  noStore();
+
   const { id } = await params;
   const supabase = await createClient();
 
@@ -98,10 +105,10 @@ export default async function DealPage({ params }: DealPageProps) {
     .order('is_primary', { ascending: false })
     .order('name');
 
-  // Get deal collaborators
-  const { data: collaborators } = await supabase
+  // Get deal collaborators - explicitly specify the foreign key since there are two (user_id and added_by)
+  const { data: collaborators, error: collabError } = await supabase
     .from('deal_collaborators')
-    .select('*, user:users(id, name, email)')
+    .select('*, user:users!deal_collaborators_user_id_fkey(id, name, email)')
     .eq('deal_id', id);
 
   // Get all users for the add collaborator dropdown
