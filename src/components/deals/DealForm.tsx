@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { Phone, Headphones, Zap, Bot } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   type Deal,
   type DealStage,
@@ -13,6 +15,13 @@ import {
   DEAL_TYPES,
   SALES_TEAMS,
 } from '@/types';
+
+const PRODUCT_CATEGORIES = [
+  { id: 'voice-phone', label: 'Voice Phone', icon: Phone, color: 'bg-purple-100 text-purple-700 border-purple-300', team: 'voice' },
+  { id: 'voice-addons', label: 'Voice Add-ons', icon: Headphones, color: 'bg-purple-50 text-purple-600 border-purple-200', team: 'voice' },
+  { id: 'xrai-platform', label: 'X-RAI Platform', icon: Zap, color: 'bg-blue-100 text-blue-700 border-blue-300', team: 'xrai' },
+  { id: 'ai-agents', label: 'AI Agents', icon: Bot, color: 'bg-green-100 text-green-700 border-green-300', team: 'xrai' },
+];
 
 interface DealFormProps {
   deal?: Deal;
@@ -25,6 +34,15 @@ export function DealForm({ deal, companies, currentUserId }: DealFormProps) {
   const supabase = createClient();
   const isEditing = !!deal;
 
+  // Parse existing products to selected categories
+  const getInitialCategories = () => {
+    if (!deal?.products) return [];
+    const cats: string[] = [];
+    if (deal.products.voice) cats.push('voice-phone');
+    if (deal.products.platform) cats.push('xrai-platform');
+    return cats;
+  };
+
   const [formData, setFormData] = useState({
     name: deal?.name || '',
     company_id: deal?.company_id || '',
@@ -36,6 +54,40 @@ export function DealForm({ deal, companies, currentUserId }: DealFormProps) {
     competitor_mentioned: deal?.competitor_mentioned || '',
     products: deal?.products || { voice: false, platform: false, ai_agents: [] as string[] },
   });
+
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(getInitialCategories());
+
+  // Smart defaults: when sales_team changes, suggest relevant products
+  useEffect(() => {
+    if (isEditing) return; // Don't auto-select on edit
+
+    if (formData.sales_team === 'voice_outside' || formData.sales_team === 'voice_inside') {
+      // Voice teams default to voice products
+      if (selectedCategories.length === 0) {
+        setSelectedCategories(['voice-phone']);
+      }
+    } else if (formData.sales_team === 'xrai') {
+      // X-RAI team defaults to platform
+      if (selectedCategories.length === 0) {
+        setSelectedCategories(['xrai-platform']);
+      }
+    }
+  }, [formData.sales_team, isEditing]);
+
+  // Update products object when categories change
+  useEffect(() => {
+    const hasVoice = selectedCategories.some(c => c.startsWith('voice'));
+    const hasPlatform = selectedCategories.includes('xrai-platform') || selectedCategories.includes('ai-agents');
+
+    setFormData(prev => ({
+      ...prev,
+      products: {
+        ...prev.products,
+        voice: hasVoice,
+        platform: hasPlatform,
+      },
+    }));
+  }, [selectedCategories]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,14 +126,12 @@ export function DealForm({ deal, companies, currentUserId }: DealFormProps) {
     router.refresh();
   };
 
-  const handleProductChange = (product: 'voice' | 'platform') => {
-    setFormData((prev) => ({
-      ...prev,
-      products: {
-        ...prev.products,
-        [product]: !prev.products[product],
-      },
-    }));
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategories(prev =>
+      prev.includes(categoryId)
+        ? prev.filter(c => c !== categoryId)
+        : [...prev, categoryId]
+    );
   };
 
   return (
@@ -231,31 +281,38 @@ export function DealForm({ deal, companies, currentUserId }: DealFormProps) {
           />
         </div>
 
-        {/* Products */}
+        {/* Product Categories */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Products
+            Product Categories
           </label>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.products.voice}
-                onChange={() => handleProductChange('voice')}
-                className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700">Voice</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.products.platform}
-                onChange={() => handleProductChange('platform')}
-                className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700">X-RAI Platform</span>
-            </label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {PRODUCT_CATEGORIES.map((category) => {
+              const Icon = category.icon;
+              const isSelected = selectedCategories.includes(category.id);
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => handleCategoryToggle(category.id)}
+                  className={cn(
+                    'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
+                    isSelected
+                      ? cn(category.color, 'border-current')
+                      : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  <Icon className="h-6 w-6" />
+                  <span className="text-sm font-medium">{category.label}</span>
+                </button>
+              );
+            })}
           </div>
+          {selectedCategories.length === 0 && (
+            <p className="text-sm text-gray-500 mt-2">
+              Select one or more product categories for this deal
+            </p>
+          )}
         </div>
 
         {/* Competitor */}
