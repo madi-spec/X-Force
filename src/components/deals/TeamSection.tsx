@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, UserPlus, X } from 'lucide-react';
+import { User, UserPlus, X, Crown } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import type { SalesTeam } from '@/types';
@@ -31,6 +31,7 @@ const teamConfig: Record<SalesTeam, { label: string }> = {
 };
 
 const collaboratorRoles = [
+  { id: 'owner', label: 'Owner (Transfer ownership)', isOwner: true },
   { id: 'collaborator', label: 'Collaborator' },
   { id: 'informed', label: 'Informed' },
   { id: 'approver', label: 'Approver' },
@@ -44,11 +45,12 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter out users who are already on the team
-  const teamUserIds = teamList.map(m => m.user.id);
-  const filteredUsers = availableUsers.filter(u => !teamUserIds.includes(u.id));
+  // For adding, we can pick from all users (they might replace owner or be added as collaborator)
+  // Filter out users who are already collaborators (but allow selecting current owner to show transfer option)
+  const collaboratorUserIds = teamList.filter(m => m.role !== 'owner').map(m => m.user.id);
+  const filteredUsers = availableUsers.filter(u => !collaboratorUserIds.includes(u.id));
 
-  const handleAddCollaborator = async () => {
+  const handleAddTeamMember = async () => {
     if (!selectedUserId) return;
 
     setLoading(true);
@@ -57,18 +59,56 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
     try {
       const supabase = createClient();
 
-      const { error: insertError } = await supabase
-        .from('deal_collaborators')
-        .insert({
-          deal_id: dealId,
-          user_id: selectedUserId,
-          role: selectedRole,
-        });
+      if (selectedRole === 'owner') {
+        // Transfer ownership - update the deal's owner_id
+        const { error: updateError } = await supabase
+          .from('deals')
+          .update({ owner_id: selectedUserId })
+          .eq('id', dealId);
 
-      if (insertError) {
-        setError(insertError.message);
-        setLoading(false);
-        return;
+        if (updateError) {
+          setError(updateError.message);
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Add as collaborator
+        // First check if this user is already a collaborator
+        const { data: existing } = await supabase
+          .from('deal_collaborators')
+          .select('id')
+          .eq('deal_id', dealId)
+          .eq('user_id', selectedUserId)
+          .single();
+
+        if (existing) {
+          // Update existing collaborator role
+          const { error: updateError } = await supabase
+            .from('deal_collaborators')
+            .update({ role: selectedRole })
+            .eq('id', existing.id);
+
+          if (updateError) {
+            setError(updateError.message);
+            setLoading(false);
+            return;
+          }
+        } else {
+          // Insert new collaborator
+          const { error: insertError } = await supabase
+            .from('deal_collaborators')
+            .insert({
+              deal_id: dealId,
+              user_id: selectedUserId,
+              role: selectedRole,
+            });
+
+          if (insertError) {
+            setError(insertError.message);
+            setLoading(false);
+            return;
+          }
+        }
       }
 
       setIsModalOpen(false);
@@ -76,7 +116,7 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
       setSelectedRole('collaborator');
       router.refresh();
     } catch (err) {
-      setError('Failed to add collaborator');
+      setError('Failed to update team');
     } finally {
       setLoading(false);
     }
@@ -124,8 +164,15 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
             className="flex items-center justify-between p-3 rounded-lg border border-gray-100"
           >
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-                <User className="h-5 w-5 text-gray-500" />
+              <div className={cn(
+                "h-10 w-10 rounded-full flex items-center justify-center",
+                member.role === 'owner' ? 'bg-amber-100' : 'bg-gray-100'
+              )}>
+                {member.role === 'owner' ? (
+                  <Crown className="h-5 w-5 text-amber-600" />
+                ) : (
+                  <User className="h-5 w-5 text-gray-500" />
+                )}
               </div>
               <div>
                 <p className="font-medium text-gray-900">{member.user.name}</p>
@@ -153,7 +200,7 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
         )}
       </div>
 
-      {/* Add Collaborator Modal */}
+      {/* Add Team Member Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
@@ -192,7 +239,7 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
                 </select>
                 {filteredUsers.length === 0 && (
                   <p className="text-sm text-gray-500 mt-1">
-                    All available users are already on this deal.
+                    No more users available. Add team members in Settings.
                   </p>
                 )}
               </div>
@@ -212,6 +259,11 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
                     </option>
                   ))}
                 </select>
+                {selectedRole === 'owner' && (
+                  <p className="text-sm text-amber-600 mt-1">
+                    This will transfer deal ownership to the selected person.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -223,11 +275,11 @@ export function TeamSection({ dealId, salesTeam, teamList, availableUsers }: Tea
                 Cancel
               </button>
               <button
-                onClick={handleAddCollaborator}
+                onClick={handleAddTeamMember}
                 disabled={loading || !selectedUserId}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Adding...' : 'Add to Team'}
+                {loading ? 'Saving...' : selectedRole === 'owner' ? 'Transfer Ownership' : 'Add to Team'}
               </button>
             </div>
           </div>

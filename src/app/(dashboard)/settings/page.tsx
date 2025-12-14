@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Award, User, Shield, Bell } from 'lucide-react';
 import { cn, formatDate } from '@/lib/utils';
+import { TeamManagement } from '@/components/settings/TeamManagement';
 
 const levelLabels: Record<string, { name: string; color: string }> = {
   l1_foundation: { name: 'L1 Foundation', color: 'bg-gray-100 text-gray-700' },
@@ -37,6 +38,12 @@ export default async function SettingsPage() {
   const { data: allCertifications } = await supabase
     .from('certifications')
     .select('*')
+    .order('name');
+
+  // Get all users for team management
+  const { data: allUsers } = await supabase
+    .from('users')
+    .select('id, name, email, role, team')
     .order('name');
 
   const earnedCertIds = new Set(
@@ -113,6 +120,12 @@ export default async function SettingsPage() {
             <p className="text-gray-500">Profile not found</p>
           )}
         </div>
+
+        {/* Team Members Section */}
+        <TeamManagement
+          users={allUsers || []}
+          currentUserId={profile?.id || ''}
+        />
 
         {/* Certifications Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
