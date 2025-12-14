@@ -125,6 +125,10 @@ export function ImportWizard({ currentUserId, users, existingCompanies }: Import
     goToStep('preview');
   }, [updateState, goToStep]);
 
+  const handlePreviewCalculated = useCallback((preview: ImportState['preview']) => {
+    updateState({ preview });
+  }, [updateState]);
+
   const handleStartImport = useCallback(() => {
     goToStep('importing');
   }, [goToStep]);
@@ -227,7 +231,7 @@ export function ImportWizard({ currentUserId, users, existingCompanies }: Import
             existingCompanies={existingCompanies}
             users={users}
             currentUserId={currentUserId}
-            onPreviewCalculated={(preview) => updateState({ preview })}
+            onPreviewCalculated={handlePreviewCalculated}
             onStartImport={handleStartImport}
             onBack={() => {
               const hasDealOwner = Object.values(state.columnMapping).includes('deal_owner');

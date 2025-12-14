@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ArrowLeft, Play, Building2, Users, DollarSign, MessageSquare, AlertTriangle } from 'lucide-react';
 import { cleanCurrencyValue, cleanPhoneNumber, parseDate } from '@/lib/import/dataTransform';
 
@@ -81,6 +81,7 @@ export function ImportPreview({
   onBack,
 }: ImportPreviewProps) {
   const [activeTab, setActiveTab] = useState<'summary' | 'preview' | 'skipped'>('summary');
+  const hasReportedPreview = useRef(false);
 
   // Transform and analyze all rows
   const { transformedRows, preview } = useMemo(() => {
@@ -239,9 +240,12 @@ export function ImportPreview({
     return { transformedRows: rows, preview: previewData };
   }, [rawData, columnMapping, stageMapping, ownerMapping, existingCompanies, users, currentUserId]);
 
-  // Notify parent of preview data
+  // Notify parent of preview data (only once)
   useEffect(() => {
-    onPreviewCalculated(preview);
+    if (!hasReportedPreview.current) {
+      hasReportedPreview.current = true;
+      onPreviewCalculated(preview);
+    }
   }, [preview, onPreviewCalculated]);
 
   const previewRows = transformedRows.slice(0, 10);
