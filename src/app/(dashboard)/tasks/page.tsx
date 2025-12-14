@@ -102,7 +102,7 @@ export default async function TasksPage() {
               )}
               {task.company && !task.deal && (
                 <Link
-                  href={`/organizations/${task.company.id}`}
+                  href={`/companies/${task.company.id}`}
                   className="hover:text-blue-600"
                 >
                   {task.company.name}

@@ -5,24 +5,24 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Company, CompanyStatus, Segment, Industry, CRMPlatform } from '@/types';
 
-interface OrganizationFormProps {
-  organization?: Company;
+interface CompanyFormProps {
+  company?: Company;
 }
 
-export function OrganizationForm({ organization }: OrganizationFormProps) {
+export function CompanyForm({ company }: CompanyFormProps) {
   const router = useRouter();
   const supabase = createClient();
-  const isEditing = !!organization;
+  const isEditing = !!company;
 
   const [formData, setFormData] = useState({
-    name: organization?.name || '',
-    status: organization?.status || 'cold_lead' as CompanyStatus,
-    segment: organization?.segment || 'smb' as Segment,
-    industry: organization?.industry || 'pest' as Industry,
-    agent_count: organization?.agent_count || 0,
-    crm_platform: organization?.crm_platform || null as CRMPlatform,
-    voice_customer: organization?.voice_customer || false,
-    address: organization?.address || {
+    name: company?.name || '',
+    status: company?.status || 'cold_lead' as CompanyStatus,
+    segment: company?.segment || 'smb' as Segment,
+    industry: company?.industry || 'pest' as Industry,
+    agent_count: company?.agent_count || 0,
+    crm_platform: company?.crm_platform || null as CRMPlatform,
+    voice_customer: company?.voice_customer || false,
+    address: company?.address || {
       street: '',
       city: '',
       state: '',
@@ -48,7 +48,7 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
       result = await supabase
         .from('companies')
         .update(payload)
-        .eq('id', organization.id)
+        .eq('id', company.id)
         .select()
         .single();
     } else {
@@ -61,7 +61,7 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
       return;
     }
 
-    router.push(`/organizations/${result.data.id}`);
+    router.push(`/companies/${result.data.id}`);
     router.refresh();
   };
 
@@ -77,7 +77,7 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
         {/* Name */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Organization Name *
+            Company Name *
           </label>
           <input
             type="text"
@@ -278,7 +278,7 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
           disabled={loading}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? 'Saving...' : isEditing ? 'Update' : 'Create Organization'}
+          {loading ? 'Saving...' : isEditing ? 'Update Company' : 'Create Company'}
         </button>
       </div>
     </form>

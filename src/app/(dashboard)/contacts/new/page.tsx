@@ -5,11 +5,11 @@ import { ContactForm } from '@/components/contacts/ContactForm';
 import { ArrowLeft } from 'lucide-react';
 
 interface NewContactPageProps {
-  searchParams: Promise<{ organization_id?: string }>;
+  searchParams: Promise<{ company_id?: string }>;
 }
 
 export default async function NewContactPage({ searchParams }: NewContactPageProps) {
-  const { organization_id: company_id } = await searchParams;
+  const { company_id } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -24,7 +24,7 @@ export default async function NewContactPage({ searchParams }: NewContactPagePro
     .order('name');
 
   const backUrl = company_id
-    ? `/organizations/${company_id}`
+    ? `/companies/${company_id}`
     : '/contacts';
 
   return (
@@ -47,7 +47,7 @@ export default async function NewContactPage({ searchParams }: NewContactPagePro
         <ContactForm
           companies={companies || []}
           defaultCompanyId={company_id}
-          returnUrl={company_id ? `/organizations/${company_id}` : '/contacts'}
+          returnUrl={company_id ? `/companies/${company_id}` : '/contacts'}
         />
       </div>
     </div>

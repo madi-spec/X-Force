@@ -47,7 +47,7 @@ export default async function ContactsPage() {
                 Contact
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Organization
+                Company
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Role
@@ -81,7 +81,7 @@ export default async function ContactsPage() {
                 <td className="px-6 py-4">
                   {contact.company && (
                     <Link
-                      href={`/organizations/${contact.company.id}`}
+                      href={`/companies/${contact.company.id}`}
                       className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-blue-600"
                     >
                       <Building2 className="h-4 w-4" />

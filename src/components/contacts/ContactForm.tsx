@@ -62,7 +62,7 @@ export function ContactForm({ contact, companies, defaultCompanyId, returnUrl }:
         return;
       }
 
-      const redirectUrl = returnUrl || `/organizations/${formData.company_id}`;
+      const redirectUrl = returnUrl || `/companies/${formData.company_id}`;
       router.push(redirectUrl);
       router.refresh();
     } catch (err) {

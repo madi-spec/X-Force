@@ -38,7 +38,7 @@ export default async function EditContactPage({ params }: EditContactPageProps) 
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
         <Link
-          href={`/organizations/${contact.company_id}`}
+          href={`/companies/${contact.company_id}`}
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
         >
           <ArrowLeft className="h-4 w-4" />

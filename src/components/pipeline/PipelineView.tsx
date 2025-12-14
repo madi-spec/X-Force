@@ -1,0 +1,131 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import Link from 'next/link';
+import { Plus, Search } from 'lucide-react';
+import { KanbanBoard } from './KanbanBoard';
+import type { Deal, SalesTeam } from '@/types';
+
+interface PipelineViewProps {
+  initialDeals: Deal[];
+  currentUserId: string;
+  users: Array<{ id: string; name: string; email: string }>;
+}
+
+type OwnershipFilter = 'all' | 'mine' | 'team';
+type ProductFilter = 'all' | 'voice-phone' | 'voice-addons' | 'xrai-platform' | 'ai-agents';
+
+export function PipelineView({ initialDeals, currentUserId, users }: PipelineViewProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>('all');
+  const [teamFilter, setTeamFilter] = useState<SalesTeam | 'all'>('all');
+  const [productFilter, setProductFilter] = useState<ProductFilter>('all');
+
+  const filteredDeals = useMemo(() => {
+    return initialDeals.filter(deal => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesDealName = deal.name.toLowerCase().includes(query);
+        const matchesCompanyName = deal.company?.name?.toLowerCase().includes(query);
+        if (!matchesDealName && !matchesCompanyName) return false;
+      }
+
+      // Ownership filter
+      if (ownershipFilter === 'mine' && deal.owner_id !== currentUserId) return false;
+      // 'team' filter would need team assignments - for now, same as 'all'
+
+      // Team filter (sales_team)
+      if (teamFilter !== 'all' && deal.sales_team !== teamFilter) return false;
+
+      // Product filter (based on products JSONB or primary_product_category_id)
+      if (productFilter !== 'all') {
+        const hasProduct = deal.primary_product_category_id === productFilter ||
+          (deal.products?.voice && productFilter.startsWith('voice')) ||
+          (deal.products?.platform && productFilter === 'xrai-platform');
+        if (!hasProduct) return false;
+      }
+
+      return true;
+    });
+  }, [initialDeals, searchQuery, ownershipFilter, teamFilter, productFilter, currentUserId]);
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Pipeline</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {filteredDeals.length} of {initialDeals.length} deals
+          </p>
+        </div>
+        <Link
+          href="/deals/new"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          New Deal
+        </Link>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search deals..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+
+          {/* Ownership Filter */}
+          <select
+            value={ownershipFilter}
+            onChange={(e) => setOwnershipFilter(e.target.value as OwnershipFilter)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="all">All Deals</option>
+            <option value="mine">My Deals</option>
+            <option value="team">My Team's Deals</option>
+          </select>
+
+          {/* Team Filter */}
+          <select
+            value={teamFilter}
+            onChange={(e) => setTeamFilter(e.target.value as SalesTeam | 'all')}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="all">All Teams</option>
+            <option value="voice_outside">Voice Outside</option>
+            <option value="voice_inside">Voice Inside</option>
+            <option value="xrai">X-RAI</option>
+          </select>
+
+          {/* Product Category Filter */}
+          <select
+            value={productFilter}
+            onChange={(e) => setProductFilter(e.target.value as ProductFilter)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="all">All Products</option>
+            <option value="voice-phone">Voice Phone System</option>
+            <option value="voice-addons">Voice Add-ons</option>
+            <option value="xrai-platform">X-RAI Platform</option>
+            <option value="ai-agents">AI Agents</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Kanban Board */}
+      <div className="flex-1 min-h-0">
+        <KanbanBoard initialDeals={filteredDeals} />
+      </div>
+    </div>
+  );
+}

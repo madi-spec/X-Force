@@ -19,17 +19,27 @@ import {
   Star,
   UserCheck,
   UserX,
+  UserPlus,
+  Eye,
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   getHealthScoreColor,
   getHealthScoreLabel,
   PIPELINE_STAGES,
+  SALES_TEAMS,
+  type SalesTeam,
 } from '@/types';
 
 interface DealPageProps {
   params: Promise<{ id: string }>;
 }
+
+const teamConfig: Record<SalesTeam, { label: string; color: string }> = {
+  voice_outside: { label: 'Voice Outside', color: 'bg-purple-100 text-purple-700' },
+  voice_inside: { label: 'Voice Inside', color: 'bg-purple-50 text-purple-600' },
+  xrai: { label: 'X-RAI', color: 'bg-blue-100 text-blue-700' },
+};
 
 export default async function DealPage({ params }: DealPageProps) {
   const { id } = await params;
@@ -74,6 +84,12 @@ export default async function DealPage({ params }: DealPageProps) {
     .order('is_primary', { ascending: false })
     .order('name');
 
+  // Get deal collaborators
+  const { data: collaborators } = await supabase
+    .from('deal_collaborators')
+    .select('*, user:users(id, name, email)')
+    .eq('deal_id', id);
+
   const currentStage = PIPELINE_STAGES.find((s) => s.id === deal.stage);
 
   // Role display config
@@ -84,6 +100,17 @@ export default async function DealPage({ params }: DealPageProps) {
     end_user: { label: 'End User', icon: User, color: 'text-gray-600 bg-gray-50' },
     blocker: { label: 'Blocker', icon: UserX, color: 'text-red-600 bg-red-50' },
   };
+
+  // Build team list (owner + collaborators)
+  const teamList = [
+    { user: deal.owner, role: 'owner' as const },
+    ...(collaborators || []).map(c => ({ user: c.user, role: c.role })),
+  ].filter(t => t.user);
+
+  // Get products being quoted in this deal
+  const quotedProducts = [];
+  if (deal.products?.voice) quotedProducts.push({ name: 'Voice Phone System', price: 500 });
+  if (deal.products?.platform) quotedProducts.push({ name: 'X-RAI Platform', price: 300 });
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -97,27 +124,56 @@ export default async function DealPage({ params }: DealPageProps) {
           Back to Pipeline
         </Link>
 
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{deal.name}</h1>
-            {deal.company && (
-              <Link
-                href={`/organizations/${deal.company.id}`}
-                className="inline-flex items-center gap-1.5 text-gray-500 hover:text-gray-700 mt-1"
-              >
-                <Building2 className="h-4 w-4" />
-                {deal.company.name}
-              </Link>
-            )}
-          </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{deal.name}</h1>
+              {deal.company && (
+                <Link
+                  href={`/companies/${deal.company.id}`}
+                  className="inline-flex items-center gap-1.5 text-gray-500 hover:text-gray-700 mt-1"
+                >
+                  <Building2 className="h-4 w-4" />
+                  {deal.company.name}
+                </Link>
+              )}
+              <div className="flex items-center gap-4 mt-2">
+                <span className={cn(
+                  'text-xs font-medium px-2.5 py-1 rounded-full text-white',
+                  currentStage?.color || 'bg-gray-500'
+                )}>
+                  {currentStage?.name || deal.stage}
+                </span>
+                {deal.sales_team && (deal.sales_team as SalesTeam) in teamConfig && (
+                  <span className={cn(
+                    'text-xs font-medium px-2.5 py-1 rounded',
+                    teamConfig[deal.sales_team as SalesTeam].color
+                  )}>
+                    {teamConfig[deal.sales_team as SalesTeam].label}
+                  </span>
+                )}
+                <span className="text-sm text-gray-500">
+                  Owner: {deal.owner?.name || 'Unassigned'}
+                  {collaborators && collaborators.length > 0 && (
+                    <span className="ml-1">+{collaborators.length} collaborator{collaborators.length !== 1 ? 's' : ''}</span>
+                  )}
+                </span>
+                <span className={cn('text-sm font-medium', getHealthScoreColor(deal.health_score))}>
+                  Health: {deal.health_score}
+                </span>
+              </div>
+            </div>
 
-          <Link
-            href={`/deals/${id}/edit`}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            <Edit2 className="h-4 w-4" />
-            Edit
-          </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/deals/${id}/edit`}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <Edit2 className="h-4 w-4" />
+                Edit
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -161,13 +217,79 @@ export default async function DealPage({ params }: DealPageProps) {
             </div>
           </div>
 
+          {/* Team Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-900">Team</h2>
+              <button className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+                <UserPlus className="h-4 w-4" />
+                Add Person
+              </button>
+            </div>
+            <div className="space-y-3">
+              {teamList.map((member, idx) => (
+                <div
+                  key={member.user.id + idx}
+                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+                      <User className="h-5 w-5 text-gray-500" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{member.user.name}</p>
+                      <p className="text-sm text-gray-500 capitalize">
+                        {member.role === 'owner' ? 'Owner' : member.role.replace('_', ' ')}
+                        {member.user.email && deal.sales_team && member.role === 'owner' && (
+                          <span className="ml-1">({teamConfig[deal.sales_team as SalesTeam]?.label})</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {member.role !== 'owner' && (
+                    <button className="text-sm text-gray-400 hover:text-gray-600">
+                      Remove
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Products in Deal */}
+          {quotedProducts.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h2 className="font-semibold text-gray-900 mb-4">Products in This Deal</h2>
+              <div className="space-y-2">
+                {quotedProducts.map((product, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2">
+                    <span className="text-gray-700">{product.name}</span>
+                    <span className="text-gray-500">{formatCurrency(product.price)}/mo</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-100 mt-4 pt-4 flex items-center justify-between">
+                <span className="font-medium text-gray-700">Estimated MRR</span>
+                <span className="font-semibold text-gray-900">
+                  {formatCurrency(quotedProducts.reduce((sum, p) => sum + p.price, 0))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <span className="font-medium text-gray-700">Estimated ACV</span>
+                <span className="font-semibold text-gray-900">
+                  {formatCurrency(quotedProducts.reduce((sum, p) => sum + p.price, 0) * 12)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Key Contacts */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900">Key Contacts</h2>
               <div className="flex items-center gap-2">
                 <Link
-                  href={`/contacts/new?organization_id=${deal.company_id}`}
+                  href={`/contacts/new?company_id=${deal.company_id}`}
                   className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -175,7 +297,7 @@ export default async function DealPage({ params }: DealPageProps) {
                 </Link>
                 <span className="text-gray-300">|</span>
                 <Link
-                  href={`/organizations/${deal.company_id}`}
+                  href={`/companies/${deal.company_id}`}
                   className="text-sm text-blue-600 hover:text-blue-700"
                 >
                   View All

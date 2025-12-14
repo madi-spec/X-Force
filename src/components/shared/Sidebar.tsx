@@ -18,7 +18,7 @@ import {
 const navigation = [
   { name: 'Pipeline', href: '/pipeline', icon: LayoutDashboard },
   { name: 'Deals', href: '/deals', icon: Zap },
-  { name: 'Companies', href: '/organizations', icon: Building2 },
+  { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Contacts', href: '/contacts', icon: Users },
   { name: 'Inbox', href: '/inbox', icon: Inbox },
   { name: 'Tasks', href: '/tasks', icon: CheckSquare },

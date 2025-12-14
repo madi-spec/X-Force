@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { OrganizationForm } from '@/components/organizations/OrganizationForm';
+import { CompanyForm } from '@/components/companies/CompanyForm';
 
-export default function NewOrganizationPage() {
+export default function NewCompanyPage() {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
         <Link
-          href="/organizations"
+          href="/companies"
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -20,7 +20,7 @@ export default function NewOrganizationPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <OrganizationForm />
+        <CompanyForm />
       </div>
     </div>
   );
