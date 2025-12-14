@@ -79,7 +79,7 @@ export async function importData(options: ImportOptions): Promise<ImportResult> 
         companyData.segment = segment || 'smb';
 
         const industry = getField(row, 'company_industry');
-        if (industry) companyData.industry = industry;
+        companyData.industry = industry || 'pest';
 
         const agentCount = getField(row, 'company_agent_count');
         if (agentCount) companyData.agent_count = parseInt(agentCount) || null;
