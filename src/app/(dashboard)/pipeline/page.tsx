@@ -31,17 +31,28 @@ export default async function PipelinePage() {
     console.error('Error fetching deals:', error);
   }
 
-  // Get all users for team filter
+  // Get all users for salesperson filter
   const { data: users } = await supabase
     .from('users')
-    .select('id, name, email')
+    .select('id, name, email, team')
     .order('name');
+
+  // Get all companies that have deals for company filter
+  const companyIds = [...new Set((deals || []).map(d => d.company_id).filter(Boolean))];
+  const { data: companies } = companyIds.length > 0
+    ? await supabase
+        .from('companies')
+        .select('id, name')
+        .in('id', companyIds)
+        .order('name')
+    : { data: [] };
 
   return (
     <PipelineView
       initialDeals={deals || []}
       currentUserId={profile?.id || ''}
       users={users || []}
+      companies={companies || []}
     />
   );
 }

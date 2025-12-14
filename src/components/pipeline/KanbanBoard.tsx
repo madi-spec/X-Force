@@ -26,6 +26,11 @@ export function KanbanBoard({ initialDeals }: KanbanBoardProps) {
   const [deals, setDeals] = useState<Deal[]>(initialDeals);
   const [isMounted, setIsMounted] = useState(false);
 
+  // Sync deals state when initialDeals prop changes (e.g., from filtering)
+  useEffect(() => {
+    setDeals(initialDeals);
+  }, [initialDeals]);
+
   // Only render DnD context on client to avoid hydration mismatch
   useEffect(() => {
     setIsMounted(true);

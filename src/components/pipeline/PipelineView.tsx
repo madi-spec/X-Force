@@ -9,15 +9,16 @@ import type { Deal, SalesTeam } from '@/types';
 interface PipelineViewProps {
   initialDeals: Deal[];
   currentUserId: string;
-  users: Array<{ id: string; name: string; email: string }>;
+  users: Array<{ id: string; name: string; email: string; team?: string }>;
+  companies: Array<{ id: string; name: string }>;
 }
 
-type OwnershipFilter = 'all' | 'mine' | 'team';
 type ProductFilter = 'all' | 'voice-phone' | 'voice-addons' | 'xrai-platform' | 'ai-agents';
 
-export function PipelineView({ initialDeals, currentUserId, users }: PipelineViewProps) {
+export function PipelineView({ initialDeals, currentUserId, users, companies }: PipelineViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>('all');
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
+  const [salespersonFilter, setSalespersonFilter] = useState<string>('all');
   const [teamFilter, setTeamFilter] = useState<SalesTeam | 'all'>('all');
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
 
@@ -28,14 +29,17 @@ export function PipelineView({ initialDeals, currentUserId, users }: PipelineVie
         const query = searchQuery.toLowerCase();
         const matchesDealName = deal.name.toLowerCase().includes(query);
         const matchesCompanyName = deal.company?.name?.toLowerCase().includes(query);
-        if (!matchesDealName && !matchesCompanyName) return false;
+        const matchesOwnerName = deal.owner?.name?.toLowerCase().includes(query);
+        if (!matchesDealName && !matchesCompanyName && !matchesOwnerName) return false;
       }
 
-      // Ownership filter
-      if (ownershipFilter === 'mine' && deal.owner_id !== currentUserId) return false;
-      // 'team' filter would need team assignments - for now, same as 'all'
+      // Company filter
+      if (companyFilter !== 'all' && deal.company_id !== companyFilter) return false;
 
-      // Team filter (sales_team)
+      // Salesperson filter
+      if (salespersonFilter !== 'all' && deal.owner_id !== salespersonFilter) return false;
+
+      // Team filter (sales_team on the deal)
       if (teamFilter !== 'all' && deal.sales_team !== teamFilter) return false;
 
       // Product filter (based on products JSONB or primary_product_category_id)
@@ -48,7 +52,7 @@ export function PipelineView({ initialDeals, currentUserId, users }: PipelineVie
 
       return true;
     });
-  }, [initialDeals, searchQuery, ownershipFilter, teamFilter, productFilter, currentUserId]);
+  }, [initialDeals, searchQuery, companyFilter, salespersonFilter, teamFilter, productFilter]);
 
   return (
     <div className="h-full flex flex-col">
@@ -77,22 +81,40 @@ export function PipelineView({ initialDeals, currentUserId, users }: PipelineVie
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search deals..."
+              placeholder="Search deals, companies, people..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
 
-          {/* Ownership Filter */}
+          {/* Company Filter */}
           <select
-            value={ownershipFilter}
-            onChange={(e) => setOwnershipFilter(e.target.value as OwnershipFilter)}
+            value={companyFilter}
+            onChange={(e) => setCompanyFilter(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
-            <option value="all">All Deals</option>
-            <option value="mine">My Deals</option>
-            <option value="team">My Team's Deals</option>
+            <option value="all">All Companies</option>
+            {companies.map(company => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Salesperson Filter */}
+          <select
+            value={salespersonFilter}
+            onChange={(e) => setSalespersonFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="all">All Salespeople</option>
+            <option value={currentUserId}>My Deals</option>
+            {users.filter(u => u.id !== currentUserId).map(user => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
           </select>
 
           {/* Team Filter */}
