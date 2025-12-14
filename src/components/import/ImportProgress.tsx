@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { importData } from '@/lib/import/importService';
 
@@ -34,6 +34,7 @@ export function ImportProgress({
   currentUserId,
   onComplete,
 }: ImportProgressProps) {
+  const hasStartedImport = useRef(false);
   const [progress, setProgress] = useState<ProgressState>({
     phase: 'companies',
     current: 0,
@@ -49,8 +50,11 @@ export function ImportProgress({
     activities: 0,
   });
 
-  // Run import once on mount
+  // Run import once on mount (guard against React Strict Mode double-invoke)
   useEffect(() => {
+    if (hasStartedImport.current) return;
+    hasStartedImport.current = true;
+
     const runImport = async () => {
       try {
         const result = await importData({
