@@ -167,7 +167,7 @@ export async function importData(options: ImportOptions): Promise<ImportResult> 
           company_id: companyId,
           owner_id: ownerId,
           stage,
-          estimated_value: cleanCurrencyValue(dealValue) || null,
+          estimated_value: cleanCurrencyValue(dealValue) || 0,
         };
 
         const dealType = getField(row, 'deal_type');
