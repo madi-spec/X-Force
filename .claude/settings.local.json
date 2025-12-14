@@ -12,7 +12,10 @@
       "Bash(cat:*)",
       "Bash(taskkill //F //PID 14920)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: X-FORCE Sales Platform with schema refactoring\n\nFeatures:\n- Next.js 14 with TypeScript and Tailwind CSS\n- Supabase for database, auth, and realtime\n- Pipeline kanban with drag-and-drop (@dnd-kit)\n- CRUD for Deals, Companies (formerly Organizations), Contacts\n- Tasks and Settings pages\n- Health score calculation\n\nSchema includes:\n- Companies table with status (cold_lead, prospect, customer, churned)\n- Product catalog with Voice and X-RAI products\n- Company product tracking and history\n- Enhanced deals with deal_type, sales_team, collaborators\n- Company watchers for cross-team coordination\n- Company signals for AI-detected opportunities\n- Activities with team visibility\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git config:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

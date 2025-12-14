@@ -165,7 +165,7 @@ export function ContactForm({ contact, companies, defaultCompanyId, returnUrl }:
             Role in Deal
           </label>
           <select
-            value={formData.role}
+            value={formData.role || ''}
             onChange={(e) => setFormData({ ...formData, role: e.target.value as ContactRole | '' })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
