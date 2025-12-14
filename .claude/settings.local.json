@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(npx supabase --version)",
+      "Bash(npx supabase db push:*)",
+      "Bash(PGPASSWORD=\"Ergemedi123!\" psql:*)",
+      "Bash(where:*)",
+      "Bash(cat:*)",
+      "Bash(taskkill //F //PID 14920)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
