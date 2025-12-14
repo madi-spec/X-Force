@@ -118,7 +118,7 @@ export function OwnerMapper({
               <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium text-amber-800">
-                  {unmatchedCount} owner{unmatchedCount !== 1 ? 's' : ''} couldn't be automatically matched
+                  {unmatchedCount} owner{unmatchedCount !== 1 ? 's' : ''} could not be automatically matched
                 </p>
                 <p className="text-sm text-amber-700 mt-1">
                   Please review the mappings below and assign them manually
@@ -133,7 +133,7 @@ export function OwnerMapper({
                   All owners automatically matched!
                 </p>
                 <p className="text-sm text-green-700 mt-1">
-                  Review the mappings below to confirm they're correct
+                  Review the mappings below to confirm they are correct
                 </p>
               </div>
             </>
@@ -167,7 +167,7 @@ export function OwnerMapper({
                   }`}
                 >
                   <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">"{owner}"</span>
+                    <span className="font-medium text-gray-900">&quot;{owner}&quot;</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-sm text-gray-500">

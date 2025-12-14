@@ -311,7 +311,7 @@ export function ImportPreview({
               {preview.skipped} row{preview.skipped !== 1 ? 's' : ''} will be skipped
             </p>
             <p className="text-sm text-amber-700 mt-1">
-              These rows are missing required fields and won't be imported
+              These rows are missing required fields and will not be imported
             </p>
           </div>
         </div>

@@ -135,7 +135,7 @@ export function StageMapper({
               {uniqueStages.map((stage) => (
                 <tr key={stage} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">"{stage}"</span>
+                    <span className="font-medium text-gray-900">&quot;{stage}&quot;</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-sm text-gray-500">
