@@ -3,9 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Building2, Calendar, DollarSign, Phone, Zap, Bot, User } from 'lucide-react';
+import { Building2, Calendar, DollarSign, Phone, Zap, Bot, User, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils';
-import { getHealthScoreColor, getHealthScoreLabel, type Deal, type SalesTeam } from '@/types';
+import { getHealthScoreColor, getHealthScoreLabel, type Deal, type SalesTeam, type HealthTrend } from '@/types';
 
 interface DealCardProps {
   deal: Deal;
@@ -20,6 +20,12 @@ const teamConfig: Record<SalesTeam, { label: string; color: string }> = {
 const productBadges: Record<string, { icon: any; color: string; label: string }> = {
   voice: { icon: Phone, color: 'bg-purple-100 text-purple-600', label: 'Voice' },
   platform: { icon: Zap, color: 'bg-blue-100 text-blue-600', label: 'X-RAI' },
+};
+
+const trendConfig: Record<HealthTrend, { icon: typeof TrendingUp; color: string; label: string }> = {
+  improving: { icon: TrendingUp, color: 'text-green-500', label: 'Improving' },
+  stable: { icon: Minus, color: 'text-gray-400', label: 'Stable' },
+  declining: { icon: TrendingDown, color: 'text-red-500', label: 'Declining' },
 };
 
 export function DealCard({ deal }: DealCardProps) {
@@ -76,18 +82,34 @@ export function DealCard({ deal }: DealCardProps) {
           <h3 className="font-medium text-gray-900 text-sm line-clamp-2">
             {deal.name}
           </h3>
-          <div
-            className={cn(
-              'shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full',
-              getHealthScoreColor(deal.health_score),
-              deal.health_score >= 80 && 'bg-green-100',
-              deal.health_score >= 60 && deal.health_score < 80 && 'bg-yellow-100',
-              deal.health_score >= 40 && deal.health_score < 60 && 'bg-orange-100',
-              deal.health_score < 40 && 'bg-red-100'
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Trend indicator */}
+            {deal.health_trend && trendConfig[deal.health_trend] && (
+              (() => {
+                const TrendIcon = trendConfig[deal.health_trend].icon;
+                return (
+                  <span title={trendConfig[deal.health_trend].label}>
+                    <TrendIcon
+                      className={cn('h-3 w-3', trendConfig[deal.health_trend].color)}
+                    />
+                  </span>
+                );
+              })()
             )}
-            title={getHealthScoreLabel(deal.health_score)}
-          >
-            {deal.health_score}
+            {/* Health score badge */}
+            <div
+              className={cn(
+                'text-xs font-semibold px-2 py-0.5 rounded-full',
+                getHealthScoreColor(deal.health_score),
+                deal.health_score >= 80 && 'bg-green-100',
+                deal.health_score >= 60 && deal.health_score < 80 && 'bg-yellow-100',
+                deal.health_score >= 40 && deal.health_score < 60 && 'bg-orange-100',
+                deal.health_score < 40 && 'bg-red-100'
+              )}
+              title={getHealthScoreLabel(deal.health_score)}
+            >
+              {deal.health_score}
+            </div>
           </div>
         </div>
 
@@ -149,6 +171,14 @@ export function DealCard({ deal }: DealCardProps) {
           {deal.stage === 'trial' && deal.trial_start_date && (
             <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded bg-amber-100 text-amber-700">
               Trial Day {Math.floor((Date.now() - new Date(deal.trial_start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1}
+            </span>
+          )}
+
+          {/* At Risk indicator */}
+          {(deal.health_score < 40 || deal.health_trend === 'declining') && (
+            <span className="inline-flex items-center gap-0.5 text-xs font-medium px-2 py-0.5 rounded bg-red-100 text-red-700">
+              <AlertTriangle className="h-3 w-3" />
+              At Risk
             </span>
           )}
         </div>

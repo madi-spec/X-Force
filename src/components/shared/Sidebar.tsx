@@ -14,9 +14,11 @@ import {
   Settings,
   LogOut,
   Zap,
+  Brain,
 } from 'lucide-react';
 
 const navigation = [
+  { name: 'AI Command', href: '/ai', icon: Brain },
   { name: 'Pipeline', href: '/pipeline', icon: LayoutDashboard },
   { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
