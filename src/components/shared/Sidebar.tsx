@@ -9,6 +9,7 @@ import {
   Users,
   Building2,
   Inbox,
+  Calendar,
   CheckSquare,
   Settings,
   LogOut,
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Contacts', href: '/contacts', icon: Users },
   { name: 'Inbox', href: '/inbox', icon: Inbox },
+  { name: 'Calendar', href: '/calendar', icon: Calendar },
   { name: 'Tasks', href: '/tasks', icon: CheckSquare },
 ];
 

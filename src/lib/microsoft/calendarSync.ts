@@ -14,8 +14,11 @@ interface CalendarSyncResult {
 export async function syncCalendarEvents(userId: string): Promise<CalendarSyncResult> {
   const result: CalendarSyncResult = { imported: 0, skipped: 0, errors: [] };
 
+  console.log('[CalendarSync] Starting sync for user:', userId);
+
   const token = await getValidToken(userId);
   if (!token) {
+    console.log('[CalendarSync] No valid token available');
     result.errors.push('No valid token available');
     return result;
   }
@@ -24,6 +27,28 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
   const client = new MicrosoftGraphClient(token);
 
   try {
+    // Get or create a default company for external events
+    let { data: externalCompany } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('name', 'External Contacts')
+      .single();
+
+    if (!externalCompany) {
+      const { data: newCompany, error: companyError } = await supabase
+        .from('companies')
+        .insert({ name: 'External Contacts', industry: 'pest', segment: 'smb', status: 'prospect' })
+        .select('id')
+        .single();
+      if (companyError) {
+        console.error('[CalendarSync] Failed to create External Contacts company:', companyError);
+      }
+      externalCompany = newCompany;
+    }
+
+    const externalCompanyId = externalCompany?.id;
+    console.log('[CalendarSync] External company ID:', externalCompanyId);
+
     // Get all contacts with email addresses for matching
     const { data: contacts } = await supabase
       .from('contacts')
@@ -48,7 +73,7 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
       }
     });
 
-    // Get user info for created_by
+    // Get user info
     const { data: userProfile } = await supabase
       .from('users')
       .select('id')
@@ -67,6 +92,8 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
       endDateTime: endDate.toISOString(),
       top: 100,
     });
+
+    console.log('[CalendarSync] Fetched events:', events.value.length);
 
     for (const event of events.value) {
       try {
@@ -89,7 +116,7 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
           continue;
         }
 
-        // Find matching contact from attendees
+        // Find matching contact from attendees (optional - we import all events now)
         let matchedContact = null;
 
         if (event.attendees) {
@@ -102,30 +129,31 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
           }
         }
 
-        if (!matchedContact) {
-          // Skip events that don't match any contacts
+        // Get deal for this contact if available
+        const dealId = matchedContact ? dealsByContact.get(matchedContact.id) : null;
+
+        // Use external company for events without matched contacts
+        const companyId = matchedContact?.company_id || externalCompanyId;
+
+        if (!companyId) {
+          console.log('[CalendarSync] Skipping event - no company available:', event.subject);
           result.skipped++;
           continue;
         }
 
-        // Get deal for this contact if available
-        const dealId = dealsByContact.get(matchedContact.id);
-
         // Determine activity type based on event characteristics
         const isOnlineMeeting = event.isOnlineMeeting || event.onlineMeeting?.joinUrl;
-        const activityType = isOnlineMeeting ? 'meeting' : 'meeting';
 
         // Create activity record
         const activityData = {
-          type: activityType as 'meeting' | 'call',
+          type: 'meeting' as const,
           subject: event.subject || '(No subject)',
-          description: event.bodyPreview || '',
-          contact_id: matchedContact.id,
-          company_id: matchedContact.company_id,
+          body: event.bodyPreview || '',
+          contact_id: matchedContact?.id || null,
+          company_id: companyId,
           deal_id: dealId || null,
-          created_by: userProfile?.id || userId,
-          completed_at: event.end?.dateTime ? new Date(event.end.dateTime).toISOString() : null,
-          scheduled_at: event.start?.dateTime ? new Date(event.start.dateTime).toISOString() : null,
+          user_id: userProfile?.id || userId,
+          occurred_at: event.start?.dateTime ? new Date(event.start.dateTime).toISOString() : new Date().toISOString(),
           metadata: {
             microsoft_id: event.id,
             location: event.location?.displayName,
@@ -139,6 +167,7 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
             start_time: event.start?.dateTime,
             end_time: event.end?.dateTime,
             show_as: event.showAs,
+            has_contact: !!matchedContact,
           },
           external_id: externalId,
         };
@@ -160,7 +189,10 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
     // Update last sync timestamp
     await updateLastSync(userId);
 
+    console.log('[CalendarSync] Sync complete:', result);
+
   } catch (err) {
+    console.error('[CalendarSync] Sync error:', err);
     result.errors.push(`Sync error: ${err}`);
   }
 
