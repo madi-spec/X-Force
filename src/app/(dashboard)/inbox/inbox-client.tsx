@@ -8,6 +8,7 @@ import { EmailListItem } from '@/components/email/EmailListItem';
 import { EmailPreviewPane } from '@/components/email/EmailPreviewPane';
 import { EmailCompose } from '@/components/email/EmailCompose';
 import { EmailMessage, EmailFolder, EmailFilter } from '@/components/email/types';
+import { ResizablePane } from '@/components/ui/ResizablePane';
 
 interface InboxClientProps {
   emails: EmailMessage[];
@@ -192,13 +193,23 @@ export function InboxClient({ emails: initialEmails }: InboxClientProps) {
 
   return (
     <div className="h-full flex bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      {/* Folder Sidebar */}
-      <FolderSidebar
-        currentFolder={currentFolder}
-        onFolderChange={setCurrentFolder}
-        counts={counts}
-        onComposeClick={() => setShowCompose(true)}
-      />
+      {/* Folder Sidebar - Resizable */}
+      <ResizablePane
+        defaultWidth={224}
+        minWidth={180}
+        maxWidth={320}
+        side="left"
+        className="bg-gray-50/80"
+      >
+        <FolderSidebar
+          currentFolder={currentFolder}
+          onFolderChange={setCurrentFolder}
+          currentFilter={filter}
+          onFilterChange={setFilter}
+          counts={counts}
+          onComposeClick={() => setShowCompose(true)}
+        />
+      </ResizablePane>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -219,29 +230,37 @@ export function InboxClient({ emails: initialEmails }: InboxClientProps) {
 
         {/* Email List and Preview */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Email List */}
-          <div className="w-[420px] flex-shrink-0 border-r border-gray-200 overflow-y-auto">
-            {filteredEmails.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                <div className="text-center">
-                  <Mail className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No emails match your filter</p>
+          {/* Email List - Resizable */}
+          <ResizablePane
+            defaultWidth={420}
+            minWidth={280}
+            maxWidth={600}
+            side="left"
+            className="border-r border-gray-200 overflow-hidden"
+          >
+            <div className="h-full overflow-y-auto">
+              {filteredEmails.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="text-center">
+                    <Mail className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No emails match your filter</p>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              filteredEmails.map(email => (
-                <EmailListItem
-                  key={email.id}
-                  email={email}
-                  isSelected={selectedEmailId === email.id}
-                  isChecked={checkedIds.has(email.id)}
-                  onSelect={() => setSelectedEmailId(email.id)}
-                  onCheck={(checked) => handleCheckToggle(email.id, checked)}
-                  onStarToggle={() => handleStarToggle(email.id)}
-                />
-              ))
-            )}
-          </div>
+              ) : (
+                filteredEmails.map(email => (
+                  <EmailListItem
+                    key={email.id}
+                    email={email}
+                    isSelected={selectedEmailId === email.id}
+                    isChecked={checkedIds.has(email.id)}
+                    onSelect={() => setSelectedEmailId(email.id)}
+                    onCheck={(checked) => handleCheckToggle(email.id, checked)}
+                    onStarToggle={() => handleStarToggle(email.id)}
+                  />
+                ))
+              )}
+            </div>
+          </ResizablePane>
 
           {/* Preview Pane */}
           <EmailPreviewPane

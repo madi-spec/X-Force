@@ -2,11 +2,13 @@
 
 import { Inbox, Send, Mail, Star, Users, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { EmailFolder } from './types';
+import { EmailFolder, EmailFilter } from './types';
 
 interface FolderSidebarProps {
   currentFolder: EmailFolder;
   onFolderChange: (folder: EmailFolder) => void;
+  currentFilter: EmailFilter;
+  onFilterChange: (filter: EmailFilter) => void;
   counts: {
     inbox: number;
     sent: number;
@@ -21,6 +23,8 @@ interface FolderSidebarProps {
 export function FolderSidebar({
   currentFolder,
   onFolderChange,
+  currentFilter,
+  onFilterChange,
   counts,
   onComposeClick,
 }: FolderSidebarProps) {
@@ -30,13 +34,13 @@ export function FolderSidebar({
     { id: 'all' as const, label: 'All Mail', icon: Mail, count: counts.all },
   ];
 
-  const labels = [
+  const labels: { id: EmailFilter; label: string; icon: typeof Star; count: number; color: string }[] = [
     { id: 'starred', label: 'Starred', icon: Star, count: counts.starred, color: 'text-yellow-500' },
     { id: 'contacts', label: 'Contacts', icon: Users, count: counts.contacts, color: 'text-green-500' },
   ];
 
   return (
-    <div className="w-56 flex-shrink-0 bg-gray-50/80 border-r border-gray-200 flex flex-col">
+    <div className="h-full flex flex-col border-r border-gray-200">
       {/* Compose Button */}
       <div className="p-4">
         <button
@@ -88,20 +92,32 @@ export function FolderSidebar({
             Labels
           </span>
         </div>
-        {labels.map((label) => (
-          <button
-            key={label.id}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            <label.icon className={cn('h-5 w-5', label.color)} />
-            <span className="flex-1 text-left">{label.label}</span>
-            {label.count > 0 && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
-                {label.count}
-              </span>
-            )}
-          </button>
-        ))}
+        {labels.map((label) => {
+          const isActive = currentFilter === label.id;
+          return (
+            <button
+              key={label.id}
+              onClick={() => onFilterChange(isActive ? 'all' : label.id)}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-700 hover:bg-gray-100'
+              )}
+            >
+              <label.icon className={cn('h-5 w-5', isActive ? 'text-blue-600' : label.color)} />
+              <span className="flex-1 text-left">{label.label}</span>
+              {label.count > 0 && (
+                <span className={cn(
+                  'text-xs px-2 py-0.5 rounded-full',
+                  isActive ? 'bg-blue-200 text-blue-700' : 'bg-gray-200 text-gray-600'
+                )}>
+                  {label.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
 
         {/* Contact Tag */}
         <div className="px-3 py-2 mt-4">
