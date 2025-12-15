@@ -8,6 +8,52 @@ interface CalendarSyncResult {
   errors: string[];
 }
 
+// Map Windows timezone names to IANA timezone offsets (common ones)
+// Microsoft Graph uses Windows timezone names
+const TIMEZONE_OFFSETS: Record<string, number> = {
+  'UTC': 0,
+  'GMT Standard Time': 0,
+  'Eastern Standard Time': -5,
+  'Eastern Daylight Time': -4,
+  'Central Standard Time': -6,
+  'Central Daylight Time': -5,
+  'Mountain Standard Time': -7,
+  'Mountain Daylight Time': -6,
+  'Pacific Standard Time': -8,
+  'Pacific Daylight Time': -7,
+  'US Eastern Standard Time': -5,
+  'US Mountain Standard Time': -7,
+  'Atlantic Standard Time': -4,
+  'Alaskan Standard Time': -9,
+  'Hawaiian Standard Time': -10,
+};
+
+/**
+ * Convert a Microsoft Graph datetime + timezone to UTC ISO string
+ */
+function convertToUTC(dateTime: string, timeZone: string): string {
+  // Parse the datetime (which has no timezone indicator)
+  const [datePart, timePart] = dateTime.split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes, seconds] = timePart.split(':').map(s => parseFloat(s));
+
+  // Get the offset for this timezone (default to 0 if unknown)
+  const offsetHours = TIMEZONE_OFFSETS[timeZone] ?? 0;
+
+  // Create a date in UTC by subtracting the offset
+  // If timezone is EST (-5), a 9:00 AM meeting is 14:00 UTC
+  const utcDate = new Date(Date.UTC(
+    year,
+    month - 1, // JS months are 0-indexed
+    day,
+    hours - offsetHours,
+    minutes,
+    Math.floor(seconds || 0)
+  ));
+
+  return utcDate.toISOString();
+}
+
 /**
  * Sync calendar events from Microsoft 365 to activities
  */
@@ -144,6 +190,14 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
         // Determine activity type based on event characteristics
         const isOnlineMeeting = event.isOnlineMeeting || event.onlineMeeting?.joinUrl;
 
+        // Convert times to UTC for consistent storage
+        const startTimeUTC = event.start?.dateTime && event.start?.timeZone
+          ? convertToUTC(event.start.dateTime, event.start.timeZone)
+          : new Date().toISOString();
+        const endTimeUTC = event.end?.dateTime && event.end?.timeZone
+          ? convertToUTC(event.end.dateTime, event.end.timeZone)
+          : null;
+
         // Create activity record
         const activityData = {
           type: 'meeting' as const,
@@ -153,7 +207,7 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
           company_id: companyId,
           deal_id: dealId || null,
           user_id: userProfile?.id || userId,
-          occurred_at: event.start?.dateTime ? new Date(event.start.dateTime).toISOString() : new Date().toISOString(),
+          occurred_at: startTimeUTC,
           metadata: {
             microsoft_id: event.id,
             location: event.location?.displayName,
@@ -164,8 +218,9 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
               name: a.emailAddress?.name,
               response: a.status?.response,
             })),
-            start_time: event.start?.dateTime,
-            end_time: event.end?.dateTime,
+            start_time: startTimeUTC,
+            end_time: endTimeUTC,
+            original_timezone: event.start?.timeZone,
             show_as: event.showAs,
             has_contact: !!matchedContact,
           },
@@ -221,15 +276,20 @@ export async function createCalendarEvent(
   const client = new MicrosoftGraphClient(token);
 
   try {
+    // Format datetime for Microsoft Graph (without Z suffix, with timezone specified separately)
+    const formatForGraph = (date: Date) => {
+      return date.toISOString().replace('Z', '');
+    };
+
     const result = await client.createEvent({
       subject: event.subject,
       body: event.body ? { contentType: 'HTML', content: event.body } : undefined,
       start: {
-        dateTime: event.start.toISOString(),
+        dateTime: formatForGraph(event.start),
         timeZone: 'UTC',
       },
       end: {
-        dateTime: event.end.toISOString(),
+        dateTime: formatForGraph(event.end),
         timeZone: 'UTC',
       },
       attendees: event.attendees?.map(email => ({
