@@ -92,11 +92,11 @@ export async function POST(request: NextRequest) {
 
     // Create an activity record for the meeting
     if (dealId || companyId) {
-      await supabase.from('activities').insert({
+      const { error: activityError } = await supabase.from('activities').insert({
         user_id: profile.id,
         deal_id: dealId || null,
         company_id: companyId,
-        type: 'meeting_held',
+        type: 'meeting',
         subject: title,
         body: analysis.summary,
         summary: analysis.headline,
@@ -108,6 +108,10 @@ export async function POST(request: NextRequest) {
         },
         visible_to_teams: ['voice', 'xrai'],
       });
+
+      if (activityError) {
+        console.error('Error creating activity:', activityError);
+      }
     }
 
     return NextResponse.json({
