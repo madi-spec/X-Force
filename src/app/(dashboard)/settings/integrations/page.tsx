@@ -7,8 +7,9 @@ import { MicrosoftConnection } from '@/components/settings/MicrosoftConnection';
 export default async function IntegrationsPage({
   searchParams,
 }: {
-  searchParams: { success?: string; error?: string };
+  searchParams: Promise<{ success?: string; error?: string; details?: string }>;
 }) {
+  const params = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -34,7 +35,7 @@ export default async function IntegrationsPage({
     .eq('user_id', profile.id)
     .single();
 
-  const successMessage = searchParams.success === 'microsoft'
+  const successMessage = params.success === 'microsoft'
     ? 'Successfully connected to Microsoft 365!'
     : null;
 
@@ -47,8 +48,8 @@ export default async function IntegrationsPage({
     access_denied: 'Access was denied',
   };
 
-  const errorMessage = searchParams.error
-    ? errorMessages[searchParams.error] || `Error: ${searchParams.error}`
+  const errorMessage = params.error
+    ? (errorMessages[params.error] || `Error: ${params.error}`) + (params.details ? ` - ${params.details}` : '')
     : null;
 
   return (

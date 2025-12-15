@@ -94,9 +94,15 @@ export async function GET(request: Request) {
       });
 
     if (upsertError) {
-      console.error('Failed to save connection:', upsertError);
+      console.error('Failed to save connection:', JSON.stringify(upsertError, null, 2));
+      console.error('User ID:', state);
+      console.error('Data being saved:', {
+        user_id: state,
+        microsoft_user_id: profile.id,
+        email: profile.mail || profile.userPrincipalName,
+      });
       return NextResponse.redirect(
-        `${baseUrl}/settings/integrations?error=save_failed`
+        `${baseUrl}/settings/integrations?error=save_failed&details=${encodeURIComponent(upsertError.message || 'unknown')}`
       );
     }
 
