@@ -113,8 +113,8 @@ export default async function InboxPage() {
     return {
       id: activity.id,
       subject: activity.subject || '',
-      description: activity.body || '',
-      completed_at: activity.occurred_at || new Date().toISOString(),
+      body: activity.body || '',
+      occurred_at: activity.occurred_at || new Date().toISOString(),
       contact: contactData ? {
         id: contactData.id,
         name: contactData.name,

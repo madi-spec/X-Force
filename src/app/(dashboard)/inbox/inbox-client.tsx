@@ -1,54 +1,130 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Mail, Users, Globe } from 'lucide-react';
-import { EmailList } from '@/components/email/EmailList';
-import { EmailDetail } from '@/components/email/EmailDetail';
+import { useState, useMemo, useCallback } from 'react';
+import { Mail } from 'lucide-react';
+import { FolderSidebar } from '@/components/email/FolderSidebar';
+import { InboxToolbar } from '@/components/email/InboxToolbar';
+import { EmailListItem } from '@/components/email/EmailListItem';
+import { EmailPreviewPane } from '@/components/email/EmailPreviewPane';
 import { EmailCompose } from '@/components/email/EmailCompose';
-import { cn } from '@/lib/utils';
-
-interface EmailActivity {
-  id: string;
-  subject: string;
-  description: string;
-  completed_at: string;
-  contact: {
-    id: string;
-    name: string;
-    email: string;
-    company?: {
-      id: string;
-      name: string;
-    };
-  } | null;
-  deal?: {
-    id: string;
-    name: string;
-  } | null;
-  metadata: {
-    direction?: 'inbound' | 'outbound';
-    from?: { address: string; name?: string };
-    to?: Array<{ address: string; name?: string }>;
-    has_contact?: boolean;
-  };
-}
+import { EmailMessage, EmailFolder, EmailFilter } from '@/components/email/types';
 
 interface InboxClientProps {
-  emails: EmailActivity[];
+  emails: EmailMessage[];
 }
 
-export function InboxClient({ emails }: InboxClientProps) {
-  const [selectedEmail, setSelectedEmail] = useState<EmailActivity | null>(null);
+export function InboxClient({ emails: initialEmails }: InboxClientProps) {
+  // Email state with client-side properties
+  const [emails, setEmails] = useState<EmailMessage[]>(() =>
+    initialEmails.map(email => ({
+      ...email,
+      isRead: true, // Assume all synced emails are read
+      isStarred: false,
+      labels: [],
+    }))
+  );
+
+  // UI state
+  const [currentFolder, setCurrentFolder] = useState<EmailFolder>('inbox');
+  const [filter, setFilter] = useState<EmailFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [showCompose, setShowCompose] = useState(false);
-  const [replyTo, setReplyTo] = useState<EmailActivity | null>(null);
-  const [showContactsOnly, setShowContactsOnly] = useState(false);
+  const [replyToEmail, setReplyToEmail] = useState<EmailMessage | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter emails based on toggle
-  const filteredEmails = showContactsOnly
-    ? emails.filter(e => e.contact !== null)
-    : emails;
+  // Computed values
+  const counts = useMemo(() => ({
+    inbox: emails.filter(e => e.metadata.direction === 'inbound').length,
+    sent: emails.filter(e => e.metadata.direction === 'outbound').length,
+    all: emails.length,
+    unread: emails.filter(e => !e.isRead).length,
+    starred: emails.filter(e => e.isStarred).length,
+    contacts: emails.filter(e => e.contact !== null).length,
+  }), [emails]);
 
-  const contactEmailCount = emails.filter(e => e.contact !== null).length;
+  // Filter and search emails
+  const filteredEmails = useMemo(() => {
+    let result = emails;
+
+    // Folder filter
+    if (currentFolder === 'inbox') {
+      result = result.filter(e => e.metadata.direction === 'inbound');
+    } else if (currentFolder === 'sent') {
+      result = result.filter(e => e.metadata.direction === 'outbound');
+    }
+
+    // Additional filter
+    if (filter === 'unread') {
+      result = result.filter(e => !e.isRead);
+    } else if (filter === 'starred') {
+      result = result.filter(e => e.isStarred);
+    } else if (filter === 'contacts') {
+      result = result.filter(e => e.contact !== null);
+    }
+
+    // Search
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(e =>
+        e.subject.toLowerCase().includes(query) ||
+        e.body.toLowerCase().includes(query) ||
+        e.contact?.name.toLowerCase().includes(query) ||
+        e.contact?.email.toLowerCase().includes(query) ||
+        e.metadata.from?.address?.toLowerCase().includes(query) ||
+        e.metadata.to?.[0]?.address?.toLowerCase().includes(query)
+      );
+    }
+
+    return result;
+  }, [emails, currentFolder, filter, searchQuery]);
+
+  const selectedEmail = useMemo(() =>
+    emails.find(e => e.id === selectedEmailId) || null,
+    [emails, selectedEmailId]
+  );
+
+  // Handlers
+  const handleStarToggle = useCallback((emailId: string) => {
+    setEmails(prev => prev.map(e =>
+      e.id === emailId ? { ...e, isStarred: !e.isStarred } : e
+    ));
+  }, []);
+
+  const handleCheckToggle = useCallback((emailId: string, checked: boolean) => {
+    setCheckedIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(emailId);
+      } else {
+        newSet.delete(emailId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setCheckedIds(new Set(filteredEmails.map(e => e.id)));
+  }, [filteredEmails]);
+
+  const handleDeselectAll = useCallback(() => {
+    setCheckedIds(new Set());
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const response = await fetch('/api/microsoft/sync', { method: 'POST' });
+      if (response.ok) {
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Failed to sync:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleSendEmail = async (email: {
     to: string[];
@@ -67,35 +143,36 @@ export function InboxClient({ emails }: InboxClientProps) {
       throw new Error(data.error || 'Failed to send email');
     }
 
-    // Refresh the page to show the new email
+    // Refresh after sending
     window.location.reload();
   };
 
-  const handleReply = () => {
+  const handleReply = useCallback(() => {
     if (selectedEmail) {
-      setReplyTo(selectedEmail);
+      setReplyToEmail(selectedEmail);
       setShowCompose(true);
     }
-  };
+  }, [selectedEmail]);
 
+  // Empty state
   if (emails.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12">
-        <div className="text-center max-w-md mx-auto">
-          <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <Mail className="h-8 w-8 text-gray-400" />
+      <div className="h-full flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="text-center max-w-md">
+          <div className="h-20 w-20 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-6">
+            <Mail className="h-10 w-10 text-gray-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">
             No emails yet
           </h2>
-          <p className="text-gray-500 text-sm mb-6">
+          <p className="text-gray-500 mb-6">
             Sync your Microsoft 365 account to see emails here, or compose a new email.
           </p>
           <button
             onClick={() => setShowCompose(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-600/20"
           >
-            <Plus className="h-4 w-4" />
+            <Mail className="h-5 w-5" />
             Compose Email
           </button>
         </div>
@@ -104,7 +181,7 @@ export function InboxClient({ emails }: InboxClientProps) {
           <EmailCompose
             onClose={() => {
               setShowCompose(false);
-              setReplyTo(null);
+              setReplyToEmail(null);
             }}
             onSend={handleSendEmail}
           />
@@ -114,88 +191,79 @@ export function InboxClient({ emails }: InboxClientProps) {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
-      {/* Toolbar */}
-      <div className="p-3 border-b border-gray-200 flex items-center justify-between bg-white">
-        <div className="flex items-center gap-4">
-          {/* Filter toggle */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setShowContactsOnly(false)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                !showContactsOnly
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              )}
-            >
-              <Globe className="h-3.5 w-3.5" />
-              All ({emails.length})
-            </button>
-            <button
-              onClick={() => setShowContactsOnly(true)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                showContactsOnly
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              )}
-            >
-              <Users className="h-3.5 w-3.5" />
-              Contacts ({contactEmailCount})
-            </button>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowCompose(true)}
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-        >
-          <Plus className="h-4 w-4" />
-          Compose
-        </button>
-      </div>
+    <div className="h-full flex bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      {/* Folder Sidebar */}
+      <FolderSidebar
+        currentFolder={currentFolder}
+        onFolderChange={setCurrentFolder}
+        counts={counts}
+        onComposeClick={() => setShowCompose(true)}
+      />
 
-      {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Email list */}
-        <div className="w-1/2 border-r border-gray-200 overflow-hidden">
-          <EmailList
-            emails={filteredEmails}
-            selectedId={selectedEmail?.id}
-            onSelect={setSelectedEmail}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Toolbar */}
+        <InboxToolbar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          filter={filter}
+          onFilterChange={setFilter}
+          onRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
+          selectedCount={checkedIds.size}
+          onSelectAll={handleSelectAll}
+          onDeselectAll={handleDeselectAll}
+          allSelected={checkedIds.size === filteredEmails.length && filteredEmails.length > 0}
+          totalCount={filteredEmails.length}
+        />
+
+        {/* Email List and Preview */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Email List */}
+          <div className="w-[420px] flex-shrink-0 border-r border-gray-200 overflow-y-auto">
+            {filteredEmails.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="text-center">
+                  <Mail className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No emails match your filter</p>
+                </div>
+              </div>
+            ) : (
+              filteredEmails.map(email => (
+                <EmailListItem
+                  key={email.id}
+                  email={email}
+                  isSelected={selectedEmailId === email.id}
+                  isChecked={checkedIds.has(email.id)}
+                  onSelect={() => setSelectedEmailId(email.id)}
+                  onCheck={(checked) => handleCheckToggle(email.id, checked)}
+                  onStarToggle={() => handleStarToggle(email.id)}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Preview Pane */}
+          <EmailPreviewPane
+            email={selectedEmail}
+            onClose={() => setSelectedEmailId(null)}
+            onReply={handleReply}
+            onStarToggle={() => selectedEmail && handleStarToggle(selectedEmail.id)}
           />
         </div>
-
-        {/* Email detail */}
-        <div className="w-1/2 overflow-hidden">
-          {selectedEmail ? (
-            <EmailDetail
-              email={selectedEmail}
-              onClose={() => setSelectedEmail(null)}
-              onReply={handleReply}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <Mail className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                <p>Select an email to view</p>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Compose modal */}
+      {/* Compose Modal */}
       {showCompose && (
         <EmailCompose
           onClose={() => {
             setShowCompose(false);
-            setReplyTo(null);
+            setReplyToEmail(null);
           }}
           onSend={handleSendEmail}
-          defaultTo={replyTo?.contact?.email || replyTo?.metadata?.from?.address || ''}
-          defaultSubject={replyTo?.subject || ''}
-          isReply={!!replyTo}
+          defaultTo={replyToEmail?.contact?.email || replyToEmail?.metadata?.from?.address || ''}
+          defaultSubject={replyToEmail?.subject || ''}
+          isReply={!!replyToEmail}
         />
       )}
     </div>
