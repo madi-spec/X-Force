@@ -9,6 +9,8 @@ import { analyzeMeetingTranscription } from '@/lib/ai/meetingAnalysisService';
 import {
   aiMatchTranscriptToEntities,
   createTranscriptReviewTask,
+  extractEntityDataFromTranscript,
+  createEntityReviewTask,
   AIEntityMatchResult,
 } from '@/lib/ai/transcriptEntityMatcher';
 
@@ -225,31 +227,86 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
 
         synced++;
 
-        // Create review task if AI matching was used and requires human review
-        const REVIEW_TASK_THRESHOLD = 0.6;
-        const needsReview =
-          match.aiMatchResult?.requiresHumanReview ||
-          (match.confidence < REVIEW_TASK_THRESHOLD && !match.dealId && !match.companyId);
+        // Handle unmatched transcripts - create review task with extracted data
+        const noMatch = !match.dealId && !match.companyId;
 
-        if (needsReview && saved) {
+        if (noMatch && saved && transcriptText.length > 100) {
+          console.log('[Fireflies Sync] No match found, extracting entity data for review...');
+
           try {
-            const aiResult = match.aiMatchResult || {
-              companyMatch: null,
-              dealMatch: null,
-              suggestedSalesTeam: null,
-              overallConfidence: match.confidence,
-              reasoning: 'Basic matching failed - no email or name matches found',
-              extractedCompanyName: null,
-              extractedPersonNames: participants.map((p) => p.name),
-              extractedTopics: [],
-              requiresHumanReview: true,
-              reviewReason: 'Could not automatically determine company or deal assignment',
-            };
+            // Extract entity data from the transcript
+            const extractedData = await extractEntityDataFromTranscript(
+              transcriptText,
+              transcript.title || 'Untitled Meeting',
+              participants,
+              userId
+            );
 
+            if (extractedData && extractedData.company?.name) {
+              console.log('[Fireflies Sync] Extracted company:', extractedData.company.name);
+
+              // Store extracted data in metadata for later use
+              await supabase
+                .from('meeting_transcriptions')
+                .update({
+                  external_metadata: {
+                    ...insertData.external_metadata,
+                    extracted_entity_data: extractedData,
+                  },
+                })
+                .eq('id', saved.id);
+
+              // Create review task with extracted data and similar company suggestions
+              const taskId = await createEntityReviewTask(
+                saved.id,
+                transcript.title || 'Untitled Meeting',
+                extractedData,
+                match.aiMatchResult || null,
+                userId
+              );
+
+              if (taskId) {
+                reviewTasksCreated++;
+                console.log('[Fireflies Sync] Created review task with extracted data:', taskId);
+              }
+            } else {
+              // Couldn't extract enough data - create simple review task
+              console.log('[Fireflies Sync] Could not extract entity data, creating basic review task');
+              const aiResult = match.aiMatchResult || {
+                companyMatch: null,
+                dealMatch: null,
+                suggestedSalesTeam: null,
+                overallConfidence: match.confidence,
+                reasoning: 'Could not extract sufficient entity data from transcript',
+                extractedCompanyName: null,
+                extractedPersonNames: participants.map((p) => p.name),
+                extractedTopics: [],
+                requiresHumanReview: true,
+                reviewReason: 'AI could not determine company or deal - manual review required',
+              };
+
+              const taskId = await createTranscriptReviewTask(
+                saved.id,
+                transcript.title || 'Untitled Meeting',
+                aiResult,
+                userId
+              );
+
+              if (taskId) {
+                reviewTasksCreated++;
+              }
+            }
+          } catch (extractError) {
+            console.error('[Fireflies Sync] Failed to extract entity data:', extractError);
+            errors.push(`Failed to extract entity data for transcript ${transcript.id}: ${extractError instanceof Error ? extractError.message : 'Unknown error'}`);
+          }
+        } else if (match.aiMatchResult?.requiresHumanReview && saved) {
+          // Matched but still needs review (e.g., low confidence match)
+          try {
             const taskId = await createTranscriptReviewTask(
               saved.id,
               transcript.title || 'Untitled Meeting',
-              aiResult,
+              match.aiMatchResult,
               userId
             );
 

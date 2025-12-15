@@ -188,6 +188,61 @@ Respond with JSON:
   return JSON.parse(jsonText);
 }
 
+async function extractEntityData(transcriptText, title, participants) {
+  console.log('   Extracting entity data with AI...');
+
+  const participantList = participants.map(p => `- ${p.name}${p.email ? ` (${p.email})` : ''}`).join('\n');
+
+  const prompt = `Extract information from this meeting transcript to create new CRM records.
+
+## Context
+X-RAI Labs sells Voice phone systems and AI solutions to pest control and lawn care companies.
+
+## Meeting Title
+${title}
+
+## Participants
+${participantList}
+
+## Transcript (first 8000 chars)
+${transcriptText.slice(0, 8000)}
+
+Extract company, contacts, and deal information. Respond with JSON:
+{
+  "company": {
+    "name": "Company name from conversation or email domain",
+    "industry": "pest|lawn|both|null",
+    "segment": "smb|mid_market|enterprise|null (smb=1-5 agents, mid_market=6-20, enterprise=21+)",
+    "estimatedAgentCount": number or null,
+    "crmPlatform": "fieldroutes|pestpac|realgreen|null"
+  },
+  "contacts": [
+    {"name": "Name", "email": "email or null", "title": "title or null", "role": "decision_maker|influencer|champion|null", "isPrimary": true/false}
+  ],
+  "deal": {
+    "suggestedName": "Company name",
+    "estimatedValue": number (SMB $5-15K, Mid-Market $15-50K, Enterprise $50-150K),
+    "productInterests": ["Voice", "X-RAI", "AI Agents"],
+    "salesTeam": "voice_outside|voice_inside|xrai|null"
+  },
+  "confidence": 0.0-1.0
+}`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1500,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  let jsonText = response.content[0].text;
+  const jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/) || jsonText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    jsonText = jsonMatch[1] || jsonMatch[0];
+  }
+
+  return JSON.parse(jsonText);
+}
+
 async function main() {
   console.log('=== Fireflies Sync with AI Matching ===\n');
 
@@ -318,27 +373,126 @@ async function main() {
     synced++;
     console.log('   Saved successfully.');
 
-    // Create review task if needed
-    if (aiMatch?.requiresHumanReview || (!aiMatch?.companyMatch && !aiMatch?.dealMatch)) {
+    // If no match, extract entity data and create review task with suggestions
+    if (!aiMatch?.companyMatch && !aiMatch?.dealMatch && transcriptText.length > 100) {
+      console.log('   No match found, extracting entity data for review task...');
+
+      const extractedData = await extractEntityData(transcriptText, transcript.title, participants);
+
+      if (extractedData?.company?.name) {
+        console.log(`   Extracted company: ${extractedData.company.name}`);
+        console.log(`   Industry: ${extractedData.company.industry}, Segment: ${extractedData.company.segment}`);
+        console.log(`   Contacts: ${extractedData.contacts?.length || 0}`);
+        console.log(`   Product interests: ${extractedData.deal?.productInterests?.join(', ') || 'none'}`);
+
+        // Find similar companies
+        const { data: companies } = await supabase
+          .from('companies')
+          .select('id, name, status')
+          .limit(500);
+
+        const searchTerms = extractedData.company.name.toLowerCase().split(/\s+/);
+        const similarCompanies = (companies || [])
+          .map(c => {
+            const nameLower = c.name.toLowerCase();
+            const matchedTerms = searchTerms.filter(term =>
+              nameLower.includes(term) || term.includes(nameLower.split(/\s+/)[0])
+            );
+            return { ...c, matchedTerms: matchedTerms.length };
+          })
+          .filter(c => c.matchedTerms > 0)
+          .sort((a, b) => b.matchedTerms - a.matchedTerms)
+          .slice(0, 5);
+
+        if (similarCompanies.length > 0) {
+          console.log('   Similar existing companies found:');
+          similarCompanies.forEach(c => console.log(`     - ${c.name} (${c.status})`));
+        }
+
+        // Store extracted data in metadata
+        await supabase
+          .from('meeting_transcriptions')
+          .update({
+            external_metadata: {
+              ...saved.external_metadata,
+              extracted_entity_data: extractedData,
+            },
+          })
+          .eq('id', saved.id);
+
+        // Build review task description
+        const taskDesc = [
+          `Meeting transcript "${transcript.title}" could not be automatically matched.`,
+          '',
+          '═══ EXTRACTED INFO ═══',
+          `Company: ${extractedData.company.name}`,
+          `Industry: ${extractedData.company.industry || 'Unknown'}`,
+          `Segment: ${extractedData.company.segment || 'Unknown'}`,
+          '',
+          'Contacts:',
+          ...(extractedData.contacts || []).map(c => `  - ${c.name} ${c.email ? `<${c.email}>` : ''} (${c.role || 'unknown role'})`),
+          '',
+          `Products: ${extractedData.deal?.productInterests?.join(', ') || 'Unknown'}`,
+          `Est. Value: $${extractedData.deal?.estimatedValue?.toLocaleString() || 'Unknown'}`,
+        ];
+
+        if (similarCompanies.length > 0) {
+          taskDesc.push('', '═══ SIMILAR COMPANIES ═══');
+          taskDesc.push('⚠️ Check if this matches an existing company:');
+          similarCompanies.forEach(c => taskDesc.push(`  - ${c.name} (${c.status})`));
+        }
+
+        taskDesc.push('', '═══ ACTION REQUIRED ═══');
+        taskDesc.push('Option A: Match to existing company/deal');
+        taskDesc.push('Option B: Create new company, contacts, and deal');
+        taskDesc.push('', `Transcription ID: ${saved.id}`);
+
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 2);
+        await supabase.from('tasks').insert({
+          assigned_to: conn.user_id,
+          type: 'review',
+          title: `Assign transcript: ${extractedData.company.name}`,
+          description: taskDesc.join('\n'),
+          priority: 'high',
+          due_at: dueDate.toISOString(),
+          source: 'fireflies_ai',
+        });
+        reviewTasks++;
+        console.log('   Created review task with extracted data and similar company suggestions.');
+      } else {
+        // Create simple review task
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 2);
+        await supabase.from('tasks').insert({
+          assigned_to: conn.user_id,
+          type: 'review',
+          title: `Review transcript assignment: ${transcript.title}`,
+          description: `Could not extract entity data from transcript.\n\nAI Reasoning: ${aiMatch?.reasoning || 'N/A'}`,
+          priority: 'medium',
+          due_at: dueDate.toISOString(),
+          source: 'fireflies_ai',
+        });
+        reviewTasks++;
+        console.log('   Created review task (no entity data extracted).');
+      }
+    } else if (aiMatch?.requiresHumanReview) {
+      // Matched but needs review
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 2);
-
-      const { error: taskError } = await supabase.from('tasks').insert({
+      await supabase.from('tasks').insert({
         deal_id: aiMatch?.dealMatch?.id || null,
         company_id: aiMatch?.companyMatch?.id || null,
         assigned_to: conn.user_id,
         type: 'review',
         title: `Review transcript assignment: ${transcript.title}`,
-        description: `AI Analysis:\n${aiMatch?.reasoning || 'No AI analysis available'}\n\nReview Reason: ${aiMatch?.reviewReason || 'Could not determine assignment'}`,
+        description: `AI Analysis:\n${aiMatch?.reasoning || 'No AI analysis available'}\n\nReview Reason: ${aiMatch?.reviewReason || 'Low confidence match'}`,
         priority: 'medium',
         due_at: dueDate.toISOString(),
         source: 'fireflies_ai',
       });
-
-      if (!taskError) {
-        reviewTasks++;
-        console.log('   Created review task.');
-      }
+      reviewTasks++;
+      console.log('   Created review task.');
     }
   }
 
