@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Mail } from 'lucide-react';
+import { Plus, Mail, Users, Globe } from 'lucide-react';
 import { EmailList } from '@/components/email/EmailList';
 import { EmailDetail } from '@/components/email/EmailDetail';
 import { EmailCompose } from '@/components/email/EmailCompose';
+import { cn } from '@/lib/utils';
 
 interface EmailActivity {
   id: string;
@@ -28,6 +29,7 @@ interface EmailActivity {
     direction?: 'inbound' | 'outbound';
     from?: { address: string; name?: string };
     to?: Array<{ address: string; name?: string }>;
+    has_contact?: boolean;
   };
 }
 
@@ -39,6 +41,14 @@ export function InboxClient({ emails }: InboxClientProps) {
   const [selectedEmail, setSelectedEmail] = useState<EmailActivity | null>(null);
   const [showCompose, setShowCompose] = useState(false);
   const [replyTo, setReplyTo] = useState<EmailActivity | null>(null);
+  const [showContactsOnly, setShowContactsOnly] = useState(false);
+
+  // Filter emails based on toggle
+  const filteredEmails = showContactsOnly
+    ? emails.filter(e => e.contact !== null)
+    : emails;
+
+  const contactEmailCount = emails.filter(e => e.contact !== null).length;
 
   const handleSendEmail = async (email: {
     to: string[];
@@ -107,8 +117,34 @@ export function InboxClient({ emails }: InboxClientProps) {
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
       {/* Toolbar */}
       <div className="p-3 border-b border-gray-200 flex items-center justify-between bg-white">
-        <div className="text-sm text-gray-500">
-          {emails.length} emails
+        <div className="flex items-center gap-4">
+          {/* Filter toggle */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setShowContactsOnly(false)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                !showContactsOnly
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              )}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              All ({emails.length})
+            </button>
+            <button
+              onClick={() => setShowContactsOnly(true)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                showContactsOnly
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              )}
+            >
+              <Users className="h-3.5 w-3.5" />
+              Contacts ({contactEmailCount})
+            </button>
+          </div>
         </div>
         <button
           onClick={() => setShowCompose(true)}
@@ -124,7 +160,7 @@ export function InboxClient({ emails }: InboxClientProps) {
         {/* Email list */}
         <div className="w-1/2 border-r border-gray-200 overflow-hidden">
           <EmailList
-            emails={emails}
+            emails={filteredEmails}
             selectedId={selectedEmail?.id}
             onSelect={setSelectedEmail}
           />

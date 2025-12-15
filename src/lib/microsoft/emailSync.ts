@@ -14,8 +14,11 @@ interface EmailSyncResult {
 export async function syncEmails(userId: string): Promise<EmailSyncResult> {
   const result: EmailSyncResult = { imported: 0, skipped: 0, errors: [] };
 
+  console.log('[EmailSync] Starting sync for user:', userId);
+
   const token = await getValidToken(userId);
   if (!token) {
+    console.log('[EmailSync] No valid token available');
     result.errors.push('No valid token available');
     return result;
   }
@@ -24,6 +27,28 @@ export async function syncEmails(userId: string): Promise<EmailSyncResult> {
   const client = new MicrosoftGraphClient(token);
 
   try {
+    // Get or create a default company for external emails
+    let { data: externalCompany } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('name', 'External Contacts')
+      .single();
+
+    if (!externalCompany) {
+      const { data: newCompany, error: companyError } = await supabase
+        .from('companies')
+        .insert({ name: 'External Contacts', industry: 'pest', segment: 'smb', status: 'prospect' })
+        .select('id')
+        .single();
+      if (companyError) {
+        console.error('[EmailSync] Failed to create External Contacts company:', companyError);
+      }
+      externalCompany = newCompany;
+    }
+
+    const externalCompanyId = externalCompany?.id;
+    console.log('[EmailSync] External company ID:', externalCompanyId);
+
     // Get all contacts with email addresses for matching
     const { data: contacts } = await supabase
       .from('contacts')
@@ -74,6 +99,12 @@ export async function syncEmails(userId: string): Promise<EmailSyncResult> {
       ...sentMessages.value.map(m => ({ ...m, direction: 'outbound' as const })),
     ];
 
+    console.log('[EmailSync] Fetched messages:', {
+      inbox: inboxMessages.value.length,
+      sent: sentMessages.value.length,
+      total: allMessages.length,
+    });
+
     for (const message of allMessages) {
       try {
         // Check if already imported
@@ -89,38 +120,42 @@ export async function syncEmails(userId: string): Promise<EmailSyncResult> {
           continue;
         }
 
-        // Find matching contact
+        // Find matching contact (optional - we import all emails now)
         const emailAddress = message.direction === 'inbound'
           ? message.from?.emailAddress?.address?.toLowerCase()
           : message.toRecipients?.[0]?.emailAddress?.address?.toLowerCase();
 
         const matchedContact = emailAddress ? contactsByEmail.get(emailAddress) : null;
 
-        if (!matchedContact) {
-          // Skip emails that don't match any contacts
+        // Get deal for this contact if available
+        const dealId = matchedContact ? dealsByContact.get(matchedContact.id) : null;
+
+        // Use external company for emails without matched contacts
+        const companyId = matchedContact?.company_id || externalCompanyId;
+
+        if (!companyId) {
+          console.log('[EmailSync] Skipping email - no company available:', message.subject);
           result.skipped++;
           continue;
         }
 
-        // Get deal for this contact if available
-        const dealId = dealsByContact.get(matchedContact.id);
-
         // Create activity record
         const activityData = {
-          type: 'email' as const,
+          type: message.direction === 'inbound' ? 'email_received' as const : 'email_sent' as const,
           subject: message.subject || '(No subject)',
-          description: message.bodyPreview || '',
-          contact_id: matchedContact.id,
-          company_id: matchedContact.company_id,
+          body: message.bodyPreview || '',
+          contact_id: matchedContact?.id || null,
+          company_id: companyId,
           deal_id: dealId || null,
-          created_by: userProfile?.id || userId,
-          completed_at: message.receivedDateTime || message.sentDateTime || new Date().toISOString(),
+          user_id: userProfile?.id || userId,
+          occurred_at: message.receivedDateTime || message.sentDateTime || new Date().toISOString(),
           metadata: {
             direction: message.direction,
             microsoft_id: message.id,
             conversation_id: message.conversationId,
             from: message.from?.emailAddress,
             to: message.toRecipients?.map(r => r.emailAddress),
+            has_contact: !!matchedContact,
           },
           external_id: externalId,
         };
@@ -142,7 +177,10 @@ export async function syncEmails(userId: string): Promise<EmailSyncResult> {
     // Update last sync timestamp
     await updateLastSync(userId);
 
+    console.log('[EmailSync] Sync complete:', result);
+
   } catch (err) {
+    console.error('[EmailSync] Sync error:', err);
     result.errors.push(`Sync error: ${err}`);
   }
 

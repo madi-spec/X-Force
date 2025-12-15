@@ -38,8 +38,8 @@ export default async function InboxPage() {
     .select(`
       id,
       subject,
-      description,
-      completed_at,
+      body,
+      occurred_at,
       metadata,
       contact:contacts(
         id,
@@ -49,9 +49,9 @@ export default async function InboxPage() {
       ),
       deal:deals(id, name)
     `)
-    .eq('type', 'email')
-    .eq('created_by', profile.id)
-    .order('completed_at', { ascending: false })
+    .in('type', ['email_sent', 'email_received'])
+    .eq('user_id', profile.id)
+    .order('occurred_at', { ascending: false })
     .limit(100);
 
   // If not connected, show setup prompt
@@ -113,8 +113,8 @@ export default async function InboxPage() {
     return {
       id: activity.id,
       subject: activity.subject || '',
-      description: activity.description || '',
-      completed_at: activity.completed_at || new Date().toISOString(),
+      description: activity.body || '',
+      completed_at: activity.occurred_at || new Date().toISOString(),
       contact: contactData ? {
         id: contactData.id,
         name: contactData.name,
@@ -132,6 +132,7 @@ export default async function InboxPage() {
         direction?: 'inbound' | 'outbound';
         from?: { address: string; name?: string };
         to?: Array<{ address: string; name?: string }>;
+        has_contact?: boolean;
       },
     };
   });
