@@ -90,6 +90,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Update deal health score based on meeting analysis
+    if (dealId) {
+      const healthScoreAdjustment = calculateHealthScoreAdjustment(analysis);
+
+      // Get current deal health score
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('health_score')
+        .eq('id', dealId)
+        .single();
+
+      if (deal) {
+        const newHealthScore = Math.max(0, Math.min(100, (deal.health_score || 50) + healthScoreAdjustment));
+
+        await supabase
+          .from('deals')
+          .update({ health_score: newHealthScore })
+          .eq('id', dealId);
+      }
+    }
+
     // Create an activity record for the meeting
     if (dealId || companyId) {
       const { error: activityError } = await supabase.from('activities').insert({
@@ -192,4 +213,53 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Calculate health score adjustment based on meeting analysis
+function calculateHealthScoreAdjustment(analysis: {
+  sentiment?: { overall?: string; interestLevel?: string; urgency?: string };
+  buyingSignals?: { strength?: string }[];
+  objections?: { resolved?: boolean }[];
+}): number {
+  let adjustment = 0;
+
+  // Base engagement bonus - having a meeting is a positive signal (+5)
+  adjustment += 5;
+
+  // Sentiment impact (-10 to +15)
+  const sentimentScores: Record<string, number> = {
+    very_positive: 15,
+    positive: 8,
+    neutral: 0,
+    negative: -8,
+    very_negative: -15,
+  };
+  adjustment += sentimentScores[analysis.sentiment?.overall || 'neutral'] || 0;
+
+  // Interest level impact (-8 to +10)
+  const interestScores: Record<string, number> = {
+    high: 10,
+    medium: 2,
+    low: -8,
+  };
+  adjustment += interestScores[analysis.sentiment?.interestLevel || 'medium'] || 0;
+
+  // Urgency impact (-5 to +8)
+  const urgencyScores: Record<string, number> = {
+    high: 8,
+    medium: 0,
+    low: -5,
+  };
+  adjustment += urgencyScores[analysis.sentiment?.urgency || 'medium'] || 0;
+
+  // Buying signals boost (strong: +5 each, moderate: +2 each, max +20)
+  const strongSignals = analysis.buyingSignals?.filter((s) => s.strength === 'strong').length || 0;
+  const moderateSignals = analysis.buyingSignals?.filter((s) => s.strength === 'moderate').length || 0;
+  adjustment += Math.min(strongSignals * 5 + moderateSignals * 2, 20);
+
+  // Unresolved objections penalty (-4 each, max -15)
+  const unresolvedObjections = analysis.objections?.filter((o) => !o.resolved).length || 0;
+  adjustment -= Math.min(unresolvedObjections * 4, 15);
+
+  return adjustment;
 }
