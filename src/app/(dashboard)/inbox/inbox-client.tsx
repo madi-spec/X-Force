@@ -113,6 +113,39 @@ export function InboxClient({ emails: initialEmails }: InboxClientProps) {
     setCheckedIds(new Set());
   }, []);
 
+  // Bulk action handlers
+  const handleArchive = useCallback(() => {
+    // Remove checked emails from view (client-side only for now)
+    setEmails(prev => prev.filter(e => !checkedIds.has(e.id)));
+    setCheckedIds(new Set());
+    setSelectedEmailId(null);
+  }, [checkedIds]);
+
+  const handleDelete = useCallback(() => {
+    // Remove checked emails from view (client-side only for now)
+    setEmails(prev => prev.filter(e => !checkedIds.has(e.id)));
+    setCheckedIds(new Set());
+    setSelectedEmailId(null);
+  }, [checkedIds]);
+
+  const handleMarkRead = useCallback(() => {
+    setEmails(prev => prev.map(e =>
+      checkedIds.has(e.id) ? { ...e, isRead: true } : e
+    ));
+  }, [checkedIds]);
+
+  const handleMarkUnread = useCallback(() => {
+    setEmails(prev => prev.map(e =>
+      checkedIds.has(e.id) ? { ...e, isRead: false } : e
+    ));
+  }, [checkedIds]);
+
+  const handleStarSelected = useCallback(() => {
+    setEmails(prev => prev.map(e =>
+      checkedIds.has(e.id) ? { ...e, isStarred: true } : e
+    ));
+  }, [checkedIds]);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -226,6 +259,11 @@ export function InboxClient({ emails: initialEmails }: InboxClientProps) {
           onDeselectAll={handleDeselectAll}
           allSelected={checkedIds.size === filteredEmails.length && filteredEmails.length > 0}
           totalCount={filteredEmails.length}
+          onArchive={handleArchive}
+          onDelete={handleDelete}
+          onMarkRead={handleMarkRead}
+          onMarkUnread={handleMarkUnread}
+          onStarSelected={handleStarSelected}
         />
 
         {/* Email List and Preview */}

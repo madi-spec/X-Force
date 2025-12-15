@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, RefreshCw, ChevronDown, Archive, Trash2, MoreHorizontal } from 'lucide-react';
+import { Search, RefreshCw, ChevronDown, Archive, Trash2, MoreHorizontal, Mail, MailOpen, Star, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EmailFilter } from './types';
 import { useState, useRef, useEffect } from 'react';
@@ -17,6 +17,11 @@ interface InboxToolbarProps {
   onDeselectAll: () => void;
   allSelected: boolean;
   totalCount: number;
+  onArchive: () => void;
+  onDelete: () => void;
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
+  onStarSelected: () => void;
 }
 
 export function InboxToolbar({
@@ -31,14 +36,29 @@ export function InboxToolbar({
   onDeselectAll,
   allSelected,
   totalCount,
+  onArchive,
+  onDelete,
+  onMarkRead,
+  onMarkUnread,
+  onStarSelected,
 }: InboxToolbarProps) {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showBulkMoreMenu, setShowBulkMoreMenu] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const bulkMoreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
         setShowFilterMenu(false);
+      }
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setShowMoreMenu(false);
+      }
+      if (bulkMoreRef.current && !bulkMoreRef.current.contains(event.target as Node)) {
+        setShowBulkMoreMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -76,15 +96,76 @@ export function InboxToolbar({
       {selectedCount > 0 ? (
         <div className="flex items-center gap-1 border-l border-gray-200 pl-2 ml-1">
           <span className="text-sm text-gray-600 mr-2">{selectedCount} selected</span>
-          <button className="p-2 hover:bg-gray-100 rounded-full text-gray-600" title="Archive">
+          <button
+            onClick={onArchive}
+            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
+            title="Archive"
+          >
             <Archive className="h-4 w-4" />
           </button>
-          <button className="p-2 hover:bg-gray-100 rounded-full text-gray-600" title="Delete">
+          <button
+            onClick={onDelete}
+            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 hover:text-red-600 transition-colors"
+            title="Delete"
+          >
             <Trash2 className="h-4 w-4" />
           </button>
-          <button className="p-2 hover:bg-gray-100 rounded-full text-gray-600" title="More">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+
+          {/* More Actions Dropdown for Bulk */}
+          <div className="relative" ref={bulkMoreRef}>
+            <button
+              onClick={() => setShowBulkMoreMenu(!showBulkMoreMenu)}
+              className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
+              title="More actions"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+
+            {showBulkMoreMenu && (
+              <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                <button
+                  onClick={() => {
+                    onMarkRead();
+                    setShowBulkMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <MailOpen className="h-4 w-4" />
+                  Mark as read
+                </button>
+                <button
+                  onClick={() => {
+                    onMarkUnread();
+                    setShowBulkMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Mail className="h-4 w-4" />
+                  Mark as unread
+                </button>
+                <button
+                  onClick={() => {
+                    onStarSelected();
+                    setShowBulkMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Star className="h-4 w-4" />
+                  Star selected
+                </button>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  onClick={() => {
+                    onDeselectAll();
+                    setShowBulkMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <>
@@ -101,10 +182,51 @@ export function InboxToolbar({
             <RefreshCw className="h-4 w-4" />
           </button>
 
-          {/* More Actions */}
-          <button className="p-2 hover:bg-gray-100 rounded-full text-gray-600" title="More">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          {/* More Actions Dropdown */}
+          <div className="relative" ref={moreRef}>
+            <button
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
+              title="More actions"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+
+            {showMoreMenu && (
+              <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                <button
+                  onClick={() => {
+                    onSelectAll();
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Tag className="h-4 w-4" />
+                  Select all
+                </button>
+                <button
+                  onClick={() => {
+                    onFilterChange('unread');
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Mail className="h-4 w-4" />
+                  Show unread only
+                </button>
+                <button
+                  onClick={() => {
+                    onFilterChange('starred');
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Star className="h-4 w-4" />
+                  Show starred only
+                </button>
+              </div>
+            )}
+          </div>
         </>
       )}
 
