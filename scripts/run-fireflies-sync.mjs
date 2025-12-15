@@ -266,7 +266,7 @@ async function main() {
   console.log('Fetching transcripts from Fireflies...');
   let transcripts;
   try {
-    transcripts = await getFirefliesTranscripts(conn.api_key, 5);
+    transcripts = await getFirefliesTranscripts(conn.api_key, 20);
     console.log(`Found ${transcripts.length} transcripts\n`);
   } catch (e) {
     console.error('Failed to fetch transcripts:', e.message);
