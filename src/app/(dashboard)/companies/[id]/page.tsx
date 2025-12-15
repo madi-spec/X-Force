@@ -36,16 +36,39 @@ export default async function CompanyPage({ params }: CompanyPageProps) {
     .eq('company_id', id)
     .order('created_at', { ascending: false });
 
-  // Get activities for this company (through deals)
+  // Get activities for this company (directly linked or through deals)
   const dealIds = deals?.map(d => d.id) || [];
-  const { data: activities } = dealIds.length > 0
+
+  // Get activities directly linked to company
+  const { data: companyActivities } = await supabase
+    .from('activities')
+    .select('*, user:users(name), deal:deals(id, name), contact:contacts(id, name)')
+    .eq('company_id', id)
+    .order('occurred_at', { ascending: false })
+    .limit(20);
+
+  // Get activities through deals (if any deals exist)
+  const { data: dealActivities } = dealIds.length > 0
     ? await supabase
         .from('activities')
-        .select('*, user:users(name), deal:deals(id, name)')
+        .select('*, user:users(name), deal:deals(id, name), contact:contacts(id, name)')
         .in('deal_id', dealIds)
+        .is('company_id', null) // Only get ones not already linked to company
         .order('occurred_at', { ascending: false })
         .limit(20)
     : { data: [] };
+
+  // Combine and deduplicate activities
+  const allActivities = [...(companyActivities || []), ...(dealActivities || [])];
+  const uniqueActivityIds = new Set<string>();
+  const activities = allActivities
+    .filter(a => {
+      if (uniqueActivityIds.has(a.id)) return false;
+      uniqueActivityIds.add(a.id);
+      return true;
+    })
+    .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
+    .slice(0, 20);
 
   // Get company products
   const { data: companyProducts } = await supabase

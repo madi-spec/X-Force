@@ -107,7 +107,7 @@ export function EmailDetail({ email, onClose, onReply }: EmailDetailProps) {
                   <span className="text-gray-400">at</span>
                   <Building2 className="h-4 w-4 text-gray-400" />
                   <Link
-                    href={`/organizations/${email.contact.company.id}`}
+                    href={`/companies/${email.contact.company.id}`}
                     className="text-sm text-blue-600 hover:underline"
                   >
                     {email.contact.company.name}

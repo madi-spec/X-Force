@@ -150,7 +150,7 @@ export function EventDetailPanel({ event, onClose }: EventDetailPanelProps) {
               </div>
               {event.contact.company && (
                 <Link
-                  href={`/organizations/${event.contact.company.id}`}
+                  href={`/companies/${event.contact.company.id}`}
                   className="flex items-center gap-2 mt-3 text-sm text-gray-600 hover:text-blue-600 transition-colors"
                 >
                   <Building2 className="h-4 w-4" />

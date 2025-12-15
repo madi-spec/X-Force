@@ -149,7 +149,7 @@ export function EmailPreviewPane({
             <div className="flex flex-wrap gap-3 mb-6 p-4 bg-gray-50 rounded-xl">
               {email.contact?.company && (
                 <Link
-                  href={`/organizations/${email.contact.company.id}`}
+                  href={`/companies/${email.contact.company.id}`}
                   className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
                 >
                   <Building2 className="h-4 w-4 text-gray-500" />
