@@ -74,7 +74,7 @@ export type Team = 'xrai' | 'voice';
 
 export type TaskType = 'follow_up' | 'call' | 'email' | 'meeting' | 'review' | 'custom';
 export type TaskPriority = 'high' | 'medium' | 'low';
-export type TaskSource = 'ai_recommendation' | 'manual' | 'meeting_extraction' | 'sequence';
+export type TaskSource = 'ai_recommendation' | 'manual' | 'meeting_extraction' | 'sequence' | 'fireflies_ai';
 
 export type DealRoomAssetType = 'document' | 'video' | 'link' | 'image';
 
