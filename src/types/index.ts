@@ -600,3 +600,108 @@ export function getSalesTeamLabel(team: SalesTeam): string {
   const teamInfo = SALES_TEAMS.find(t => t.id === team);
   return teamInfo?.name || team;
 }
+
+// ============================================
+// MICROSOFT 365 INTEGRATION
+// ============================================
+
+export interface MicrosoftConnection {
+  id: string;
+  user_id: string;
+  microsoft_user_id: string | null;
+  email: string | null;
+  access_token: string;
+  refresh_token: string;
+  token_expires_at: string;
+  scopes: string[];
+  connected_at: string;
+  last_sync_at: string | null;
+  is_active: boolean;
+  // Relations
+  user?: User;
+}
+
+export interface MicrosoftEmail {
+  id: string;
+  subject: string;
+  bodyPreview: string;
+  body?: {
+    contentType: 'Text' | 'HTML';
+    content: string;
+  };
+  from?: {
+    emailAddress: {
+      address: string;
+      name?: string;
+    };
+  };
+  toRecipients?: Array<{
+    emailAddress: {
+      address: string;
+      name?: string;
+    };
+  }>;
+  ccRecipients?: Array<{
+    emailAddress: {
+      address: string;
+      name?: string;
+    };
+  }>;
+  receivedDateTime?: string;
+  sentDateTime?: string;
+  conversationId?: string;
+  isRead?: boolean;
+  // X-FORCE enrichment
+  linkedCompany?: Company;
+  linkedContact?: Contact;
+  linkedDeal?: Deal;
+}
+
+export interface MicrosoftCalendarEvent {
+  id: string;
+  subject: string;
+  bodyPreview?: string;
+  body?: {
+    contentType: 'Text' | 'HTML';
+    content: string;
+  };
+  start: {
+    dateTime: string;
+    timeZone: string;
+  };
+  end: {
+    dateTime: string;
+    timeZone: string;
+  };
+  location?: {
+    displayName: string;
+  };
+  attendees?: Array<{
+    emailAddress: {
+      address: string;
+      name?: string;
+    };
+    type: 'required' | 'optional';
+    status?: {
+      response: 'none' | 'organizer' | 'tentativelyAccepted' | 'accepted' | 'declined';
+    };
+  }>;
+  isOnlineMeeting?: boolean;
+  onlineMeeting?: {
+    joinUrl: string;
+  };
+  showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'workingElsewhere' | 'unknown';
+  isCancelled?: boolean;
+}
+
+export interface EmailSyncResult {
+  newEmails: number;
+  updatedEmails: number;
+  errors: string[];
+}
+
+export interface CalendarSyncResult {
+  newEvents: number;
+  updatedEvents: number;
+  errors: string[];
+}
