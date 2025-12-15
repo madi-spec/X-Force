@@ -203,76 +203,78 @@ export function MeetingAnalysisView({
           />
 
           {/* Extracted Information */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">
-              Extracted Information
-            </h3>
-            <div className="space-y-3 text-sm">
-              {currentAnalysis.extractedInfo.companySize && (
-                <div>
-                  <span className="text-gray-500">Company Size:</span>
-                  <span className="ml-2 text-gray-900">
-                    {currentAnalysis.extractedInfo.companySize}
-                  </span>
-                </div>
-              )}
-              {currentAnalysis.extractedInfo.currentSolution && (
-                <div>
-                  <span className="text-gray-500">Current Solution:</span>
-                  <span className="ml-2 text-gray-900">
-                    {currentAnalysis.extractedInfo.currentSolution}
-                  </span>
-                </div>
-              )}
-              {currentAnalysis.extractedInfo.budget && (
-                <div>
-                  <span className="text-gray-500">Budget:</span>
-                  <span className="ml-2 text-gray-900">
-                    {currentAnalysis.extractedInfo.budget}
-                  </span>
-                </div>
-              )}
-              {currentAnalysis.extractedInfo.timeline && (
-                <div>
-                  <span className="text-gray-500">Timeline:</span>
-                  <span className="ml-2 text-gray-900">
-                    {currentAnalysis.extractedInfo.timeline}
-                  </span>
-                </div>
-              )}
-              {currentAnalysis.extractedInfo.decisionProcess && (
-                <div>
-                  <span className="text-gray-500">Decision Process:</span>
-                  <span className="ml-2 text-gray-900">
-                    {currentAnalysis.extractedInfo.decisionProcess}
-                  </span>
-                </div>
-              )}
-              {currentAnalysis.extractedInfo.painPoints.length > 0 && (
-                <div>
-                  <span className="text-gray-500 block mb-1">Pain Points:</span>
-                  <ul className="list-disc list-inside text-gray-900 ml-2">
-                    {currentAnalysis.extractedInfo.painPoints.map((point, i) => (
-                      <li key={i}>{point}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {currentAnalysis.extractedInfo.competitors.length > 0 && (
-                <div>
-                  <span className="text-gray-500 block mb-1">Competitors:</span>
-                  <ul className="list-disc list-inside text-gray-900 ml-2">
-                    {currentAnalysis.extractedInfo.competitors.map((comp, i) => (
-                      <li key={i}>{comp}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+          {currentAnalysis.extractedInfo && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">
+                Extracted Information
+              </h3>
+              <div className="space-y-3 text-sm">
+                {currentAnalysis.extractedInfo.companySize && (
+                  <div>
+                    <span className="text-gray-500">Company Size:</span>
+                    <span className="ml-2 text-gray-900">
+                      {currentAnalysis.extractedInfo.companySize}
+                    </span>
+                  </div>
+                )}
+                {currentAnalysis.extractedInfo.currentSolution && (
+                  <div>
+                    <span className="text-gray-500">Current Solution:</span>
+                    <span className="ml-2 text-gray-900">
+                      {currentAnalysis.extractedInfo.currentSolution}
+                    </span>
+                  </div>
+                )}
+                {currentAnalysis.extractedInfo.budget && (
+                  <div>
+                    <span className="text-gray-500">Budget:</span>
+                    <span className="ml-2 text-gray-900">
+                      {currentAnalysis.extractedInfo.budget}
+                    </span>
+                  </div>
+                )}
+                {currentAnalysis.extractedInfo.timeline && (
+                  <div>
+                    <span className="text-gray-500">Timeline:</span>
+                    <span className="ml-2 text-gray-900">
+                      {currentAnalysis.extractedInfo.timeline}
+                    </span>
+                  </div>
+                )}
+                {currentAnalysis.extractedInfo.decisionProcess && (
+                  <div>
+                    <span className="text-gray-500">Decision Process:</span>
+                    <span className="ml-2 text-gray-900">
+                      {currentAnalysis.extractedInfo.decisionProcess}
+                    </span>
+                  </div>
+                )}
+                {currentAnalysis.extractedInfo.painPoints?.length > 0 && (
+                  <div>
+                    <span className="text-gray-500 block mb-1">Pain Points:</span>
+                    <ul className="list-disc list-inside text-gray-900 ml-2">
+                      {currentAnalysis.extractedInfo.painPoints.map((point, i) => (
+                        <li key={i}>{point}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {currentAnalysis.extractedInfo.competitors?.length > 0 && (
+                  <div>
+                    <span className="text-gray-500 block mb-1">Competitors:</span>
+                    <ul className="list-disc list-inside text-gray-900 ml-2">
+                      {currentAnalysis.extractedInfo.competitors.map((comp, i) => (
+                        <li key={i}>{comp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Stakeholders */}
-          {currentAnalysis.stakeholders.length > 0 && (
+          {currentAnalysis.stakeholders?.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Stakeholders</h3>
               <div className="space-y-4">
@@ -318,20 +320,22 @@ export function MeetingAnalysisView({
           )}
 
           {/* Confidence Score */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">Analysis Confidence</span>
-              <span className="text-sm font-medium text-gray-900">
-                {Math.round(currentAnalysis.confidence * 100)}%
-              </span>
+          {currentAnalysis.confidence !== undefined && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Analysis Confidence</span>
+                <span className="text-sm font-medium text-gray-900">
+                  {Math.round(currentAnalysis.confidence * 100)}%
+                </span>
+              </div>
+              <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full"
+                  style={{ width: `${currentAnalysis.confidence * 100}%` }}
+                />
+              </div>
             </div>
-            <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full"
-                style={{ width: `${currentAnalysis.confidence * 100}%` }}
-              />
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
