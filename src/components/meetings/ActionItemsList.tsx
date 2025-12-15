@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { CheckSquare, Loader2 } from 'lucide-react';
+import { CheckSquare, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MeetingActionItem, MeetingCommitment, MeetingOurCommitment } from '@/types';
 
@@ -20,7 +20,8 @@ export function ActionItemsList({
 }: ActionItemsListProps) {
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState(false);
+  const [createdCount, setCreatedCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   // Filter to only "us" action items (our tasks)
   const ourActionItems = actionItems.filter((item) => item.owner === 'us');
@@ -29,6 +30,8 @@ export function ActionItemsList({
     setSelectedItems((prev) =>
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
     );
+    // Clear error when user makes a selection
+    setError(null);
   };
 
   const handleSelectAll = () => {
@@ -37,12 +40,14 @@ export function ActionItemsList({
     } else {
       setSelectedItems(ourActionItems.map((_, i) => i));
     }
+    setError(null);
   };
 
   const handleCreateTasks = useCallback(async () => {
     if (selectedItems.length === 0) return;
 
     setCreating(true);
+    setError(null);
     try {
       const response = await fetch(
         `/api/meetings/transcriptions/${transcriptionId}/create-tasks`,
@@ -54,14 +59,16 @@ export function ActionItemsList({
       );
 
       if (!response.ok) {
-        throw new Error('Failed to create tasks');
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to create tasks');
       }
 
       const data = await response.json();
-      setCreated(true);
+      setCreatedCount((prev) => prev + data.tasksCreated);
       setSelectedItems([]);
-    } catch (error) {
-      console.error('Error creating tasks:', error);
+    } catch (err) {
+      console.error('Error creating tasks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create tasks');
     } finally {
       setCreating(false);
     }
@@ -75,31 +82,42 @@ export function ActionItemsList({
           <h3 className="font-semibold text-gray-900">Action Items</h3>
         </div>
         {ourActionItems.length > 0 && (
-          <button
-            onClick={handleCreateTasks}
-            disabled={selectedItems.length === 0 || creating || created}
-            className={cn(
-              'flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors',
-              created
-                ? 'bg-green-100 text-green-700'
-                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+          <div className="flex items-center gap-2">
+            {createdCount > 0 && (
+              <span className="text-sm text-green-600">
+                {createdCount} task{createdCount !== 1 ? 's' : ''} created
+              </span>
             )}
-          >
-            {creating ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Creating...
-              </>
-            ) : created ? (
-              'Tasks Created!'
-            ) : (
-              `Create ${selectedItems.length > 0 ? selectedItems.length : ''} Tasks`
-            )}
-          </button>
+            <button
+              onClick={handleCreateTasks}
+              disabled={selectedItems.length === 0 || creating}
+              className={cn(
+                'flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors',
+                'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+              )}
+            >
+              {creating ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                `Create ${selectedItems.length > 0 ? selectedItems.length : ''} Task${selectedItems.length !== 1 ? 's' : ''}`
+              )}
+            </button>
+          </div>
         )}
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Error Message */}
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Our Commitments (Action Items) */}
         {ourActionItems.length > 0 && (
           <div>

@@ -11,6 +11,7 @@ import {
   FileText,
   Loader2,
   Check,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MeetingRecommendation, MeetingRecommendationType } from '@/types';
@@ -65,10 +66,18 @@ export function RecommendationsPanel({
   const router = useRouter();
   const [applyingIndex, setApplyingIndex] = useState<number | null>(null);
   const [appliedIndexes, setAppliedIndexes] = useState<number[]>([]);
+  const [errorIndexes, setErrorIndexes] = useState<Map<number, string>>(new Map());
 
   const handleApply = useCallback(
     async (index: number) => {
       setApplyingIndex(index);
+      // Clear any previous error for this index
+      setErrorIndexes((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(index);
+        return newMap;
+      });
+
       try {
         const response = await fetch(
           `/api/meetings/transcriptions/${transcriptionId}/apply-recommendations`,
@@ -80,15 +89,27 @@ export function RecommendationsPanel({
         );
 
         if (!response.ok) {
-          throw new Error('Failed to apply recommendation');
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to apply recommendation');
+        }
+
+        const data = await response.json();
+
+        if (data.errorCount > 0) {
+          throw new Error(data.errors?.[0] || 'Failed to apply recommendation');
         }
 
         setAppliedIndexes((prev) => [...prev, index]);
 
         // Refresh the page to show updated deal data
         router.refresh();
-      } catch (error) {
-        console.error('Error applying recommendation:', error);
+      } catch (err) {
+        console.error('Error applying recommendation:', err);
+        setErrorIndexes((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(index, err instanceof Error ? err.message : 'Failed to apply');
+          return newMap;
+        });
       } finally {
         setApplyingIndex(null);
       }
@@ -121,6 +142,7 @@ export function RecommendationsPanel({
           const Icon = config.icon;
           const isApplying = applyingIndex === i;
           const isApplied = appliedIndexes.includes(i);
+          const error = errorIndexes.get(i);
 
           return (
             <div key={i} className="p-4">
@@ -143,6 +165,14 @@ export function RecommendationsPanel({
                     </div>
                   )}
 
+                  {/* Error message */}
+                  {error && (
+                    <div className="mt-2 flex items-center gap-1 text-xs text-red-600">
+                      <AlertCircle className="h-3 w-3" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => handleApply(i)}
                     disabled={isApplying || isApplied}
@@ -150,7 +180,9 @@ export function RecommendationsPanel({
                       'mt-2 text-xs font-medium px-3 py-1.5 rounded transition-colors',
                       isApplied
                         ? 'bg-green-100 text-green-700'
-                        : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+                        : error
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
                     )}
                   >
                     {isApplying ? (
@@ -163,6 +195,8 @@ export function RecommendationsPanel({
                         <Check className="h-3 w-3" />
                         Applied
                       </span>
+                    ) : error ? (
+                      'Retry'
                     ) : (
                       'Apply'
                     )}
