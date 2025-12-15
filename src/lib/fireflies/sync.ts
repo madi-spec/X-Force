@@ -89,7 +89,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
     let transcriptList;
     try {
       transcriptList = await client.getRecentTranscripts({
-        limit: 100,
+        limit: 50, // Fireflies API max is 50
         fromDate,
       });
       console.log('[Fireflies Sync] Found', transcriptList.length, 'transcripts');
