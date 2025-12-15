@@ -377,6 +377,7 @@ export default async function DealPage({ params }: DealPageProps) {
             companyId={deal.company_id}
             userId={profile?.id || ''}
             contacts={contacts || []}
+            deal={deal}
           />
 
           {/* Activity Feed */}

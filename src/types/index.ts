@@ -705,3 +705,163 @@ export interface CalendarSyncResult {
   updatedEvents: number;
   errors: string[];
 }
+
+// ============================================
+// MEETING TRANSCRIPTIONS
+// ============================================
+
+export type TranscriptionFormat = 'plain' | 'vtt' | 'srt' | 'teams' | 'zoom' | 'otter';
+
+export interface MeetingTranscription {
+  id: string;
+  deal_id: string | null;
+  company_id: string | null;
+  contact_id: string | null;
+  activity_id: string | null;
+  user_id: string;
+  title: string;
+  meeting_date: string;
+  duration_minutes: number | null;
+  attendees: string[] | null;
+  transcription_text: string;
+  transcription_format: TranscriptionFormat | null;
+  word_count: number | null;
+  analysis: MeetingAnalysis | null;
+  analysis_generated_at: string | null;
+  summary: string | null;
+  follow_up_email_draft: string | null;
+  created_at: string;
+  updated_at: string;
+  // Relations
+  deal?: Deal;
+  company?: Company;
+  contact?: Contact;
+  user?: User;
+}
+
+// Meeting Analysis - AI-generated insights
+export interface MeetingAnalysis {
+  // Summary
+  summary: string;
+  headline: string;
+
+  // Key points discussed
+  keyPoints: MeetingKeyPoint[];
+
+  // People mentioned/involved
+  stakeholders: MeetingStakeholder[];
+
+  // Buying signals detected
+  buyingSignals: MeetingBuyingSignal[];
+
+  // Objections and concerns
+  objections: MeetingObjection[];
+
+  // Action items
+  actionItems: MeetingActionItem[];
+
+  // Their commitments
+  theirCommitments: MeetingCommitment[];
+
+  // Our commitments
+  ourCommitments: MeetingOurCommitment[];
+
+  // Sentiment analysis
+  sentiment: MeetingSentiment;
+
+  // Extracted information
+  extractedInfo: MeetingExtractedInfo;
+
+  // Recommendations
+  recommendations: MeetingRecommendation[];
+
+  // Follow-up email
+  followUpEmail: MeetingFollowUpEmail;
+
+  // Metadata
+  processingTime: number;
+  confidence: number;
+}
+
+export interface MeetingKeyPoint {
+  topic: string;
+  details: string;
+  importance: 'high' | 'medium' | 'low';
+}
+
+export interface MeetingStakeholder {
+  name: string;
+  role: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  keyQuotes: string[];
+}
+
+export interface MeetingBuyingSignal {
+  signal: string;
+  quote: string;
+  strength: 'strong' | 'moderate' | 'weak';
+}
+
+export interface MeetingObjection {
+  objection: string;
+  context: string;
+  howAddressed: string | null;
+  resolved: boolean;
+}
+
+export interface MeetingActionItem {
+  task: string;
+  owner: 'us' | 'them';
+  assignee: string | null;
+  dueDate: string | null;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface MeetingCommitment {
+  commitment: string;
+  who: string;
+  when: string | null;
+}
+
+export interface MeetingOurCommitment {
+  commitment: string;
+  when: string | null;
+}
+
+export interface MeetingSentiment {
+  overall: 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
+  interestLevel: 'high' | 'medium' | 'low';
+  urgency: 'high' | 'medium' | 'low';
+  trustLevel: 'established' | 'building' | 'uncertain';
+}
+
+export interface MeetingExtractedInfo {
+  companySize: string | null;
+  currentSolution: string | null;
+  budget: string | null;
+  timeline: string | null;
+  decisionProcess: string | null;
+  competitors: string[];
+  painPoints: string[];
+}
+
+export type MeetingRecommendationType =
+  | 'stage_change'
+  | 'deal_value'
+  | 'add_contact'
+  | 'schedule_meeting'
+  | 'send_content'
+  | 'other';
+
+export interface MeetingRecommendation {
+  type: MeetingRecommendationType;
+  action: string;
+  reasoning: string;
+  data?: Record<string, unknown>;
+}
+
+export interface MeetingFollowUpEmail {
+  subject: string;
+  body: string;
+  attachmentSuggestions: string[];
+}

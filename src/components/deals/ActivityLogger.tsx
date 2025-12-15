@@ -2,16 +2,18 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mail, Phone, Users, FileText, X, StickyNote } from 'lucide-react';
+import { Mail, Phone, Users, FileText, X, StickyNote, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import type { ActivityType, Contact } from '@/types';
+import { TranscriptionUploadModal } from '@/components/meetings/TranscriptionUploadModal';
+import type { ActivityType, Contact, Deal } from '@/types';
 
 interface ActivityLoggerProps {
   dealId: string;
   companyId: string;
   userId: string;
   contacts?: Contact[];
+  deal?: Deal;
 }
 
 const QUICK_ACTIVITIES = [
@@ -22,9 +24,10 @@ const QUICK_ACTIVITIES = [
   { id: 'note' as ActivityType, label: 'Add Note', icon: StickyNote, color: 'text-gray-600 hover:bg-gray-50' },
 ];
 
-export function ActivityLogger({ dealId, companyId, userId, contacts }: ActivityLoggerProps) {
+export function ActivityLogger({ dealId, companyId, userId, contacts, deal }: ActivityLoggerProps) {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<ActivityType | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +100,7 @@ export function ActivityLogger({ dealId, companyId, userId, contacts }: Activity
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 className="font-semibold text-gray-900 mb-4">Quick Log</h2>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-6 gap-2">
         {QUICK_ACTIVITIES.map((activity) => {
           const Icon = activity.icon;
           return (
@@ -114,6 +117,17 @@ export function ActivityLogger({ dealId, companyId, userId, contacts }: Activity
             </button>
           );
         })}
+        {/* Upload Transcript Button */}
+        <button
+          onClick={() => setIsUploadModalOpen(true)}
+          className={cn(
+            'flex flex-col items-center gap-1.5 p-3 rounded-lg border border-gray-200 transition-colors',
+            'text-indigo-600 hover:bg-indigo-50 border-dashed'
+          )}
+        >
+          <Sparkles className="h-5 w-5" />
+          <span className="text-xs font-medium text-gray-700">Transcript</span>
+        </button>
       </div>
 
       {/* Activity Modal */}
@@ -234,6 +248,18 @@ export function ActivityLogger({ dealId, companyId, userId, contacts }: Activity
           </div>
         </div>
       )}
+
+      {/* Transcription Upload Modal */}
+      <TranscriptionUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        dealId={dealId}
+        companyId={companyId}
+        deal={deal}
+        onSuccess={() => {
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
