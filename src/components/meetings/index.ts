@@ -9,3 +9,4 @@ export { SentimentCard } from './SentimentCard';
 export { ActionItemsList } from './ActionItemsList';
 export { FollowUpEmailPreview } from './FollowUpEmailPreview';
 export { RecommendationsPanel } from './RecommendationsPanel';
+export { MeetingActivityCard } from './MeetingActivityCard';

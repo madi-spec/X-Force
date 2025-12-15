@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { TeamSection } from '@/components/deals/TeamSection';
 import { ActivityLogger } from '@/components/deals/ActivityLogger';
+import { MeetingActivityCard } from '@/components/meetings';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   getHealthScoreColor,
@@ -34,6 +35,7 @@ import {
   PIPELINE_STAGES,
   SALES_TEAMS,
   type SalesTeam,
+  type MeetingTranscription,
 } from '@/types';
 
 interface DealPageProps {
@@ -87,6 +89,18 @@ export default async function DealPage({ params }: DealPageProps) {
     .eq('deal_id', id)
     .order('occurred_at', { ascending: false })
     .limit(10);
+
+  // Get meeting transcriptions for this deal (to enrich meeting activities)
+  const { data: transcriptions } = await supabase
+    .from('meeting_transcriptions')
+    .select('*')
+    .eq('deal_id', id);
+
+  // Create a map of transcription_id to transcription for quick lookup
+  const transcriptionMap = new Map<string, MeetingTranscription>();
+  transcriptions?.forEach((t) => {
+    transcriptionMap.set(t.id, t as MeetingTranscription);
+  });
 
   // Get tasks for this deal
   const { data: tasks } = await supabase
@@ -385,24 +399,42 @@ export default async function DealPage({ params }: DealPageProps) {
             <h2 className="font-semibold text-gray-900 mb-4">Recent Activity</h2>
             {activities && activities.length > 0 ? (
               <div className="space-y-4">
-                {activities.map((activity) => (
-                  <div key={activity.id} className="flex gap-3">
-                    <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                      <Activity className="h-4 w-4 text-gray-500" />
+                {activities.map((activity) => {
+                  // Check if this is a meeting activity with a transcription
+                  const transcriptionId = activity.metadata?.transcription_id;
+                  const transcription = transcriptionId ? transcriptionMap.get(transcriptionId) : null;
+
+                  // Use enhanced card for meeting activities with transcriptions
+                  if (activity.type === 'meeting' && transcriptionId) {
+                    return (
+                      <MeetingActivityCard
+                        key={activity.id}
+                        activity={activity}
+                        transcription={transcription}
+                      />
+                    );
+                  }
+
+                  // Default activity display for other types
+                  return (
+                    <div key={activity.id} className="flex gap-3">
+                      <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                        <Activity className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900">
+                          <span className="font-medium">{activity.user?.name}</span>
+                          {' '}
+                          {activity.type.replace('_', ' ')}
+                          {activity.subject && `: ${activity.subject}`}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {formatRelativeTime(activity.occurred_at)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">
-                        <span className="font-medium">{activity.user?.name}</span>
-                        {' '}
-                        {activity.type.replace('_', ' ')}
-                        {activity.subject && `: ${activity.subject}`}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {formatRelativeTime(activity.occurred_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-gray-500">No activity yet</p>
