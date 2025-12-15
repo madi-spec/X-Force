@@ -6,11 +6,17 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { FirefliesClient, FirefliesTranscript } from './client';
 import { analyzeMeetingTranscription } from '@/lib/ai/meetingAnalysisService';
+import {
+  aiMatchTranscriptToEntities,
+  createTranscriptReviewTask,
+  AIEntityMatchResult,
+} from '@/lib/ai/transcriptEntityMatcher';
 
 export interface SyncResult {
   synced: number;
   analyzed: number;
   skipped: number;
+  reviewTasksCreated: number;
   errors: string[];
 }
 
@@ -35,6 +41,8 @@ interface MatchResult {
   companyId: string | null;
   contactIds: string[];
   confidence: number;
+  aiMatchResult?: AIEntityMatchResult;
+  matchMethod: 'email' | 'name' | 'ai' | 'none';
 }
 
 /**
@@ -46,6 +54,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
   let synced = 0;
   let analyzed = 0;
   let skipped = 0;
+  let reviewTasksCreated = 0;
 
   // Get user's Fireflies connection
   const { data: connection, error: connError } = await supabase
@@ -73,10 +82,19 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
       ? new Date(connection.last_sync_at)
       : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const transcriptList = await client.getRecentTranscripts({
-      limit: 100,
-      fromDate,
-    });
+    console.log('[Fireflies Sync] Fetching transcripts since:', fromDate.toISOString());
+
+    let transcriptList;
+    try {
+      transcriptList = await client.getRecentTranscripts({
+        limit: 100,
+        fromDate,
+      });
+      console.log('[Fireflies Sync] Found', transcriptList.length, 'transcripts');
+    } catch (listError) {
+      console.error('[Fireflies Sync] Error fetching transcript list:', listError);
+      throw listError;
+    }
 
     for (const item of transcriptList) {
       const firefliesId = `fireflies_${item.id}`;
@@ -95,58 +113,156 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
         }
 
         // Fetch full transcript with content
-        const transcript = await client.getTranscript(item.id);
+        console.log('[Fireflies Sync] Fetching transcript:', item.id);
+        let transcript;
+        try {
+          transcript = await client.getTranscript(item.id);
+          console.log('[Fireflies Sync] Got transcript:', transcript.title);
+        } catch (fetchError) {
+          console.error('[Fireflies Sync] Error fetching transcript', item.id, ':', fetchError);
+          throw fetchError;
+        }
 
         // Parse participants
         const participants = FirefliesClient.parseParticipants(transcript.participants);
 
-        // Match to deal/company/contacts
-        const match = await matchTranscriptToEntities(supabase, participants);
+        // Build full transcript text first (needed for AI matching)
+        const sentences = transcript.sentences || [];
+        const transcriptText = sentences.length > 0
+          ? FirefliesClient.buildTranscriptText(sentences)
+          : `[No transcript text available for: ${transcript.title}]`;
 
-        // Build full transcript text
-        const transcriptText = FirefliesClient.buildTranscriptText(transcript.sentences);
+        // Match to deal/company/contacts using basic matching first
+        let match = await matchTranscriptToEntities(supabase, participants);
 
-        // Convert Unix timestamp to Date
-        const meetingDate = new Date(transcript.date * 1000);
+        // If basic matching has low confidence, use AI matching
+        const AI_MATCH_THRESHOLD = 0.7;
+        if (match.confidence < AI_MATCH_THRESHOLD && transcriptText.length > 100) {
+          console.log('[Fireflies Sync] Low confidence basic match, using AI matching...');
+          try {
+            const aiMatch = await aiMatchTranscriptToEntities(
+              transcriptText,
+              transcript.title || 'Untitled Meeting',
+              participants,
+              userId
+            );
+
+            // Update match with AI results if AI found a match
+            if (aiMatch.companyMatch || aiMatch.dealMatch) {
+              match = {
+                dealId: aiMatch.dealMatch?.id || match.dealId,
+                companyId: aiMatch.companyMatch?.id || match.companyId,
+                contactIds: match.contactIds, // Keep contacts from basic matching
+                confidence: aiMatch.overallConfidence,
+                aiMatchResult: aiMatch,
+                matchMethod: 'ai',
+              };
+              console.log('[Fireflies Sync] AI match found:', {
+                company: aiMatch.companyMatch?.name,
+                deal: aiMatch.dealMatch?.name,
+                confidence: aiMatch.overallConfidence,
+              });
+            } else {
+              // AI didn't find a match either, but save the result for review task creation
+              match.aiMatchResult = aiMatch;
+              match.matchMethod = match.confidence > 0 ? match.matchMethod : 'none';
+            }
+          } catch (aiError) {
+            console.error('[Fireflies Sync] AI matching failed:', aiError);
+            // Continue with basic match results
+          }
+        }
+
+        // Convert timestamp to Date
+        // Fireflies returns timestamps in milliseconds (13 digits)
+        const timestamp = transcript.date;
+        const meetingDate = timestamp > 9999999999
+          ? new Date(timestamp)  // Already in milliseconds
+          : new Date(timestamp * 1000);  // Convert from seconds
+
+        // Prepare insert data
+        const insertData = {
+          user_id: userId,
+          deal_id: match.dealId,
+          company_id: match.companyId,
+          title: transcript.title || 'Untitled Meeting',
+          meeting_date: meetingDate.toISOString().split('T')[0],
+          duration_minutes: Math.round((transcript.duration || 0) / 60),
+          attendees: transcript.participants || [],
+          transcription_text: transcriptText,
+          transcription_format: 'fireflies',
+          word_count: transcriptText.split(/\s+/).length,
+          source: 'fireflies',
+          external_id: firefliesId,
+          external_metadata: {
+            fireflies_id: transcript.id,
+            organizer_email: transcript.organizer_email,
+            sentences: sentences,
+            fireflies_summary: transcript.summary,
+            transcript_url: transcript.transcript_url,
+            audio_url: transcript.audio_url,
+            video_url: transcript.video_url,
+            match_method: match.matchMethod,
+            ai_match_result: match.aiMatchResult || null,
+          },
+          match_confidence: match.confidence,
+        };
+
+        console.log('[Fireflies Sync] Saving transcript to database:', transcript.id);
 
         // Save transcript to meeting_transcriptions
         const { data: saved, error: saveError } = await supabase
           .from('meeting_transcriptions')
-          .insert({
-            user_id: userId,
-            deal_id: match.dealId,
-            company_id: match.companyId,
-            title: transcript.title,
-            meeting_date: meetingDate.toISOString().split('T')[0],
-            duration_minutes: Math.round(transcript.duration / 60),
-            attendees: transcript.participants,
-            transcription_text: transcriptText,
-            transcription_format: 'fireflies',
-            word_count: transcriptText.split(/\s+/).length,
-            source: 'fireflies',
-            external_id: firefliesId,
-            external_metadata: {
-              fireflies_id: transcript.id,
-              organizer_email: transcript.organizer_email,
-              sentences: transcript.sentences,
-              fireflies_summary: transcript.summary,
-              transcript_url: transcript.transcript_url,
-              audio_url: transcript.audio_url,
-              video_url: transcript.video_url,
-            },
-            match_confidence: match.confidence,
-          })
+          .insert(insertData)
           .select()
           .single();
 
         if (saveError) {
+          console.error('[Fireflies Sync] Database insert error:', saveError);
           errors.push(`Failed to save transcript ${transcript.id}: ${saveError.message}`);
           continue;
         }
 
         synced++;
 
-        // Run AI analysis if enabled and we have a deal match
+        // Create review task if AI matching was used and requires human review
+        const REVIEW_TASK_THRESHOLD = 0.6;
+        const needsReview =
+          match.aiMatchResult?.requiresHumanReview ||
+          (match.confidence < REVIEW_TASK_THRESHOLD && !match.dealId && !match.companyId);
+
+        if (needsReview && saved) {
+          try {
+            const aiResult = match.aiMatchResult || {
+              companyMatch: null,
+              dealMatch: null,
+              suggestedSalesTeam: null,
+              overallConfidence: match.confidence,
+              reasoning: 'Basic matching failed - no email or name matches found',
+              extractedCompanyName: null,
+              extractedPersonNames: participants.map((p) => p.name),
+              extractedTopics: [],
+              requiresHumanReview: true,
+              reviewReason: 'Could not automatically determine company or deal assignment',
+            };
+
+            const taskId = await createTranscriptReviewTask(
+              saved.id,
+              transcript.title || 'Untitled Meeting',
+              aiResult,
+              userId
+            );
+
+            if (taskId) {
+              reviewTasksCreated++;
+              console.log('[Fireflies Sync] Created review task:', taskId);
+            }
+          } catch (taskError) {
+            console.error('[Fireflies Sync] Failed to create review task:', taskError);
+          }
+        }
+
+        // Run AI analysis if enabled
         if (connection.auto_analyze && saved) {
           try {
             const analysis = await analyzeMeetingTranscription(transcriptText, {
@@ -226,7 +342,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
     throw error;
   }
 
-  return { synced, analyzed, skipped, errors };
+  return { synced, analyzed, skipped, reviewTasksCreated, errors };
 }
 
 /**
@@ -240,6 +356,7 @@ async function matchTranscriptToEntities(
   let dealId: string | null = null;
   let companyId: string | null = null;
   let confidence = 0;
+  let matchMethod: 'email' | 'name' | 'ai' | 'none' = 'none';
 
   // Extract emails from participants
   const emails = participants
@@ -259,6 +376,7 @@ async function matchTranscriptToEntities(
       // Get company from first matched contact
       companyId = contacts[0].company_id;
       confidence = 0.8;
+      matchMethod = 'email';
 
       // Try to find active deal for this company
       if (companyId) {
@@ -295,6 +413,7 @@ async function matchTranscriptToEntities(
           if (!companyId && contact.company_id) {
             companyId = contact.company_id;
             confidence = 0.6;
+            matchMethod = 'name';
 
             // Find active deal for this company
             const { data: deals } = await supabase
@@ -316,7 +435,7 @@ async function matchTranscriptToEntities(
     }
   }
 
-  return { dealId, companyId, contactIds, confidence };
+  return { dealId, companyId, contactIds, confidence, matchMethod };
 }
 
 /**

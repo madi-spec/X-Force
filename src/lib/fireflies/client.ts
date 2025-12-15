@@ -25,7 +25,7 @@ export interface FirefliesSentence {
 export interface FirefliesTranscript {
   id: string;
   title: string;
-  date: number; // Unix timestamp
+  date: number; // Unix timestamp in milliseconds
   duration: number; // seconds
   organizer_email: string;
   participants: string[];
@@ -33,24 +33,23 @@ export interface FirefliesTranscript {
   audio_url: string;
   video_url: string | null;
 
-  // Summary from Fireflies
+  // Summary from Fireflies (may be null if not processed)
   summary: {
-    overview: string;
-    shorthand_bullet: string[];
-    action_items: string[];
-    outline: string[];
-    keywords: string[];
-    short_summary: string;
+    overview?: string;
+    shorthand_bullet?: string[];
+    action_items?: string[];
+    outline?: string[];
+    keywords?: string[];
   } | null;
 
-  // Full transcript with speaker diarization
+  // Full transcript with speaker diarization (may be empty)
   sentences: FirefliesSentence[];
 }
 
 export interface FirefliesTranscriptListItem {
   id: string;
   title: string;
-  date: number;
+  date: number; // Unix timestamp in milliseconds
   duration: number;
   organizer_email: string;
   participants: string[];
@@ -86,7 +85,9 @@ export class FirefliesClient {
     const result = await response.json();
 
     if (result.errors && result.errors.length > 0) {
-      throw new Error(result.errors[0].message || 'Unknown Fireflies API error');
+      console.error('[Fireflies API] GraphQL errors:', JSON.stringify(result.errors, null, 2));
+      const errorMessages = result.errors.map((e: { message?: string }) => e.message).join(', ');
+      throw new Error(errorMessages || 'Unknown Fireflies API error');
     }
 
     return result.data;
@@ -170,7 +171,8 @@ export class FirefliesClient {
     const transcripts = await this.getTranscripts({ limit });
 
     if (fromDate) {
-      const fromTimestamp = Math.floor(fromDate.getTime() / 1000);
+      // Fireflies returns dates in milliseconds
+      const fromTimestamp = fromDate.getTime();
       return transcripts.filter(t => t.date >= fromTimestamp);
     }
 
@@ -181,9 +183,10 @@ export class FirefliesClient {
    * Get single transcript with full content
    */
   async getTranscript(transcriptId: string): Promise<FirefliesTranscript> {
+    // Note: Fireflies API uses 'transcript_id' as the argument name
     const query = `
-      query Transcript($id: String!) {
-        transcript(id: $id) {
+      query GetTranscript($transcriptId: String!) {
+        transcript(id: $transcriptId) {
           id
           title
           date
@@ -200,7 +203,6 @@ export class FirefliesClient {
             action_items
             outline
             keywords
-            short_summary
           }
 
           sentences {
@@ -215,9 +217,10 @@ export class FirefliesClient {
       }
     `;
 
+    console.log('[Fireflies API] Fetching transcript:', transcriptId);
     const data = await this.query<{ transcript: FirefliesTranscript }>(
       query,
-      { id: transcriptId }
+      { transcriptId }
     );
 
     if (!data.transcript) {
