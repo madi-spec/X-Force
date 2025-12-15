@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { Link2, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
+import { Link2, ArrowLeft, CheckCircle, AlertCircle, Mic } from 'lucide-react';
 import Link from 'next/link';
 import { MicrosoftConnection } from '@/components/settings/MicrosoftConnection';
+import { FirefliesIntegration } from '@/components/settings/FirefliesIntegration';
 
 export default async function IntegrationsPage({
   searchParams,
@@ -94,6 +95,16 @@ export default async function IntegrationsPage({
           <MicrosoftConnection
             connection={microsoftConnection}
           />
+        </div>
+
+        {/* Fireflies.ai Integration */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Mic className="h-5 w-5 text-purple-500" />
+            <h2 className="text-lg font-semibold text-gray-900">Fireflies.ai</h2>
+          </div>
+
+          <FirefliesIntegration />
         </div>
 
         {/* Future Integrations Placeholder */}

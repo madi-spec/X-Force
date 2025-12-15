@@ -714,7 +714,9 @@ export interface CalendarSyncResult {
 // MEETING TRANSCRIPTIONS
 // ============================================
 
-export type TranscriptionFormat = 'plain' | 'vtt' | 'srt' | 'teams' | 'zoom' | 'otter';
+export type TranscriptionFormat = 'plain' | 'vtt' | 'srt' | 'teams' | 'zoom' | 'otter' | 'fireflies';
+
+export type TranscriptionSource = 'manual' | 'fireflies' | 'zoom' | 'teams';
 
 export interface MeetingTranscription {
   id: string;
@@ -736,6 +738,11 @@ export interface MeetingTranscription {
   follow_up_email_draft: string | null;
   created_at: string;
   updated_at: string;
+  // External source fields
+  source: TranscriptionSource;
+  external_id: string | null;
+  external_metadata: Record<string, unknown> | null;
+  match_confidence: number | null;
   // Relations
   deal?: Deal;
   company?: Company;
@@ -868,4 +875,33 @@ export interface MeetingFollowUpEmail {
   subject: string;
   body: string;
   attachmentSuggestions: string[];
+}
+
+// ============================================
+// FIREFLIES INTEGRATION
+// ============================================
+
+export type FirefliesSyncStatus = 'success' | 'error' | 'in_progress';
+
+export interface FirefliesConnection {
+  id: string;
+  user_id: string;
+  api_key: string;
+  auto_analyze: boolean;
+  auto_create_drafts: boolean;
+  auto_create_tasks: boolean;
+  last_sync_at: string | null;
+  last_sync_status: FirefliesSyncStatus | null;
+  last_sync_error: string | null;
+  transcripts_synced: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FirefliesSyncResult {
+  synced: number;
+  analyzed: number;
+  skipped: number;
+  errors: string[];
 }

@@ -82,6 +82,11 @@ export default async function MeetingAnalysisPage({
     follow_up_email_draft: transcription.follow_up_email_draft,
     created_at: transcription.created_at,
     updated_at: transcription.updated_at,
+    // External source fields
+    source: transcription.source || 'manual',
+    external_id: transcription.external_id || null,
+    external_metadata: transcription.external_metadata || null,
+    match_confidence: transcription.match_confidence || null,
   };
 
   const deal = transcription.deal as Deal | null;
