@@ -102,7 +102,7 @@ const STAGE_BENCHMARKS: Record<string, number> = {
 export async function calculateDealHealth(dealId: string): Promise<HealthScoreResult> {
   const supabase = await createClient();
 
-  // Fetch deal with all related data
+  // Fetch deal with all related data (except contacts - fetched separately)
   const { data: deal, error } = await supabase
     .from('deals')
     .select(`
@@ -117,10 +117,6 @@ export async function calculateDealHealth(dealId: string): Promise<HealthScoreRe
         occurred_at,
         sentiment,
         metadata
-      ),
-      contacts:deal_contacts(
-        is_primary,
-        contact:contacts(id, name, title, role)
       )
     `)
     .eq('id', dealId)
@@ -128,6 +124,22 @@ export async function calculateDealHealth(dealId: string): Promise<HealthScoreRe
 
   if (error || !deal) {
     throw new Error(`Deal not found: ${dealId}`);
+  }
+
+  // Fetch contacts via company (deal_contacts table doesn't exist)
+  let contacts: DealWithRelations['contacts'] = [];
+  if (deal.company_id) {
+    const { data: companyContacts } = await supabase
+      .from('contacts')
+      .select('id, name, title, role')
+      .eq('company_id', deal.company_id);
+
+    if (companyContacts) {
+      contacts = companyContacts.map((c, idx) => ({
+        is_primary: idx === 0, // First contact treated as primary
+        contact: c,
+      }));
+    }
   }
 
   // Sort activities by date (most recent first)
@@ -139,7 +151,7 @@ export async function calculateDealHealth(dealId: string): Promise<HealthScoreRe
   // Calculate component scores
   const engagement = calculateEngagementScore(activities);
   const velocity = calculateVelocityScore(deal);
-  const stakeholder = calculateStakeholderScore(deal.contacts || [], deal.company?.segment);
+  const stakeholder = calculateStakeholderScore(contacts, deal.company?.segment);
   const activity = calculateActivityScore(activities);
   const sentiment = calculateSentimentScore(activities);
 

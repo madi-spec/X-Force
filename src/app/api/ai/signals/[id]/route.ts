@@ -23,8 +23,7 @@ export async function DELETE(
     const { error } = await supabase
       .from('ai_signals')
       .update({
-        is_active: false,
-        dismissed_at: new Date().toISOString(),
+        status: 'dismissed',
       })
       .eq('id', id);
 
@@ -63,13 +62,12 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Mark signal as actioned
+    // Mark signal as resolved (actioned)
     const { error } = await supabase
       .from('ai_signals')
       .update({
-        is_active: false,
-        actioned_at: new Date().toISOString(),
-        action_taken: actionTaken || null,
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
       })
       .eq('id', id);
 

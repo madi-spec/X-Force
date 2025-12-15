@@ -319,9 +319,6 @@ export async function detectDealSignals(dealId: string): Promise<DetectedSignal[
     .select(`
       *,
       company:companies(id, name),
-      contacts:deal_contacts(
-        contact:contacts(*)
-      ),
       activities(*)
     `)
     .eq('id', dealId)
@@ -332,10 +329,19 @@ export async function detectDealSignals(dealId: string): Promise<DetectedSignal[
     return [];
   }
 
-  // Flatten contacts
+  // Fetch contacts for the company
+  let contacts: Contact[] = [];
+  if (deal.company_id) {
+    const { data: companyContacts } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('company_id', deal.company_id);
+    contacts = companyContacts || [];
+  }
+
   const dealWithRelations: DealWithRelations = {
     ...deal,
-    contacts: deal.contacts?.map((dc: { contact: Contact }) => dc.contact) || [],
+    contacts,
   };
 
   // Run all detection rules
@@ -366,9 +372,6 @@ export async function detectAllSignals(): Promise<DetectedSignal[]> {
     .select(`
       *,
       company:companies(id, name),
-      contacts:deal_contacts(
-        contact:contacts(*)
-      ),
       activities(*)
     `)
     .not('stage', 'in', '("closed_won","closed_lost")');
@@ -378,12 +381,25 @@ export async function detectAllSignals(): Promise<DetectedSignal[]> {
     return [];
   }
 
+  // Fetch all contacts grouped by company
+  const companyIds = [...new Set(deals.map(d => d.company_id).filter(Boolean))];
+  const { data: allContacts } = await supabase
+    .from('contacts')
+    .select('*')
+    .in('company_id', companyIds);
+
+  const contactsByCompany = (allContacts || []).reduce((acc, contact) => {
+    if (!acc[contact.company_id]) acc[contact.company_id] = [];
+    acc[contact.company_id].push(contact);
+    return acc;
+  }, {} as Record<string, Contact[]>);
+
   const allSignals: DetectedSignal[] = [];
 
   for (const deal of deals) {
     const dealWithRelations: DealWithRelations = {
       ...deal,
-      contacts: deal.contacts?.map((dc: { contact: Contact }) => dc.contact) || [],
+      contacts: contactsByCompany[deal.company_id] || [],
     };
 
     for (const rule of signalRules) {
@@ -411,6 +427,7 @@ export async function detectAllSignals(): Promise<DetectedSignal[]> {
 
 /**
  * Save detected signals to database
+ * Note: Maps our signal format to the database schema
  */
 export async function saveSignals(signals: DetectedSignal[]): Promise<void> {
   if (signals.length === 0) return;
@@ -429,18 +446,43 @@ export async function saveSignals(signals: DetectedSignal[]): Promise<void> {
 
   if (!dbUser) return;
 
+  // Map our severity to database enum
+  const severityMap: Record<SignalSeverity, string> = {
+    critical: 'critical',
+    high: 'warning',
+    medium: 'info',
+    low: 'info',
+  };
+
+  // Map our signal type to database enum
+  const typeMap: Record<SignalType, string> = {
+    stale_deal: 'stale',
+    stuck_stage: 'stage_stuck',
+    high_engagement: 'engagement_spike',
+    champion_identified: 'buying_signal',
+    competitor_mentioned: 'competitor',
+    budget_confirmed: 'buying_signal',
+    decision_timeline: 'buying_signal',
+    risk_escalation: 'risk',
+    momentum_shift: 'engagement_drop',
+    multi_thread_opportunity: 'action_needed',
+  };
+
   // Prepare signal records
   const signalRecords = signals.map(signal => ({
     deal_id: signal.dealId,
     user_id: dbUser.id,
-    signal_type: signal.type,
-    severity: signal.severity,
-    category: signal.category,
+    signal_type: typeMap[signal.type] || 'risk',
+    severity: severityMap[signal.severity] || 'info',
     title: signal.title,
     description: signal.description,
-    suggested_action: signal.suggestedAction,
-    metadata: signal.metadata,
-    detected_at: signal.detectedAt.toISOString(),
+    evidence: {
+      ...signal.metadata,
+      suggested_action: signal.suggestedAction,
+      original_type: signal.type,
+      category: signal.category,
+    },
+    status: 'active',
   }));
 
   // Upsert to avoid duplicates (same deal + type within 24 hours)
@@ -451,8 +493,7 @@ export async function saveSignals(signals: DetectedSignal[]): Promise<void> {
       .select('id')
       .eq('deal_id', record.deal_id)
       .eq('signal_type', record.signal_type)
-      .eq('is_active', true)
-      .gte('detected_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .eq('status', 'active')
       .single();
 
     if (!existing) {
@@ -463,6 +504,7 @@ export async function saveSignals(signals: DetectedSignal[]): Promise<void> {
 
 /**
  * Get active signals for display
+ * Maps database schema back to our signal format
  */
 export async function getActiveSignals(options?: {
   dealId?: string;
@@ -478,18 +520,11 @@ export async function getActiveSignals(options?: {
       *,
       deal:deals(id, name, company:companies(name))
     `)
-    .eq('is_active', true)
-    .order('severity', { ascending: true })
-    .order('detected_at', { ascending: false });
+    .eq('status', 'active')
+    .order('created_at', { ascending: false });
 
   if (options?.dealId) {
     query = query.eq('deal_id', options.dealId);
-  }
-  if (options?.category) {
-    query = query.eq('category', options.category);
-  }
-  if (options?.severity) {
-    query = query.eq('severity', options.severity);
   }
   if (options?.limit) {
     query = query.limit(options.limit);
@@ -502,19 +537,31 @@ export async function getActiveSignals(options?: {
     return [];
   }
 
-  return data.map(row => ({
-    type: row.signal_type as SignalType,
-    severity: row.severity as SignalSeverity,
-    category: row.category as SignalCategory,
-    title: row.title,
-    description: row.description,
-    dealId: row.deal_id,
-    dealName: row.deal?.name || 'Unknown Deal',
-    companyName: row.deal?.company?.name,
-    suggestedAction: row.suggested_action,
-    metadata: row.metadata || {},
-    detectedAt: new Date(row.detected_at),
-  }));
+  // Map database severity back to our format
+  const severityReverseMap: Record<string, SignalSeverity> = {
+    critical: 'critical',
+    warning: 'high',
+    info: 'medium',
+    positive: 'low',
+  };
+
+  return data.map(row => {
+    const evidence = row.evidence || {};
+    return {
+      id: row.id,
+      type: (evidence.original_type || row.signal_type) as SignalType,
+      severity: severityReverseMap[row.severity] || 'medium',
+      category: (evidence.category || 'risk') as SignalCategory,
+      title: row.title,
+      description: row.description,
+      dealId: row.deal_id,
+      dealName: row.deal?.name || 'Unknown Deal',
+      companyName: row.deal?.company?.name,
+      suggestedAction: evidence.suggested_action,
+      metadata: evidence,
+      detectedAt: new Date(row.created_at),
+    };
+  });
 }
 
 /**
@@ -526,8 +573,7 @@ export async function dismissSignal(signalId: string): Promise<void> {
   await supabase
     .from('ai_signals')
     .update({
-      is_active: false,
-      dismissed_at: new Date().toISOString()
+      status: 'dismissed',
     })
     .eq('id', signalId);
 }

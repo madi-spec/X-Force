@@ -35,25 +35,42 @@ interface CommandCenterProps {
 export function CommandCenter({ userName, stats }: CommandCenterProps) {
   const [scanning, setScanning] = useState(false);
   const [lastScan, setLastScan] = useState<Date | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalculateResult, setRecalculateResult] = useState<{ processed: number; updated: number } | null>(null);
 
-  // Run initial scan on mount
-  useEffect(() => {
-    handleScan();
-  }, []);
+  const [signalKey, setSignalKey] = useState(0);
 
   const handleScan = async () => {
     setScanning(true);
     try {
-      await fetch('/api/ai/signals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ save: true }),
-      });
+      // Just trigger a refresh of the SignalsList component
+      setSignalKey(prev => prev + 1);
       setLastScan(new Date());
     } catch (err) {
       console.error('Error scanning:', err);
     } finally {
       setScanning(false);
+    }
+  };
+
+  const handleRecalculateAll = async () => {
+    setRecalculating(true);
+    setRecalculateResult(null);
+    try {
+      const response = await fetch('/api/ai/health-score', {
+        method: 'PUT',
+      });
+      if (!response.ok) throw new Error('Failed to recalculate');
+      const result = await response.json();
+      setRecalculateResult({ processed: result.processed, updated: result.updated });
+      // Refresh the page after a short delay to show updated stats
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (err) {
+      console.error('Error recalculating:', err);
+    } finally {
+      setRecalculating(false);
     }
   };
 
@@ -66,17 +83,47 @@ export function CommandCenter({ userName, stats }: CommandCenterProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl">
-              <Brain className="h-6 w-6 text-white" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl">
+                <Brain className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">AI Command Center</h1>
+                <p className="text-sm text-gray-500">
+                  Good {getGreeting()}, {userName}. Here&apos;s your pipeline intelligence.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">AI Command Center</h1>
-              <p className="text-sm text-gray-500">
-                Good {getGreeting()}, {userName}. Here&apos;s your pipeline intelligence.
+
+            {/* Recalculate All Button */}
+            <button
+              onClick={handleRecalculateAll}
+              disabled={recalculating}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors',
+                recalculating
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-violet-600 text-white hover:bg-violet-700'
+              )}
+            >
+              {recalculating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {recalculating ? 'Recalculating...' : 'Recalculate All Health Scores'}
+            </button>
+          </div>
+
+          {/* Recalculate Result */}
+          {recalculateResult && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800">
+                Recalculated {recalculateResult.processed} deals, {recalculateResult.updated} updated. Refreshing...
               </p>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Stats Grid */}
@@ -163,6 +210,7 @@ export function CommandCenter({ userName, stats }: CommandCenterProps) {
               </div>
 
               <SignalsList
+                key={signalKey}
                 showFilters={true}
                 showRefresh={false}
                 groupByCategory={true}

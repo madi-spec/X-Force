@@ -61,15 +61,17 @@ export function SignalsList({
       setLoading(true);
       setError(null);
 
-      const params = new URLSearchParams();
-      if (dealId) params.set('dealId', dealId);
-      if (maxSignals) params.set('limit', maxSignals.toString());
+      // Run signal detection directly instead of fetching from DB
+      const response = await fetch('/api/ai/signals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId, save: false }),
+      });
 
-      const response = await fetch(`/api/ai/signals?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch signals');
+      if (!response.ok) throw new Error('Failed to detect signals');
 
       const data = await response.json();
-      setSignals(data.signals);
+      setSignals(data.signals || []);
     } catch (err) {
       setError('Failed to load signals');
       console.error('Error fetching signals:', err);
@@ -83,17 +85,18 @@ export function SignalsList({
       setRefreshing(true);
       setError(null);
 
-      // Run signal detection
+      // Run signal detection - use returned signals directly
       const detectResponse = await fetch('/api/ai/signals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dealId, save: true }),
+        body: JSON.stringify({ dealId, save: false }), // Don't save, just detect
       });
 
       if (!detectResponse.ok) throw new Error('Failed to detect signals');
 
-      // Refetch active signals
-      await fetchSignals();
+      const data = await detectResponse.json();
+      // Use detected signals directly instead of refetching from DB
+      setSignals(data.signals || []);
     } catch (err) {
       setError('Failed to refresh signals');
       console.error('Error refreshing signals:', err);

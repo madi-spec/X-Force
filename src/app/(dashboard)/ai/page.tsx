@@ -28,20 +28,24 @@ export default async function AIPage() {
   }
 
   // Fetch summary stats for the dashboard
-  const { data: deals } = await supabase
+  const { data: deals, error: dealsError } = await supabase
     .from('deals')
-    .select('id, health_score, health_trend, value, stage')
+    .select('id, health_score, health_trend, estimated_value, stage')
     .not('stage', 'in', '("closed_won","closed_lost")');
+
+  if (dealsError) {
+    console.error('Error fetching deals for stats:', dealsError);
+  }
 
   const stats = {
     totalOpenDeals: deals?.length || 0,
     atRiskDeals: deals?.filter(d => d.health_score !== null && d.health_score < 50).length || 0,
     decliningDeals: deals?.filter(d => d.health_trend === 'declining').length || 0,
     healthyDeals: deals?.filter(d => d.health_score !== null && d.health_score >= 70).length || 0,
-    totalPipelineValue: deals?.reduce((sum, d) => sum + (d.value || 0), 0) || 0,
+    totalPipelineValue: deals?.reduce((sum, d) => sum + (d.estimated_value || 0), 0) || 0,
     atRiskValue: deals
       ?.filter(d => d.health_score !== null && d.health_score < 50)
-      .reduce((sum, d) => sum + (d.value || 0), 0) || 0,
+      .reduce((sum, d) => sum + (d.estimated_value || 0), 0) || 0,
   };
 
   return (
