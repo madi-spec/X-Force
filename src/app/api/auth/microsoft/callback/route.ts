@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 const GRAPH_URL = 'https://graph.microsoft.com/v1.0';
@@ -74,8 +74,8 @@ export async function GET(request: Request) {
       );
     }
 
-    // Store connection in database
-    const supabase = await createClient();
+    // Store connection in database (use admin client to bypass RLS)
+    const supabase = createAdminClient();
 
     const { error: upsertError } = await supabase
       .from('microsoft_connections')

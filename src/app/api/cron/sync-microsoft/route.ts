@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { syncEmails } from '@/lib/microsoft/emailSync';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
 
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Get all active Microsoft connections
   const { data: connections, error } = await supabase

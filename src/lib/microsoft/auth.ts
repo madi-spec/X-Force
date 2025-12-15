@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 
@@ -6,7 +6,7 @@ const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
  * Get a valid access token for a user, refreshing if necessary
  */
 export async function getValidToken(userId: string): Promise<string | null> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: connection, error } = await supabase
     .from('microsoft_connections')
@@ -37,7 +37,7 @@ export async function getValidToken(userId: string): Promise<string | null> {
  * Refresh an access token using the refresh token
  */
 async function refreshToken(userId: string, refreshTokenValue: string): Promise<string | null> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   try {
     const response = await fetch(TOKEN_URL, {
@@ -91,7 +91,7 @@ async function refreshToken(userId: string, refreshTokenValue: string): Promise<
  * Check if a user has an active Microsoft connection
  */
 export async function hasActiveConnection(userId: string): Promise<boolean> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from('microsoft_connections')
@@ -107,7 +107,7 @@ export async function hasActiveConnection(userId: string): Promise<boolean> {
  * Get the Microsoft connection for a user
  */
 export async function getConnection(userId: string) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from('microsoft_connections')
@@ -126,7 +126,7 @@ export async function getConnection(userId: string) {
  * Disconnect a user's Microsoft account
  */
 export async function disconnectMicrosoft(userId: string): Promise<boolean> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { error } = await supabase
     .from('microsoft_connections')
@@ -140,7 +140,7 @@ export async function disconnectMicrosoft(userId: string): Promise<boolean> {
  * Update the last sync timestamp
  */
 export async function updateLastSync(userId: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   await supabase
     .from('microsoft_connections')

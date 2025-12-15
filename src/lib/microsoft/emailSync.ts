@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { MicrosoftGraphClient } from './graph';
 import { getValidToken, updateLastSync } from './auth';
 
@@ -20,7 +20,7 @@ export async function syncEmails(userId: string): Promise<EmailSyncResult> {
     return result;
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const client = new MicrosoftGraphClient(token);
 
   try {
