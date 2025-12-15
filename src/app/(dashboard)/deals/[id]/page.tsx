@@ -28,10 +28,10 @@ import {
 import { TeamSection } from '@/components/deals/TeamSection';
 import { ActivityLogger } from '@/components/deals/ActivityLogger';
 import { MeetingActivityCard } from '@/components/meetings';
+import { HealthScoreBreakdown } from '@/components/ai/health';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   getHealthScoreColor,
-  getHealthScoreLabel,
   PIPELINE_STAGES,
   SALES_TEAMS,
   type SalesTeam,
@@ -445,25 +445,11 @@ export default async function DealPage({ params }: DealPageProps) {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Health Score */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Health Score</h2>
-            <div className="flex items-center gap-4">
-              <div
-                className={cn(
-                  'text-4xl font-bold',
-                  getHealthScoreColor(deal.health_score)
-                )}
-              >
-                {deal.health_score}
-              </div>
-              <div>
-                <p className={cn('font-medium', getHealthScoreColor(deal.health_score))}>
-                  {getHealthScoreLabel(deal.health_score)}
-                </p>
-                <p className="text-xs text-gray-500">out of 100</p>
-              </div>
-            </div>
-          </div>
+          <HealthScoreBreakdown
+            dealId={id}
+            initialScore={deal.health_score}
+            initialTrend={deal.health_trend}
+          />
 
           {/* Deal Info */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

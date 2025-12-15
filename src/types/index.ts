@@ -272,6 +272,8 @@ export interface Contact {
 // DEALS
 // ============================================
 
+export type HealthTrend = 'improving' | 'stable' | 'declining';
+
 export interface Deal {
   id: string;
   company_id: string;
@@ -284,6 +286,8 @@ export interface Deal {
   quoted_products: string[]; // array of product IDs
   health_score: number;
   health_factors: HealthFactors | null;
+  health_trend: HealthTrend | null;
+  health_updated_at: string | null;
   estimated_value: number;
   products: Products | null; // legacy field
   competitor_mentioned: string | null;
