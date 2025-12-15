@@ -227,6 +227,29 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
 
         synced++;
 
+        // Create activity record if matched to a deal (so it shows in Recent Activity)
+        if (match.dealId && saved) {
+          try {
+            await supabase.from('activities').insert({
+              deal_id: match.dealId,
+              company_id: match.companyId,
+              user_id: userId,
+              type: 'meeting',
+              subject: transcript.title || 'Meeting',
+              body: transcript.summary?.overview || `Meeting transcript synced from Fireflies`,
+              occurred_at: meetingDate.toISOString(),
+              metadata: {
+                transcription_id: saved.id,
+                source: 'fireflies',
+                duration_minutes: Math.round((transcript.duration || 0) / 60),
+              },
+            });
+            console.log('[Fireflies Sync] Created meeting activity for transcript');
+          } catch (activityError) {
+            console.error('[Fireflies Sync] Failed to create activity:', activityError);
+          }
+        }
+
         // Handle unmatched transcripts - create review task with extracted data
         const noMatch = !match.dealId && !match.companyId;
 

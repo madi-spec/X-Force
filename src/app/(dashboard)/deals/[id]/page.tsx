@@ -24,6 +24,8 @@ import {
   UserCheck,
   UserX,
   Eye,
+  Video,
+  FileText,
 } from 'lucide-react';
 import { TeamSection } from '@/components/deals/TeamSection';
 import { ActivityLogger } from '@/components/deals/ActivityLogger';
@@ -305,6 +307,51 @@ export default async function DealPage({ params }: DealPageProps) {
               <p className="text-sm text-gray-500">No activity yet</p>
             )}
           </div>
+
+          {/* Meeting Transcripts */}
+          {transcriptions && transcriptions.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h2 className="font-semibold text-gray-900 mb-4">Meeting Transcripts</h2>
+              <div className="space-y-3">
+                {transcriptions.map((transcript) => (
+                  <Link
+                    key={transcript.id}
+                    href={`/meetings/${transcript.id}/analysis`}
+                    className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors"
+                  >
+                    <div className="h-10 w-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
+                      <Video className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{transcript.title}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-gray-500">
+                          {formatRelativeTime(transcript.meeting_date || transcript.created_at)}
+                        </span>
+                        {transcript.duration_minutes && (
+                          <span className="text-xs text-gray-500">
+                            {transcript.duration_minutes} min
+                          </span>
+                        )}
+                        {transcript.source && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                            {transcript.source}
+                          </span>
+                        )}
+                      </div>
+                      {transcript.ai_summary && (
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                          {transcript.ai_summary}
+                        </p>
+                      )}
+                    </div>
+                    <Eye className="h-4 w-4 text-gray-400 shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Team Section */}
           <TeamSection
             dealId={id}
