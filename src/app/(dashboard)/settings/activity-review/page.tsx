@@ -72,6 +72,8 @@ export default function ActivityReviewPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedDealId, setSelectedDealId] = useState<Record<string, string>>({});
+  const [dealSearch, setDealSearch] = useState<Record<string, string>>({});
+  const [showDealDropdown, setShowDealDropdown] = useState<Record<string, boolean>>({});
   const [excludeReason, setExcludeReason] = useState<Record<string, string>>({});
 
   // Create new modal state
@@ -94,6 +96,17 @@ export default function ActivityReviewPage() {
   const filteredCompanies = companies.filter((c) =>
     c.name.toLowerCase().includes(companySearch.toLowerCase())
   );
+
+  // Get filtered deals for a specific activity
+  const getFilteredDeals = (activityId: string) => {
+    const searchTerm = dealSearch[activityId] || '';
+    if (!searchTerm) return deals;
+    return deals.filter(
+      (d) =>
+        d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.company?.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  };
 
   const fetchActivities = useCallback(async () => {
     setLoading(true);
@@ -689,20 +702,92 @@ export default function ActivityReviewPage() {
                         <Briefcase className="h-4 w-4 text-blue-500" />
                         <h4 className="font-medium text-gray-900">Match to Deal</h4>
                       </div>
-                      <select
-                        value={selectedDealId[activity.id] || ''}
-                        onChange={(e) =>
-                          setSelectedDealId((prev) => ({ ...prev, [activity.id]: e.target.value }))
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm mb-3"
-                      >
-                        <option value="">Select a deal...</option>
-                        {deals.map((deal) => (
-                          <option key={deal.id} value={deal.id}>
-                            {deal.name} {deal.company ? `(${deal.company.name})` : ''}
-                          </option>
-                        ))}
-                      </select>
+
+                      {/* Selected Deal Display */}
+                      {selectedDealId[activity.id] && (
+                        <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg mb-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Briefcase className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                            <span className="font-medium text-blue-900 text-sm truncate">
+                              {deals.find((d) => d.id === selectedDealId[activity.id])?.name}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedDealId((prev) => ({ ...prev, [activity.id]: '' }));
+                              setDealSearch((prev) => ({ ...prev, [activity.id]: '' }));
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-xs flex-shrink-0 ml-2"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Deal Search */}
+                      {!selectedDealId[activity.id] && (
+                        <div className="relative mb-3">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={dealSearch[activity.id] || ''}
+                              onChange={(e) => {
+                                setDealSearch((prev) => ({ ...prev, [activity.id]: e.target.value }));
+                                setShowDealDropdown((prev) => ({ ...prev, [activity.id]: true }));
+                              }}
+                              onFocus={() => setShowDealDropdown((prev) => ({ ...prev, [activity.id]: true }))}
+                              placeholder="Search deals..."
+                              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+
+                          {/* Deal Dropdown */}
+                          {showDealDropdown[activity.id] && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {getFilteredDeals(activity.id).length > 0 ? (
+                                <>
+                                  {getFilteredDeals(activity.id).slice(0, 8).map((deal) => (
+                                    <button
+                                      key={deal.id}
+                                      onClick={() => {
+                                        setSelectedDealId((prev) => ({ ...prev, [activity.id]: deal.id }));
+                                        setDealSearch((prev) => ({ ...prev, [activity.id]: '' }));
+                                        setShowDealDropdown((prev) => ({ ...prev, [activity.id]: false }));
+                                      }}
+                                      className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm"
+                                    >
+                                      <Briefcase className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                                      <div className="min-w-0">
+                                        <div className="truncate">{deal.name}</div>
+                                        {deal.company && (
+                                          <div className="text-xs text-gray-500 truncate">{deal.company.name}</div>
+                                        )}
+                                      </div>
+                                    </button>
+                                  ))}
+                                  {getFilteredDeals(activity.id).length > 8 && (
+                                    <div className="px-3 py-2 text-xs text-gray-500 border-t">
+                                      +{getFilteredDeals(activity.id).length - 8} more
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-gray-500">
+                                  No deals found
+                                </div>
+                              )}
+                              <button
+                                onClick={() => setShowDealDropdown((prev) => ({ ...prev, [activity.id]: false }))}
+                                className="w-full px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50 border-t"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <button
                         onClick={() => handleMatch(activity.id)}
                         disabled={!selectedDealId[activity.id] || processingId === activity.id}
