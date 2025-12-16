@@ -524,6 +524,7 @@ export interface GetIntelligenceResponse {
   mentions: IndustryMention[];
   isStale: boolean;
   lastCollectedAt: string | null;
+  companyDomain: string | null;
 }
 
 export interface TriggerCollectionRequest {

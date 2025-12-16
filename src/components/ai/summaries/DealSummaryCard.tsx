@@ -292,7 +292,7 @@ export function DealSummaryCard({ dealId, initialSummary, className, compact = f
                 {summary.risks.slice(0, 3).map((risk, i) => (
                   <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
                     <span className="text-red-400">•</span>
-                    {risk}
+                    {typeof risk === 'string' ? risk : (risk as { description?: string; risk?: string; type?: string })?.description || (risk as { risk?: string })?.risk || (risk as { type?: string })?.type || ''}
                   </li>
                 ))}
               </ul>
@@ -308,7 +308,7 @@ export function DealSummaryCard({ dealId, initialSummary, className, compact = f
                 {summary.opportunities.slice(0, 3).map((opp, i) => (
                   <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
                     <span className="text-green-400">•</span>
-                    {opp}
+                    {typeof opp === 'string' ? opp : (opp as { description?: string; opportunity?: string; potential?: string })?.description || (opp as { opportunity?: string })?.opportunity || (opp as { potential?: string })?.potential || ''}
                   </li>
                 ))}
               </ul>

@@ -26,6 +26,15 @@ export async function GET(
     const { companyId } = await params;
     const supabase = createAdminClient();
 
+    // Get company domain
+    const { data: company } = await supabase
+      .from('companies')
+      .select('domain')
+      .eq('id', companyId)
+      .single();
+
+    const companyDomain = company?.domain || null;
+
     // Get main intelligence record
     const intelligence = await getIntelligence(companyId);
 
@@ -37,6 +46,7 @@ export async function GET(
         mentions: [],
         isStale: true,
         lastCollectedAt: null,
+        companyDomain,
       });
     }
 
@@ -72,6 +82,7 @@ export async function GET(
       mentions: mentionsResult.data || [],
       isStale,
       lastCollectedAt: intelligence.last_collected_at,
+      companyDomain,
     });
   } catch (error) {
     console.error('[API] Error getting intelligence:', error);

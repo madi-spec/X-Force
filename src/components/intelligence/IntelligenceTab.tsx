@@ -63,13 +63,17 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
       if (!response.ok) throw new Error('Failed to fetch intelligence');
       const result = await response.json();
       setData(result);
+      // Pre-fill domain input with stored domain
+      if (result.companyDomain && !domain) {
+        setDomain(result.companyDomain);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
-  }, [companyId]);
+  }, [companyId, domain]);
 
   useEffect(() => {
     fetchIntelligence();
@@ -180,7 +184,7 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
     );
   }
 
-  const { intelligence, sources, contacts, mentions, isStale, lastCollectedAt } = data;
+  const { intelligence, sources, contacts, mentions, isStale, lastCollectedAt, companyDomain } = data;
 
   return (
     <div className="space-y-6">
@@ -189,6 +193,7 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
         intelligence={intelligence}
         isStale={isStale}
         lastCollectedAt={lastCollectedAt}
+        companyDomain={companyDomain}
         onRefresh={handleRefresh}
         refreshing={refreshing}
       />
@@ -237,12 +242,14 @@ function IntelligenceHeader({
   intelligence,
   isStale,
   lastCollectedAt,
+  companyDomain,
   onRefresh,
   refreshing,
 }: {
   intelligence: AccountIntelligence;
   isStale: boolean;
   lastCollectedAt: string | null;
+  companyDomain: string | null;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
@@ -254,16 +261,24 @@ function IntelligenceHeader({
         </div>
         <div>
           <h2 className="font-semibold text-gray-900">Account Intelligence</h2>
-          <p className="text-sm text-gray-500">
-            {lastCollectedAt ? (
-              <>Last updated {formatRelativeTime(lastCollectedAt)}</>
-            ) : (
-              'Never collected'
+          <div className="flex items-center gap-3 text-sm text-gray-500">
+            <span>
+              {lastCollectedAt ? (
+                <>Last updated {formatRelativeTime(lastCollectedAt)}</>
+              ) : (
+                'Never collected'
+              )}
+              {isStale && (
+                <span className="ml-2 text-amber-600">(Stale)</span>
+              )}
+            </span>
+            {companyDomain && (
+              <span className="flex items-center gap-1 text-gray-400">
+                <Globe className="h-3 w-3" />
+                {companyDomain}
+              </span>
             )}
-            {isStale && (
-              <span className="ml-2 text-amber-600">(Stale)</span>
-            )}
-          </p>
+          </div>
         </div>
       </div>
       <button
