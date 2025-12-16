@@ -101,8 +101,8 @@ export default async function InboxPage() {
       <div>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inbox</h1>
-            <p className="text-gray-500 text-sm mt-1">
+            <h1 className="text-xl font-normal text-gray-900">Inbox</h1>
+            <p className="text-xs text-gray-500 mt-1">
               Your unified email inbox
             </p>
           </div>
@@ -113,16 +113,16 @@ export default async function InboxPage() {
             <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
               <Mail className="h-8 w-8 text-blue-600" />
             </div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            <h2 className="text-base font-medium text-gray-900 mb-2">
               Connect Microsoft 365
             </h2>
-            <p className="text-gray-500 text-sm mb-6">
+            <p className="text-xs text-gray-500 mb-6">
               Connect your Microsoft 365 account to sync emails and calendar events.
               Your emails will appear here and be automatically linked to contacts and deals.
             </p>
             <Link
               href="/settings/integrations"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
             >
               <Settings className="h-4 w-4" />
               Connect Microsoft 365
@@ -217,8 +217,8 @@ export default async function InboxPage() {
     <div className="h-[calc(100vh-8rem)]">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inbox</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-xl font-normal text-gray-900">Inbox</h1>
+          <p className="text-xs text-gray-500 mt-1">
             {emails.length} emails{statusParts.length > 0 ? ` (${statusParts.join(', ')})` : ''}
             {microsoftConnection?.last_sync_at && (
               <span className="text-gray-400">

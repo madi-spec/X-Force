@@ -144,7 +144,7 @@ export function CalendarClient({ events }: CalendarClientProps) {
           />
 
           {/* Filter toggle */}
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
+          <div className="bg-white rounded-xl border border-gray-200 p-3">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
               Filter Events
             </h3>
@@ -183,7 +183,7 @@ export function CalendarClient({ events }: CalendarClientProps) {
           </div>
 
           {/* Color legend */}
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
+          <div className="bg-white rounded-xl border border-gray-200 p-3">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
               Legend
             </h3>
