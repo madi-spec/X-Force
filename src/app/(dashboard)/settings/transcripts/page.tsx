@@ -116,10 +116,34 @@ export default function TranscriptsPage() {
     }
   };
 
+  const [analyzing, setAnalyzing] = useState(false);
+
   const handleRegenerate = async (ids: string[]) => {
-    // For now, just show a message - actual regeneration would need a separate endpoint
-    alert(`Regenerating analysis for ${ids.length} transcript(s)...`);
-    // TODO: Implement regeneration via API endpoint
+    if (analyzing) return;
+
+    setAnalyzing(true);
+    try {
+      const res = await fetch('/api/transcripts/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert('Failed to analyze: ' + (data.error || 'Unknown error'));
+        return;
+      }
+
+      alert(data.message);
+      fetchTranscripts(); // Refresh the list
+    } catch (error) {
+      console.error('Failed to regenerate analysis:', error);
+      alert('Failed to regenerate analysis');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const handleExport = () => {
