@@ -334,14 +334,18 @@ export async function generateDealSummary(
     temperature: 0.3,
   });
 
-  // Add generated timestamp
+  // Add generated timestamp and ensure required fields exist
   const enrichedSummary: DealSummary = {
     ...summary,
+    keyPoints: summary.keyPoints || [],
+    risks: summary.risks || [],
+    opportunities: summary.opportunities || [],
+    recommendedActions: summary.recommendedActions || [],
     generatedAt: new Date().toISOString(),
   };
 
   // Generate summary text for search/display
-  const summaryText = `${enrichedSummary.headline}\n\n${enrichedSummary.overview}`;
+  const summaryText = `${enrichedSummary.headline || ''}\n\n${enrichedSummary.overview || ''}`;
 
   // Save to database
   const { data: existingRecord } = await supabase

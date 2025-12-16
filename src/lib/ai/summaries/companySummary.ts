@@ -341,12 +341,17 @@ export async function generateCompanySummary(
     temperature: 0.3,
   });
 
+  // Ensure required fields exist
   const enrichedSummary: CompanySummary = {
     ...summary,
+    opportunities: summary.opportunities || [],
+    risks: summary.risks || [],
+    recommendedActions: summary.recommendedActions || [],
+    keyContacts: summary.keyContacts || [],
     generatedAt: new Date().toISOString(),
   };
 
-  const summaryText = `${enrichedSummary.headline}\n\n${enrichedSummary.overview}`;
+  const summaryText = `${enrichedSummary.headline || ''}\n\n${enrichedSummary.overview || ''}`;
 
   // Save to database
   const { data: existingRecord } = await supabase

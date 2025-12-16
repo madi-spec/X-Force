@@ -297,12 +297,17 @@ export async function generateContactSummary(
     temperature: 0.3,
   });
 
+  // Ensure required fields exist
   const enrichedSummary: ContactSummary = {
     ...summary,
+    keyInsights: summary.keyInsights || [],
+    painPoints: summary.painPoints || [],
+    interests: summary.interests || [],
+    relationshipTips: summary.relationshipTips || [],
     generatedAt: new Date().toISOString(),
   };
 
-  const summaryText = `${enrichedSummary.headline}\n\n${enrichedSummary.overview}`;
+  const summaryText = `${enrichedSummary.headline || ''}\n\n${enrichedSummary.overview || ''}`;
 
   // Save to database
   const { data: existingRecord } = await supabase
