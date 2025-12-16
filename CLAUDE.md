@@ -116,207 +116,391 @@ npm run dev
 
 ---
 
-# Design System Bible: Technical Truth + Emotional Resonance
+# Ultimate App Design System Bible: Technical Truth + Emotional Resonance
 
-## Executive Summary: The Design DNA
+## Executive Summary: The Design DNA Decoded
 
-**"Accessible Sophistication"** - Enterprise-grade data visualization that transcends typical B2B SaaS.
+Your application represents what I call **"Accessible Sophistication"** - a masterful execution of enterprise-grade data visualization that transcends typical B2B SaaS. After deep codebase analysis, the essence crystallizes:
 
-**The Essence**: "McKinsey meets Apple meets Stripe" - minimalism with purpose, beauty through utility.
+**"What Stripe Dashboard would look like if designed by Dieter Rams for McKinsey consultants who appreciate good typography"**
 
-**North Star**: Would a Swiss watchmaker approve?
+Or more viscerally: **"If McKinsey built a SaaS product with Apple's design team and Stripe's sensibilities"**
 
-## Core Identity
+This is **Jony Ive meets Jensen Huang** - minimalism with a purpose, beauty through utility, complexity made simple. It's the **Patagonia vest of SaaS** - understated quality that those in the know immediately recognize.
 
+## The Vibe Distilled: All Key Phrases
+
+### Core Identity Statements
+
+- **"McKinsey meets Apple meets Stripe"** - The holy trinity of your design
 - **"Boardroom Minimalism"** - Every pixel presentable to the C-suite
 - **"Quiet Professional"** - Sophisticated business intelligence meets approachable simplicity
 - **"Bloomberg Terminal meets Breathing Room"** - Professional density with modern spacing
+- **"Swiss Watchmaker's Approval"** - The north star for every design decision
+- **"Enterprise Intelligence with Human Touch"** - Power without intimidation
 - **"The Hermès of SaaS"** - Quietly luxurious, never ostentatious
+- **"Tesla Model S Interior"** - Minimal, functional, unmistakably premium
 
-## Color System (HSL)
+### What You've Built
 
-### Light Mode
+**"Ex-Apple designers building enterprise software for people who appreciate Swiss watches, drive German cars, and read The Economist on Sunday mornings"**
+
+## Deep Technical Color System Analysis
+
+### The HSL Foundation: Monochromatic Mastery
+
+Your color system uses HSL (Hue, Saturation, Lightness) for precise control:
+
 ```css
---background: 0 0% 100%;        /* #FFFFFF */
---foreground: 0 0% 3.9%;        /* #0A0A0A (NOT pure black) */
---muted: 0 0% 96.1%;            /* #F5F5F5 */
---muted-foreground: 0 0% 45.1%; /* #737373 */
---border: 0 0% 89.8%;           /* #E5E5E5 */
+/* Light Mode Core Palette */
+--background: 0 0% 100%;         /* Pure white #FFFFFF */
+--foreground: 0 0% 3.9%;         /* Near black #0A0A0A (NOT #1A1A1A!) */
+--muted: 0 0% 96.1%;             /* #F5F5F5 - Warm gray */
+--muted-foreground: 0 0% 45.1%;  /* #737373 - Mid gray */
+--border: 0 0% 89.8%;            /* #E5E5E5 - Soft border */
+
+/* Dark Mode Transformation */
+--background: 0 0% 3.9%;         /* #0A0A0A - Matching foreground! */
+--foreground: 0 0% 98%;          /* #FAFAFA - Not pure white */
+--muted: 0 0% 14.9%;             /* #262626 - Elevated surface */
+--border: 0 0% 14.9%;            /* #262626 - Unified borders */
 ```
 
-### Dark Mode
+**The Genius Move**: Using #0A0A0A instead of pure black and #FAFAFA instead of pure white. This 2-4% deviation from extremes prevents eye strain and adds warmth - the difference between "digital" and "refined."
+
+### Data Visualization: The Semantic Rainbow
+
 ```css
---background: 0 0% 3.9%;        /* #0A0A0A */
---foreground: 0 0% 98%;         /* #FAFAFA (NOT pure white) */
---muted: 0 0% 14.9%;            /* #262626 */
---border: 0 0% 14.9%;           /* #262626 */
+/* Chart Palette - Earth Tones Meet Data */
+--chart-1: 12 76% 61%;    /* #E85D4F - Coral/Salmon */
+--chart-2: 173 58% 39%;   /* #2A9D8F - Ocean Teal */
+--chart-3: 197 37% 24%;   /* #264653 - Deep Navy */
+--chart-4: 43 74% 66%;    /* #E9C46A - Warm Yellow */
+--chart-5: 27 87% 67%;    /* #F4A261 - Burnt Orange */
 ```
 
-### Semantic Colors
-- **Success**: `#10B981` (Emerald-500)
-- **Warning**: `#F59E0B` (Amber-500)
-- **Error**: `#EF4444` (Red-500)
-- **Primary**: `#3B82F6` (Blue-500)
-- **Accent**: `#8B5CF6` (Violet-500)
+**Actual Implementation Colors**:
+- **Success**: `#10B981` (Emerald-500) - Growth without garishness
+- **Warning**: `#F59E0B` (Amber-500) - Attention without alarm
+- **Error**: `#EF4444` (Red-500) - Serious but not scary
+- **Primary**: `#3B82F6` (Blue-500) - Trust and stability
+- **Accent**: `#8B5CF6` (Violet-500) - Premium touches
 
-### Chart Palette
+### Dark Mode: The Sophisticated Inversion
+
 ```css
---chart-1: 12 76% 61%;   /* #E85D4F - Coral */
---chart-2: 173 58% 39%;  /* #2A9D8F - Teal */
---chart-3: 197 37% 24%;  /* #264653 - Navy */
---chart-4: 43 74% 66%;   /* #E9C46A - Yellow */
---chart-5: 27 87% 67%;   /* #F4A261 - Orange */
+/* Surface Elevation Strategy */
+bg-gray-50    → dark:bg-[#0a0a0a]      /* Base background */
+bg-white      → dark:bg-[#1a1a1a]      /* Card surface */
+bg-gray-100   → dark:bg-gray-800       /* Elevated elements */
+border-gray-200 → dark:border-[#2a2a2a] /* Subtle borders */
 ```
 
-## Typography
+## Typography: The System Font Symphony
 
-### Font Stack
+### The Font Stack Philosophy
+
 ```css
-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Helvetica Neue", Arial, sans-serif;
 ```
 
-### Type Scale
-| Purpose | Class | Size |
-|---------|-------|------|
-| Display | text-3xl | 30px |
-| Title | text-xl | 20px |
-| Heading | text-base | 16px |
-| Body | text-sm | 14px |
-| Caption | text-xs | 12px |
-| Micro | text-[10px] | 10px |
+This isn't laziness - it's brilliance. You get:
+- **San Francisco** on macOS (Apple's precision)
+- **Segoe UI** on Windows (Microsoft's clarity)
+- **Roboto** on Android (Google's geometry)
+- Native, fast, familiar, perfect.
 
-### Font Weights
-- **300 (Light)**: Large metric values
-- **400 (Normal)**: Body text
-- **500 (Medium)**: Labels, secondary headers
-- **600 (Semibold)**: Primary headers
+### The Type Scale: Musical Intervals
+
+```
+Display:  text-3xl   (30px) - Hero metrics
+Title:    text-xl    (20px) - Page headers
+Heading:  text-base  (16px) - Section headers
+Body:     text-sm    (14px) - Default text
+Caption:  text-xs    (12px) - Supporting text
+Micro:    text-[10px]       - Dense data labels
+```
+
+### Font Weight Hierarchy: The Conductor's Baton
+
+- **300 (Light)**: Large metric values - Breathable, important
+- **400 (Normal)**: Body text - Invisible, readable
+- **500 (Medium)**: Labels, secondary headers - Gentle emphasis
+- **600 (Semibold)**: Primary headers - Clear hierarchy
 - **700 (Bold)**: Critical values only - SPARINGLY
 
-### Key Details
-- `tracking-tight` on large numbers
-- `tracking-wider` on UPPERCASE labels
-- Tabular figures for all numbers
-- `text-xl font-normal` for page headers (NOT bold)
+### Typography Micro-Details That Scream Premium
 
-## Spacing System (4-8px Grid)
+- **tracking-tight** on large numbers (subtle -0.02em)
+- **tracking-wider** on UPPERCASE labels (generous 0.05em)
+- **Tabular figures** for all numbers (vertical alignment perfection)
+- **text-xl font-normal** for ALL page headers (not bold! - confident restraint)
+
+## Spatial System: The 4-8 Point Grid Religion
+
+### The Sacred Scale
 
 ```
-p-1 (4px)  - Micro spacing
-p-2 (8px)  - Tight (icons to text)
-p-3 (12px) - Compact (list items)
-p-4 (16px) - Default padding
-p-6 (24px) - Comfortable (cards)
-p-8 (32px) - Spacious (sections)
+p-1  (4px)  - Micro spacing (rare)
+p-2  (8px)  - Tight spacing (icons to text)
+p-3  (12px) - Compact spacing (list items)
+p-4  (16px) - Default spacing (standard padding)
+p-6  (24px) - Comfortable spacing (card padding)
+p-8  (32px) - Spacious (major sections)
 
 gap-4 (16px) - Default grid gaps
 gap-6 (24px) - Section spacing
 ```
 
-**Rule**: Everything is 4px multiples. No 5px, 7px, or 15px. EVER.
+**The Magic**: Everything is 4px or multiples. No 5px, no 7px, no 15px. EVER.
 
-## Component Patterns
+### Component Architecture: The Building Blocks
 
-### Card Anatomy
+#### Card Anatomy (Your Primary Atom)
+
 ```jsx
 <Card className="
-  bg-white dark:bg-[#1a1a1a]
-  rounded-xl              // 12px radius
-  p-6                     // 24px padding
-  border border-gray-200 dark:border-[#2a2a2a]
-  shadow-sm
-  hover:shadow-md
-  hover:-translate-y-1
-  hover:scale-[1.02]
-  transition-all duration-300
+  bg-white dark:bg-[#1a1a1a]           // Elevated surface
+  rounded-xl                            // 12px radius (NOT 8px!)
+  p-6                                   // 24px padding standard
+  border border-gray-200
+  dark:border-[#2a2a2a]                // Subtle definition
+  shadow-sm                             // Barely-there depth
+  hover:shadow-md                       // Gentle elevation
+  hover:-translate-y-1                  // Micro lift
+  hover:scale-[1.02]                    // Subtle growth
+  transition-all duration-300           // Smooth as butter
 ">
 ```
 
-### Table Design
-- NO zebra striping
-- Horizontal borders only (`border-b`)
-- Hover: `hover:bg-gray-50 dark:hover:bg-gray-800/50`
-- Cell padding: `py-3 px-4`
-- Headers: `uppercase text-xs tracking-wider text-gray-500`
+#### DataCard Pattern (The Workhorse)
 
-### Button Hierarchy
-```jsx
-// Primary
-<Button className="h-9 px-4 text-sm">
-
-// Secondary
-<Button variant="outline" className="h-9 px-4 text-sm">
-
-// Ghost
-<Button variant="ghost" size="icon" className="h-8 w-8">
+```
+Structure:
+┌─────────────────────────────┐
+│ [Icon] Title          [ℹ]  │  <- Icon + Title + Info
+│ Oct 22 - Oct 28            │  <- Period (text-xs gray-500)
+│                            │
+│        6,350               │  <- Metric (text-3xl font-light)
+│        ↑ +12.5%            │  <- Trend (color-coded)
+│                            │
+│ [====Sparkline Chart====]  │  <- h-24 visualization
+└─────────────────────────────┘
 ```
 
+#### Table Design: Scandinavian Simplicity
+
+- **NO zebra striping** (clean, not busy)
+- **Horizontal borders only** (`border-b`)
+- **Hover state**: `hover:bg-gray-50 dark:hover:bg-gray-800/50`
+- **Cell padding**: `py-3 px-4` (12px vertical, 16px horizontal)
+- **Headers**: `uppercase text-xs tracking-wider text-gray-500`
+
+## Animation Philosophy: Purposeful Motion
+
+### The Timing Signatures
+
+```css
+/* Quick Feedback - Color changes, hovers */
+transition-colors duration-200
+
+/* Standard Transitions - Most interactions */
+transition-all duration-300
+
+/* Data Animations - Progress bars, charts */
+transition-all duration-700 ease-out
+
+/* Skeleton Loading - Gentle pulse */
+animate-pulse (1.5s ease-in-out infinite)
+```
+
+### The Easing Function
+
+`cubic-bezier(0.4, 0, 0.2, 1)` - This specific curve feels most natural, like Apple's iOS animations.
+
+### Performance Rules
+
+- **Only animate**: `opacity`, `transform`, `scale`
+- **Never animate**: `width`, `height`, `padding`
+- **GPU acceleration**: via `transform` not `position`
+
+## Page-Specific Design DNA
+
 ### Universal Header Pattern
+
+Every page follows this exact structure:
+
 ```jsx
 <div className="sticky top-0 z-50 bg-white/95 backdrop-blur">
-  <h1 className="text-xl font-normal">Page Title</h1>
+  <h1 className="text-xl font-normal">Page Title</h1>  // NOT bold!
   <p className="text-xs text-gray-500">Description</p>
   <div className="ml-auto flex gap-4">Filters</div>
 </div>
 ```
 
-## Animation
+Height: ~64px total, creating consistent rhythm
 
-### Timing
-```css
-transition-colors duration-200  /* Quick feedback */
-transition-all duration-300     /* Standard */
-transition-all duration-700     /* Data animations */
-animate-pulse                   /* Loading */
+## Component Implementation Specs
+
+### Button Hierarchy
+
+```jsx
+// Primary Action
+<Button className="h-9 px-4 text-sm">
+
+// Secondary Action
+<Button variant="outline" className="h-9 px-4 text-sm">
+
+// Ghost Action
+<Button variant="ghost" size="icon" className="h-8 w-8">
 ```
 
-### Easing
-`cubic-bezier(0.4, 0, 0.2, 1)` - Natural, iOS-like
+### Status Badges
 
-### Rules
-- Only animate: `opacity`, `transform`, `scale`
-- Never animate: `width`, `height`, `padding`
+```jsx
+// Risk Levels
+<Badge variant="destructive">HIGH</Badge>   // Red
+<Badge variant="warning">MEDIUM</Badge>     // Amber
+<Badge variant="success">LOW</Badge>        // Green
+```
 
-## The 1% Details
+### Data Display Patterns
 
-1. **Numbers**: `6,350` not `6350` or `6.4K`
-2. **Percentages**: `.X%` never `.XX%`
-3. **Icons**: 20px with 2px stroke
-4. **Border Radius**: 12px (`rounded-xl`) consistently
-5. **Shadows**: `shadow-sm` default, `shadow-md` on hover
-6. **Transitions**: 300ms standard
-7. **Touch Targets**: Minimum 44px
+```jsx
+// Large Metrics
+<div className="text-3xl font-light text-gray-900 dark:text-gray-100">
+  {value.toLocaleString()}
+</div>
 
-## The 10 Commandments
+// Percentage Changes
+<span className={cn(
+  "text-sm font-medium",
+  trend > 0 ? "text-green-600" : "text-red-600"
+)}>
+  {trend > 0 ? "+" : ""}{trend}%
+</span>
 
-1. **Data First** - Never let aesthetics obscure information
+// Section Headers
+<h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+  SECTION TITLE
+</h3>
+```
+
+## The Micro-Details That Matter
+
+### The 1% That Makes It Premium
+
+1. **Number Formatting**: `6,350` not `6350` or `6.4K`
+2. **Percentage Precision**: Always `.X%` never `.XX%`
+3. **Smart Truncation**: CSS ellipsis, never broken words
+4. **Icon Sizing**: Always 20px with 2px stroke weight
+5. **Border Radius**: Consistently 12px (`rounded-xl`)
+6. **Shadow Hierarchy**: `shadow-sm` default, `shadow-md` on hover
+7. **Transition Timing**: 300ms standard, never instant
+8. **Loading States**: Height-preserved skeletons
+9. **Empty States**: Thoughtful, not afterthoughts
+10. **Touch Targets**: Minimum 44px for accessibility
+
+### The Swiss Watch Details
+
+- **Grid Alignment**: Everything snaps to 4px grid
+- **Consistent Gaps**: 16px (`gap-4`) between related items
+- **Section Spacing**: 24px (`gap-6`) between sections
+- **Color Semantic**: Never decorative, always meaningful
+- **Typography Hierarchy**: Size AND weight create levels
+- **Dark Mode Parity**: Every state works in both modes
+
+## Design Philosophy Extraction
+
+### The 10 Commandments
+
+1. **Data First, Design Second** - Never let aesthetics obscure information
 2. **Monochrome Until Meaningful** - Color only for semantic purpose
-3. **Space Is Functional** - White space improves scanning
+3. **Space Is Functional** - White space improves scanning, not decoration
 4. **Consistency Builds Trust** - Same pattern everywhere
-5. **Motion Has Meaning** - Animate to improve understanding
-6. **Restraint Shows Confidence** - What you don't add matters
+5. **Motion Has Meaning** - Animate only to improve understanding
+6. **Restraint Shows Confidence** - What you don't add matters more
 7. **Performance Is Design** - Fast is beautiful
 8. **Accessibility Is Baseline** - Not an afterthought
 9. **Details Make Premium** - The 1% differentiates
 10. **Evolution Not Revolution** - Iterate thoughtfully
 
-## Quality Checklist
+### The Quality Checklist
 
 Before shipping any feature:
 - [ ] Would Dieter Rams find anything superfluous?
+- [ ] Would Jony Ive notice sloppy spacing?
 - [ ] Would a Stripe engineer trust this data?
 - [ ] Would McKinsey present this to Fortune 500?
+- [ ] Does it work at 3am on 2 hours of sleep?
+- [ ] Can it handle 10x the data gracefully?
 - [ ] Does dark mode feel equally polished?
 - [ ] Are loading states as designed as loaded states?
 
-## Anti-Patterns
+## Cultural & Brand Associations
+
+### If Your Design Was...
+
+**A Physical Space**:
+- **Aesop Store**: Every detail considered, nothing superfluous
+- **Apple Park**: Precision meets nature
+- **Swiss Bank**: Trust through consistency
+- **Modern Museum**: Art through curation
+
+**A Product**:
+- **Leica M**: Precision without ostentation
+- **Braun T3**: Rams' vision perfected
+- **Porsche 911**: Evolution not revolution
+- **Muji Notebook**: Essential beauty
+
+### The Anti-Patterns You Reject
 
 - **NOT Salesforce**: No visual noise or tab overload
 - **NOT "Startup Playful"**: No particle effects or gradients
 - **NOT "Enterprise Gray"**: Sophisticated, not depressing
 - **NOT "Dashboard Template"**: Custom crafted, not generic
 
+## Implementation Guidelines
+
+### For Developers
+
+```typescript
+// Component checklist
+interface ComponentRequirements {
+  darkMode: boolean;              // Both modes from day 1
+  loading: SkeletonComponent;     // Never blank
+  empty: EmptyState;              // Thoughtful messaging
+  error: ErrorBoundary;           // Graceful failures
+  a11y: {
+    keyboard: boolean;            // Full navigation
+    screenReader: boolean;        // Proper ARIA
+    contrast: 'WCAG-AA';          // Minimum
+  };
+  responsive: Breakpoint[];       // Mobile-first
+  animation: {
+    duration: 300;                // Standard timing
+    easing: 'ease-out';           // Natural motion
+  };
+}
+```
+
+### For Product
+
+- **Every feature asks**: "Is this Hermès or H&M?"
+- **Every addition**: "What would we remove to add this?"
+- **Every decision**: "Would a Swiss watchmaker approve?"
+
 ---
 
-**The Ultimate Test**: "Would this fit in a Kinfolk magazine spread about the future of work?"
+## The Final Word
+
+This isn't just a design system - it's a philosophy manifested in pixels. It's proof that enterprise software can be beautiful without sacrificing functionality. It's the answer to "What if B2B SaaS didn't have to look like B2B SaaS?"
+
+**The Ultimate Test**: Show this to someone who uses Excel all day and Notion all night. If they say "Finally, software that gets it" - you've succeeded.
+
+**The North Star**: When making any design decision, ask: **"Would this fit in a Kinfolk magazine spread about the future of work?"**
+
+Remember: **This is McKinsey meets Apple meets Stripe** - the intersection of business intelligence, design excellence, and developer clarity. It's the Patagonia vest of SaaS - those who know, know.
 
 **Guard this aesthetic with your life.**

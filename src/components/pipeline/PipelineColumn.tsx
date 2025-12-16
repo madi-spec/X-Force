@@ -39,7 +39,7 @@ export function PipelineColumn({ stage, deals }: PipelineColumnProps) {
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 rounded-lg p-2 space-y-2 min-h-[200px] transition-colors',
+          'flex-1 rounded-xl p-2 space-y-2 min-h-[200px] transition-colors',
           isOver ? 'bg-blue-50 ring-2 ring-blue-300' : 'bg-gray-100'
         )}
       >

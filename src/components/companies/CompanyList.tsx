@@ -107,14 +107,14 @@ export function CompanyList({ companies }: CompanyListProps) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Companies</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-xl font-normal text-gray-900">Companies</h1>
+          <p className="text-xs text-gray-500 mt-1">
             {filteredCompanies.length} of {companies.length} companies
           </p>
         </div>
         <Link
           href="/companies/new"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-2 h-9 px-4 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4" />
           New Company
@@ -132,7 +132,7 @@ export function CompanyList({ companies }: CompanyListProps) {
               placeholder="Search companies or contacts..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
 
@@ -140,7 +140,7 @@ export function CompanyList({ companies }: CompanyListProps) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as CompanyStatus | 'all')}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="all">All Status</option>
             <option value="cold_lead">Cold Leads</option>
@@ -153,7 +153,7 @@ export function CompanyList({ companies }: CompanyListProps) {
           <select
             value={segmentFilter}
             onChange={(e) => setSegmentFilter(e.target.value as Segment | 'all')}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="all">All Segments</option>
             <option value="smb">SMB</option>
@@ -167,7 +167,7 @@ export function CompanyList({ companies }: CompanyListProps) {
           <select
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value as 'all' | 'voice' | 'xrai')}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="all">All Teams</option>
             <option value="voice">Voice Customers</option>
@@ -290,7 +290,7 @@ export function CompanyList({ companies }: CompanyListProps) {
                   <td className="px-6 py-4 text-right">
                     <Link
                       href={`/deals/new?company=${company.id}`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 opacity-0 group-hover:opacity-100 transition-all"
                     >
                       <Plus className="h-3.5 w-3.5" />
                       New Deal

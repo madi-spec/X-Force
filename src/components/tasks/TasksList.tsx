@@ -92,7 +92,7 @@ export function TasksList({
               e.stopPropagation();
               handleActionClick(task);
             }}
-            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-800 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors"
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-xl hover:bg-blue-100 transition-colors"
           >
             <Mail className="h-4 w-4" />
             Compose Email
@@ -105,7 +105,7 @@ export function TasksList({
               e.stopPropagation();
               handleActionClick(task);
             }}
-            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-800 text-sm font-medium rounded-lg hover:bg-green-200 transition-colors"
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 text-sm font-medium rounded-xl hover:bg-green-100 transition-colors"
           >
             <Phone className="h-4 w-4" />
             Log Call
@@ -118,7 +118,7 @@ export function TasksList({
               e.stopPropagation();
               handleActionClick(task);
             }}
-            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-800 text-sm font-medium rounded-lg hover:bg-purple-200 transition-colors"
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-purple-50 text-purple-700 text-sm font-medium rounded-xl hover:bg-purple-100 transition-colors"
           >
             <Calendar className="h-4 w-4" />
             Complete Meeting
@@ -132,7 +132,7 @@ export function TasksList({
               e.stopPropagation();
               handleActionClick(task);
             }}
-            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-100 transition-colors"
           >
             <Play className="h-4 w-4" />
             Complete Task
@@ -149,7 +149,7 @@ export function TasksList({
     return (
       <div
         className={cn(
-          'flex items-start gap-3 p-4 hover:bg-gray-50 border-b border-gray-100 last:border-0',
+          'flex items-start gap-3 p-4 hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors',
           isFirefliesReview && 'bg-amber-50/50 hover:bg-amber-50'
         )}
       >
@@ -223,7 +223,7 @@ export function TasksList({
           {isFirefliesReview && !task.completed_at && (
             <button
               onClick={() => handleTaskClick(task)}
-              className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-800 text-sm font-medium rounded-lg hover:bg-amber-200 transition-colors"
+              className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-700 text-sm font-medium rounded-xl hover:bg-amber-100 transition-colors"
             >
               <AlertCircle className="h-4 w-4" />
               Review & Assign
@@ -244,7 +244,7 @@ export function TasksList({
         {overdueTasks.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
             <div className="px-4 py-3 bg-red-50 border-b border-red-200">
-              <h2 className="font-medium text-red-700 flex items-center gap-2">
+              <h2 className="text-xs font-medium text-red-700 uppercase tracking-wider flex items-center gap-2">
                 <Clock className="h-4 w-4" />
                 Overdue ({overdueTasks.length})
               </h2>
@@ -260,7 +260,7 @@ export function TasksList({
         {/* Today */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-            <h2 className="font-medium text-gray-700 flex items-center gap-2">
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
               <Calendar className="h-4 w-4" />
               Today ({todayTasks.length})
             </h2>
@@ -280,7 +280,7 @@ export function TasksList({
         {upcomingTasks.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-              <h2 className="font-medium text-gray-700">
+              <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Upcoming ({upcomingTasks.length})
               </h2>
             </div>
@@ -296,7 +296,7 @@ export function TasksList({
         {completedTasks.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-              <h2 className="font-medium text-gray-700 flex items-center gap-2">
+              <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
                 Completed ({completedTasks.length})
               </h2>

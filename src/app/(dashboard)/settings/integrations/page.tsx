@@ -63,8 +63,8 @@ export default async function IntegrationsPage({
           <ArrowLeft className="h-4 w-4" />
           Back to Settings
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">Integrations</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-xl font-normal text-gray-900">Integrations</h1>
+        <p className="text-xs text-gray-500 mt-1">
           Connect external services to sync data automatically
         </p>
       </div>
@@ -89,7 +89,7 @@ export default async function IntegrationsPage({
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Link2 className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Microsoft 365</h2>
+            <h2 className="text-base font-medium text-gray-900">Microsoft 365</h2>
           </div>
 
           <MicrosoftConnection
@@ -101,7 +101,7 @@ export default async function IntegrationsPage({
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Mic className="h-5 w-5 text-purple-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Fireflies.ai</h2>
+            <h2 className="text-base font-medium text-gray-900">Fireflies.ai</h2>
           </div>
 
           <FirefliesIntegration />
@@ -111,7 +111,7 @@ export default async function IntegrationsPage({
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-4">
             <Link2 className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">More Integrations</h2>
+            <h2 className="text-base font-medium text-gray-900">More Integrations</h2>
           </div>
 
           <div className="text-center py-8">

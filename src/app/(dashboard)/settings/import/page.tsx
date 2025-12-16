@@ -33,8 +33,8 @@ export default async function ImportPage() {
   return (
     <div className="max-w-5xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Import Data</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-xl font-normal text-gray-900">Import Data</h1>
+        <p className="text-xs text-gray-500 mt-1">
           Import deals, companies, and contacts from a CSV file
         </p>
       </div>

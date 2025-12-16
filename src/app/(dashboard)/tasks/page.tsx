@@ -63,8 +63,8 @@ export default async function TasksPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-xl font-normal text-gray-900">Tasks</h1>
+          <p className="text-xs text-gray-500 mt-1">
             {openTasks.length} open tasks
             {firefliesReviewCount > 0 && (
               <span className="ml-2 text-amber-600">
@@ -73,12 +73,12 @@ export default async function TasksPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+        <div className="flex items-center gap-4">
+          <button className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
             <Filter className="h-4 w-4" />
             Filter
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+          <button className="inline-flex items-center gap-2 h-9 px-4 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
             <Plus className="h-4 w-4" />
             New Task
           </button>

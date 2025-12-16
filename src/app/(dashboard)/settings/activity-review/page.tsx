@@ -527,8 +527,8 @@ export default function ActivityReviewPage() {
 
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Activity Review</h1>
-            <p className="text-gray-500 mt-1">
+            <h1 className="text-xl font-normal text-gray-900">Activity Review</h1>
+            <p className="text-xs text-gray-500 mt-1">
               Review and match imported activities to deals
             </p>
           </div>
@@ -567,14 +567,14 @@ export default function ActivityReviewPage() {
               placeholder="Search by subject or content..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Types</option>
             <option value="email_sent">Sent Emails</option>
@@ -585,7 +585,7 @@ export default function ActivityReviewPage() {
           <button
             onClick={fetchActivities}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Refresh
@@ -602,7 +602,7 @@ export default function ActivityReviewPage() {
         <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
           <Check className="h-12 w-12 text-green-500 mx-auto mb-4" />
           <p className="text-gray-900 font-medium">All caught up!</p>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-xs text-gray-500 mt-1">
             No activities need review at this time.
           </p>
         </div>
@@ -657,7 +657,7 @@ export default function ActivityReviewPage() {
                   {/* Activity Details */}
                   <div className="mb-4">
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Details</h4>
-                    <div className="bg-white rounded-lg border border-gray-200 p-3 text-sm">
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 text-sm">
                       {Boolean(activity.metadata?.fromEmail) && (
                         <p className="text-gray-600">
                           <strong>From:</strong> {String(activity.metadata?.fromEmail)}
@@ -697,7 +697,7 @@ export default function ActivityReviewPage() {
                   {/* Actions */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Match to Deal */}
-                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <div className="flex items-center gap-2 mb-3">
                         <Briefcase className="h-4 w-4 text-blue-500" />
                         <h4 className="font-medium text-gray-900">Match to Deal</h4>
@@ -738,7 +738,7 @@ export default function ActivityReviewPage() {
                               }}
                               onFocus={() => setShowDealDropdown((prev) => ({ ...prev, [activity.id]: true }))}
                               placeholder="Search deals..."
-                              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                           </div>
 
@@ -791,7 +791,7 @@ export default function ActivityReviewPage() {
                       <button
                         onClick={() => handleMatch(activity.id)}
                         disabled={!selectedDealId[activity.id] || processingId === activity.id}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {processingId === activity.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -803,7 +803,7 @@ export default function ActivityReviewPage() {
                     </div>
 
                     {/* Create New */}
-                    <div className="bg-white rounded-lg border border-green-200 p-4">
+                    <div className="bg-white rounded-xl border border-green-200 p-4">
                       <div className="flex items-center gap-2 mb-3">
                         <Plus className="h-4 w-4 text-green-500" />
                         <h4 className="font-medium text-gray-900">Create New</h4>
@@ -814,7 +814,7 @@ export default function ActivityReviewPage() {
                       <button
                         onClick={() => openCreateModal(activity)}
                         disabled={processingId === activity.id}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Plus className="h-4 w-4" />
                         Create New...
@@ -822,7 +822,7 @@ export default function ActivityReviewPage() {
                     </div>
 
                     {/* Exclude */}
-                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <div className="flex items-center gap-2 mb-3">
                         <X className="h-4 w-4 text-gray-500" />
                         <h4 className="font-medium text-gray-900">Exclude</h4>
@@ -834,12 +834,12 @@ export default function ActivityReviewPage() {
                         onChange={(e) =>
                           setExcludeReason((prev) => ({ ...prev, [activity.id]: e.target.value }))
                         }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 text-sm mb-3"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 text-sm mb-3"
                       />
                       <button
                         onClick={() => handleExclude(activity.id)}
                         disabled={processingId === activity.id}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-xl hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {processingId === activity.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -963,7 +963,7 @@ export default function ActivityReviewPage() {
                             }}
                             onFocus={() => setShowCompanyDropdown(true)}
                             placeholder="Type to search companies..."
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
 
@@ -1024,7 +1024,7 @@ export default function ActivityReviewPage() {
                           value={newCompanyName}
                           onChange={(e) => setNewCompanyName(e.target.value)}
                           placeholder="Enter new company name"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                     )}
@@ -1040,7 +1040,7 @@ export default function ActivityReviewPage() {
                     <button
                       onClick={handleCreateCompany}
                       disabled={creatingEntity || (!newCompanyName.trim() && !selectedCompanyId)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50"
                     >
                       {creatingEntity && <Loader2 className="h-4 w-4 animate-spin" />}
                       Next: Create Deal
@@ -1066,7 +1066,7 @@ export default function ActivityReviewPage() {
                         value={newDealName}
                         onChange={(e) => setNewDealName(e.target.value)}
                         placeholder="Enter deal name"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
 
@@ -1077,7 +1077,7 @@ export default function ActivityReviewPage() {
                       <select
                         value={newDealStage}
                         onChange={(e) => setNewDealStage(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="new_lead">New Lead</option>
                         <option value="qualifying">Qualifying</option>
@@ -1100,7 +1100,7 @@ export default function ActivityReviewPage() {
                     <button
                       onClick={handleCreateDeal}
                       disabled={creatingEntity || !newDealName.trim()}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50"
                     >
                       {creatingEntity && <Loader2 className="h-4 w-4 animate-spin" />}
                       {contactsToCreate.length > 0 ? 'Next: Add Contacts' : 'Complete'}
@@ -1132,7 +1132,7 @@ export default function ActivityReviewPage() {
                             setContactsToCreate(updated);
                           }}
                           placeholder="Name"
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
                         />
                         <span className="text-sm text-gray-500 truncate max-w-[150px]">
                           {contact.email}
@@ -1171,7 +1171,7 @@ export default function ActivityReviewPage() {
                     <button
                       onClick={handleCreateContacts}
                       disabled={creatingEntity || contactsToCreate.length === 0}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50"
                     >
                       {creatingEntity && <Loader2 className="h-4 w-4 animate-spin" />}
                       Create Contacts
@@ -1211,7 +1211,7 @@ export default function ActivityReviewPage() {
                     <button
                       onClick={handleFinalMatch}
                       disabled={creatingEntity}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-xl hover:bg-green-700 disabled:opacity-50"
                     >
                       {creatingEntity && <Loader2 className="h-4 w-4 animate-spin" />}
                       <Check className="h-4 w-4" />

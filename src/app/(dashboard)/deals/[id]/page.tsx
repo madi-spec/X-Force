@@ -170,7 +170,7 @@ export default async function DealPage({ params }: DealPageProps) {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{deal.name}</h1>
+              <h1 className="text-xl font-normal text-gray-900">{deal.name}</h1>
               {deal.company && (
                 <Link
                   href={`/companies/${deal.company.id}`}
@@ -210,7 +210,7 @@ export default async function DealPage({ params }: DealPageProps) {
             <div className="flex items-center gap-2">
               <Link
                 href={`/deals/${id}/edit`}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
               >
                 <Edit2 className="h-4 w-4" />
                 Edit
@@ -447,7 +447,7 @@ export default async function DealPage({ params }: DealPageProps) {
                         {contact.email && (
                           <a
                             href={`mailto:${contact.email}`}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
                             title={contact.email}
                           >
                             <Mail className="h-4 w-4" />
@@ -456,7 +456,7 @@ export default async function DealPage({ params }: DealPageProps) {
                         {contact.phone && (
                           <a
                             href={`tel:${contact.phone}`}
-                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors"
                             title={contact.phone}
                           >
                             <Phone className="h-4 w-4" />
@@ -464,7 +464,7 @@ export default async function DealPage({ params }: DealPageProps) {
                         )}
                         <Link
                           href={`/contacts/${contact.id}/edit`}
-                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
                           title="Edit contact"
                         >
                           <Pencil className="h-4 w-4" />

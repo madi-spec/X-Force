@@ -64,7 +64,7 @@ export function DealCard({ deal }: DealCardProps) {
       {...listeners}
       onClick={handleClick}
       className={cn(
-        'bg-white rounded-lg border border-gray-200 p-4 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow',
+        'bg-white rounded-xl border border-gray-200 p-4 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-all duration-300',
         isDragging && 'opacity-50 shadow-lg'
       )}
     >

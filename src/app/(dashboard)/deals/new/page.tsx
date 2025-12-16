@@ -39,8 +39,8 @@ export default async function NewDealPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to Pipeline
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">Create New Deal</h1>
-        <p className="text-gray-500 text-sm mt-1">
+        <h1 className="text-xl font-normal text-gray-900">Create New Deal</h1>
+        <p className="text-xs text-gray-500 mt-1">
           Add a new deal to your pipeline
         </p>
       </div>

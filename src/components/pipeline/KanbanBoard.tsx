@@ -155,7 +155,7 @@ export function KanbanBoard({ initialDeals }: KanbanBoardProps) {
               <div className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />
               <h3 className="font-medium text-gray-900 text-sm">{stage.name}</h3>
             </div>
-            <div className="flex-1 rounded-lg p-2 min-h-[200px] bg-gray-100 animate-pulse" />
+            <div className="flex-1 rounded-xl p-2 min-h-[200px] bg-gray-100 animate-pulse" />
           </div>
         ))}
       </div>

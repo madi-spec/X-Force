@@ -182,8 +182,8 @@ export default function AIPromptsPage() {
 
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">AI Prompts</h1>
-            <p className="text-gray-500 mt-1">
+            <h1 className="text-xl font-normal text-gray-900">AI Prompts</h1>
+            <p className="text-xs text-gray-500 mt-1">
               Manage the prompts used by AI features in the platform
             </p>
           </div>
@@ -200,7 +200,7 @@ export default function AIPromptsPage() {
                 <button
                   key={prompt.id}
                   onClick={() => setSelectedPrompt(prompt)}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                  className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
                     selectedPrompt?.id === prompt.id
                       ? 'bg-blue-50 text-blue-700 border border-blue-200'
                       : 'hover:bg-gray-50 text-gray-700'
@@ -210,7 +210,7 @@ export default function AIPromptsPage() {
                     <Sparkles className="h-4 w-4" />
                     <span className="font-medium text-sm">{prompt.name}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 truncate">
+                  <p className="text-xs text-xs text-gray-500 mt-1 truncate">
                     v{prompt.version} • {new Date(prompt.updated_at).toLocaleDateString()}
                   </p>
                 </button>
@@ -248,7 +248,7 @@ export default function AIPromptsPage() {
                   <button
                     onClick={handleSave}
                     disabled={!hasChanges || saving}
-                    className="flex items-center gap-1 px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+                    className="flex items-center gap-1 px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl disabled:opacity-50"
                   >
                     {saving ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

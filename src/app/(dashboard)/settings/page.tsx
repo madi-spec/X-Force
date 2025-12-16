@@ -53,14 +53,19 @@ export default async function SettingsPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
+      <div className="mb-6">
+        <h1 className="text-xl font-normal text-gray-900">Settings</h1>
+        <p className="text-xs text-gray-500 mt-1">
+          Manage your account, team, and integrations
+        </p>
+      </div>
 
       <div className="space-y-6">
         {/* Profile Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <User className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Profile</h2>
+            <h2 className="text-base font-medium text-gray-900">Profile</h2>
           </div>
 
           {profile ? (
@@ -132,13 +137,13 @@ export default async function SettingsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Upload className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Data Management</h2>
+            <h2 className="text-base font-medium text-gray-900">Data Management</h2>
           </div>
 
           <div className="space-y-4">
             <Link
               href="/settings/import"
-              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+              className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
             >
               <div>
                 <p className="font-medium text-gray-900 group-hover:text-blue-700">
@@ -152,7 +157,7 @@ export default async function SettingsPage() {
             </Link>
             <Link
               href="/settings/activity-review"
-              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-colors group"
+              className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-colors group"
             >
               <div className="flex items-center gap-3">
                 <ClipboardCheck className="h-5 w-5 text-amber-500" />
@@ -174,13 +179,13 @@ export default async function SettingsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Link2 className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Integrations</h2>
+            <h2 className="text-base font-medium text-gray-900">Integrations</h2>
           </div>
 
           <div className="space-y-4">
             <Link
               href="/settings/integrations"
-              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+              className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
             >
               <div>
                 <p className="font-medium text-gray-900 group-hover:text-blue-700">
@@ -199,13 +204,13 @@ export default async function SettingsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Sparkles className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">AI Settings</h2>
+            <h2 className="text-base font-medium text-gray-900">AI Settings</h2>
           </div>
 
           <div className="space-y-4">
             <Link
               href="/settings/ai-prompts"
-              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+              className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
             >
               <div>
                 <p className="font-medium text-gray-900 group-hover:text-blue-700">
@@ -219,7 +224,7 @@ export default async function SettingsPage() {
             </Link>
             <Link
               href="/settings/transcripts"
-              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+              className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
             >
               <div className="flex items-center gap-3">
                 <FileText className="h-5 w-5 text-gray-400 group-hover:text-blue-600" />
@@ -241,7 +246,7 @@ export default async function SettingsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Award className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-base font-medium text-gray-900">
               Certifications
             </h2>
           </div>
@@ -257,7 +262,7 @@ export default async function SettingsPage() {
                   {userCertifications.map((uc) => (
                     <div
                       key={uc.certification_id}
-                      className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200"
+                      className="flex items-start gap-3 p-3 rounded-xl bg-green-50 border border-green-200"
                     >
                       <Award className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
                       <div>
@@ -294,7 +299,7 @@ export default async function SettingsPage() {
                   .map((cert) => (
                     <div
                       key={cert.id}
-                      className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200"
+                      className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 border border-gray-200"
                     >
                       <Award className="h-5 w-5 text-gray-400 shrink-0 mt-0.5" />
                       <div>
@@ -319,7 +324,7 @@ export default async function SettingsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Bell className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
+            <h2 className="text-base font-medium text-gray-900">Notifications</h2>
           </div>
 
           <div className="space-y-4">
@@ -371,7 +376,7 @@ export default async function SettingsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
             <Shield className="h-5 w-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Security</h2>
+            <h2 className="text-base font-medium text-gray-900">Security</h2>
           </div>
 
           <div className="space-y-4">

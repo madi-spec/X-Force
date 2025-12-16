@@ -195,14 +195,14 @@ export default function TranscriptsPage() {
 
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Transcripts Log</h1>
-            <p className="text-gray-500 mt-1">
+            <h1 className="text-xl font-normal text-gray-900">Transcripts Log</h1>
+            <p className="text-xs text-gray-500 mt-1">
               View and manage all synced meeting transcripts
             </p>
           </div>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <Download className="h-4 w-4" />
             Export CSV
@@ -243,7 +243,7 @@ export default function TranscriptsPage() {
               placeholder="Search transcripts..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
@@ -251,7 +251,7 @@ export default function TranscriptsPage() {
           <select
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Sources</option>
             <option value="fireflies">Fireflies</option>
@@ -263,7 +263,7 @@ export default function TranscriptsPage() {
           <select
             value={analyzed}
             onChange={(e) => setAnalyzed(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Status</option>
             <option value="true">Analyzed</option>
@@ -298,7 +298,7 @@ export default function TranscriptsPage() {
               <select
                 value={sentiment}
                 onChange={(e) => setSentiment(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Any</option>
                 <option value="positive">Positive</option>
@@ -312,7 +312,7 @@ export default function TranscriptsPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -321,7 +321,7 @@ export default function TranscriptsPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -349,7 +349,7 @@ export default function TranscriptsPage() {
             <button
               onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
               disabled={pagination.page === 1}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Previous
             </button>
@@ -359,14 +359,14 @@ export default function TranscriptsPage() {
             <button
               onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
               disabled={pagination.page === pagination.totalPages}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Next
             </button>
             <select
               value={pagination.limit}
               onChange={(e) => setPagination({ ...pagination, page: 1, limit: parseInt(e.target.value) })}
-              className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg"
+              className="px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
             >
               <option value="25">25 / page</option>
               <option value="50">50 / page</option>
