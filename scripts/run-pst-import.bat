@@ -1,17 +1,31 @@
 @echo off
-REM ============================================
-REM X-FORCE PST Import - Daily Scheduled Task
-REM Runs at 5:00 AM EST via Windows Task Scheduler
-REM ============================================
+REM X-FORCE PST Import Script
+REM Run this script daily via Windows Task Scheduler
+REM
+REM Task Scheduler Setup:
+REM 1. Open Task Scheduler
+REM 2. Create Basic Task: "X-FORCE PST Import"
+REM 3. Trigger: Daily at preferred time (e.g., 6:00 AM)
+REM 4. Action: Start a program
+REM    - Program: C:\Users\tmort\x-force\scripts\run-pst-import.bat
+REM    - Start in: C:\Users\tmort\x-force
+REM 5. Check "Run whether user is logged on or not"
 
-cd /d "C:\Users\tmort\x-force"
+echo ================================================
+echo X-FORCE PST Import
+echo Started: %date% %time%
+echo ================================================
+echo.
 
-REM Log start time
-echo [%date% %time%] Starting PST Import >> logs\pst-import.log
+cd /d C:\Users\tmort\x-force
 
 REM Run the import script
-node scripts\import-pst.mjs >> logs\pst-import.log 2>&1
+node scripts\import-pst.mjs
 
-REM Log completion
-echo [%date% %time%] PST Import completed >> logs\pst-import.log
-echo. >> logs\pst-import.log
+echo.
+echo ================================================
+echo Completed: %date% %time%
+echo ================================================
+
+REM Uncomment the line below to keep the window open (useful for debugging)
+REM pause

@@ -1,520 +1,577 @@
+#!/usr/bin/env node
 /**
  * PST File Import Script
- * Imports emails and calendar events from Outlook PST files into X-FORCE
+ * Imports emails and calendar events from a local Outlook PST file into X-FORCE
  *
- * Usage: node scripts/import-pst.mjs
- *
- * This script:
- * 1. Opens the configured PST file
- * 2. Extracts emails from Inbox and Sent Items
- * 3. Extracts calendar events
- * 4. Imports into the activities table with deduplication
+ * Usage: node scripts/import-pst.mjs [--dry-run] [--max=1000]
  */
 
 import { createClient } from '@supabase/supabase-js';
-import PSTFile from 'pst-extractor';
-import { createHash } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { createHash } from 'crypto';
+import PSTExtractor from 'pst-extractor';
+const { PSTFile, PSTFolder, PSTMessage, PSTAppointment } = PSTExtractor;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // ============================================
 // CONFIGURATION
 // ============================================
+
 const CONFIG = {
   PST_FILE_PATH: 'C:\\Users\\tmort\\OneDrive\\Desktop\\xraisales@affiliatedtech.com.pst',
   IMPORT_USER_EMAIL: 'xraisales@affiliatedtech.com',
-  FOLDERS_TO_IMPORT: ['Inbox', 'Sent Items', 'Sent', 'Calendar'],
-  MAX_BODY_LENGTH: 50000, // Truncate long emails/events
+  FOLDERS_TO_IMPORT: {
+    email: ['inbox', 'sent items', 'sent', 'archive'],
+    calendar: ['calendar'],
+  },
+  MAX_BODY_LENGTH: 50000,
+  BATCH_SIZE: 100,
 };
 
 // ============================================
-// LOAD ENVIRONMENT VARIABLES
+// ENVIRONMENT LOADING
 // ============================================
-const envPath = resolve(__dirname, '..', '.env.local');
-try {
-  const envContent = readFileSync(envPath, 'utf-8');
-  envContent.split('\n').forEach(line => {
-    const [key, ...valueParts] = line.split('=');
-    if (key && !key.startsWith('#')) {
-      process.env[key.trim()] = valueParts.join('=').trim();
+
+function loadEnv() {
+  try {
+    const envPath = join(__dirname, '..', '.env.local');
+    const envContent = readFileSync(envPath, 'utf-8');
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const [key, ...valueParts] = trimmed.split('=');
+        const value = valueParts.join('=').replace(/^["']|["']$/g, '');
+        process.env[key] = value;
+      }
     }
-  });
-} catch (e) {
-  console.error('Could not load .env.local:', e.message);
-  process.exit(1);
+  } catch (e) {
+    console.error('Failed to load .env.local:', e.message);
+    process.exit(1);
+  }
 }
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('Missing required environment variables (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
-  process.exit(1);
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
 // ============================================
-// HELPER FUNCTIONS
+// HASH GENERATION
 // ============================================
 
-function generateEmailExternalId(email) {
-  if (email.messageId) {
-    // Clean up message ID (remove angle brackets and whitespace)
-    const cleanId = email.messageId.replace(/[<>\s]/g, '');
-    return `pst_email_${cleanId}`;
+function generateExternalId(type, item) {
+  const parts = [type];
+
+  if (item.subject) {
+    parts.push(item.subject.substring(0, 100));
   }
 
-  const hashInput = [
-    email.subject || '',
-    email.fromEmail || '',
-    email.sentDate?.toISOString() || email.receivedDate?.toISOString() || '',
-  ].join('|');
+  if (item.date) {
+    parts.push(item.date.toISOString());
+  }
 
-  const hash = createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
-  return `pst_email_${hash}`;
+  if (item.sender) {
+    parts.push(item.sender.toLowerCase());
+  }
+
+  const hash = createHash('sha256')
+    .update(parts.join('|'))
+    .digest('hex')
+    .substring(0, 16);
+
+  return `pst_${type}_${hash}`;
 }
 
-function generateEventExternalId(event) {
-  const hashInput = [
-    event.subject || '',
-    event.startTime?.toISOString() || '',
-    event.location || '',
-  ].join('|');
+// ============================================
+// FOLDER HELPERS
+// ============================================
 
-  const hash = createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
-  return `pst_event_${hash}`;
+function folderMatches(folderName, targets) {
+  const lower = (folderName || '').toLowerCase();
+  return targets.some(t => lower.includes(t.toLowerCase()));
 }
 
-function truncateText(text, maxLength) {
-  if (!text) return '';
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength) + '... [truncated]';
-}
+// ============================================
+// PST EXTRACTION
+// ============================================
 
-function formatDate(date) {
-  if (!date) return null;
+function extractEmail(message, folderPath) {
   try {
-    return date.toISOString();
-  } catch {
+    const recipients = [];
+    const numRecipients = message.numberOfRecipients || 0;
+
+    for (let i = 0; i < numRecipients; i++) {
+      try {
+        const recipient = message.getRecipient(i);
+        if (recipient) {
+          const recipientType = recipient.recipientType || 0;
+          let type = 'to';
+          if (recipientType === 2) type = 'cc';
+          if (recipientType === 3) type = 'bcc';
+
+          recipients.push({
+            name: recipient.displayName || '',
+            email: recipient.smtpAddress || recipient.emailAddress || '',
+            type,
+          });
+        }
+      } catch {
+        // Skip problematic recipients
+      }
+    }
+
+    const attachmentNames = [];
+    const numAttachments = message.numberOfAttachments || 0;
+
+    for (let i = 0; i < numAttachments; i++) {
+      try {
+        const attachment = message.getAttachment(i);
+        if (attachment) {
+          const name = attachment.longFilename || attachment.filename;
+          if (name) attachmentNames.push(name);
+        }
+      } catch {
+        // Skip problematic attachments
+      }
+    }
+
+    return {
+      messageId: message.internetMessageId || null,
+      subject: message.subject || '(No Subject)',
+      body: message.body || '',
+      bodyHtml: message.bodyHTML || null,
+      senderName: message.senderName || '',
+      senderEmail: message.senderEmailAddress || '',
+      recipients,
+      sentAt: message.clientSubmitTime || null,
+      receivedAt: message.messageDeliveryTime || null,
+      folder: folderPath,
+      hasAttachments: numAttachments > 0,
+      attachmentNames,
+    };
+  } catch (error) {
+    console.error('Error extracting email:', error.message);
+    return null;
+  }
+}
+
+function extractCalendarEvent(appointment, folderPath) {
+  try {
+    const attendees = [];
+    const numRecipients = appointment.numberOfRecipients || 0;
+
+    for (let i = 0; i < numRecipients; i++) {
+      try {
+        const recipient = appointment.getRecipient(i);
+        if (recipient) {
+          attendees.push({
+            name: recipient.displayName || '',
+            email: recipient.smtpAddress || recipient.emailAddress || '',
+            required: recipient.recipientType === 1,
+          });
+        }
+      } catch {
+        // Skip problematic recipients
+      }
+    }
+
+    return {
+      subject: appointment.subject || '(No Subject)',
+      body: appointment.body || '',
+      location: appointment.location || null,
+      startTime: appointment.startTime || null,
+      endTime: appointment.endTime || null,
+      isAllDay: appointment.subType === 1,
+      organizer: appointment.senderName || null,
+      attendees,
+      folder: folderPath,
+    };
+  } catch (error) {
+    console.error('Error extracting calendar event:', error.message);
     return null;
   }
 }
 
 // ============================================
-// PST PARSING
+// PST TRAVERSAL
 // ============================================
 
-function extractEmail(message, folder, userEmail, isSentItems) {
-  const senderEmail = message.senderEmailAddress || '';
-  const isFromMe = isSentItems || senderEmail.toLowerCase().includes(userEmail.toLowerCase());
-
-  // Get recipients
-  const toRecipients = [];
-  const ccRecipients = [];
-
-  try {
-    const recipientCount = message.numberOfRecipients;
-    for (let i = 0; i < recipientCount; i++) {
-      const recipient = message.getRecipient(i);
-      if (recipient) {
-        const email = recipient.smtpAddress || recipient.emailAddress || '';
-        const recipientType = recipient.recipientType;
-        if (recipientType === 1) { // TO
-          toRecipients.push(email);
-        } else if (recipientType === 2) { // CC
-          ccRecipients.push(email);
-        }
-      }
-    }
-  } catch {
-    // Ignore recipient extraction errors
-  }
-
-  return {
-    messageId: message.internetMessageId || null,
-    subject: message.subject || '',
-    body: message.body || '',
-    bodyHtml: message.bodyHTML || null,
-    from: message.senderName || '',
-    fromEmail: senderEmail,
-    to: toRecipients,
-    cc: ccRecipients,
-    sentDate: message.clientSubmitTime || null,
-    receivedDate: message.messageDeliveryTime || null,
-    folder,
-    hasAttachments: message.hasAttachments,
-    attachmentCount: message.numberOfAttachments,
-    isFromMe,
-  };
-}
-
-function extractCalendarEvent(appointment, folder) {
-  const attendees = [];
-  try {
-    const recipientCount = appointment.numberOfRecipients;
-    for (let i = 0; i < recipientCount; i++) {
-      const recipient = appointment.getRecipient(i);
-      if (recipient) {
-        const email = recipient.smtpAddress || recipient.emailAddress || '';
-        if (email) attendees.push(email);
-      }
-    }
-  } catch {
-    // Ignore attendee extraction errors
-  }
-
-  return {
-    subject: appointment.subject || '',
-    body: appointment.body || '',
-    location: appointment.location || null,
-    startTime: appointment.startTime || null,
-    endTime: appointment.endTime || null,
-    isAllDay: appointment.subType === 1,
-    attendees,
-    organizer: appointment.senderEmailAddress || null,
-    folder,
-  };
-}
-
-function processFolder(folder, parentPath, results, userEmail, foldersToImport) {
-  const folderName = folder.displayName || 'Unknown';
-  const currentPath = parentPath ? `${parentPath}/${folderName}` : folderName;
-
-  // Check if this folder should be processed
-  const shouldProcess = foldersToImport.some(f =>
-    currentPath.toLowerCase().includes(f.toLowerCase())
-  );
-
-  const isCalendar = currentPath.toLowerCase().includes('calendar');
-  const isSentItems = currentPath.toLowerCase().includes('sent');
-
-  if (shouldProcess && folder.contentCount > 0) {
-    console.log(`  Processing: ${currentPath} (${folder.contentCount} items)`);
-
-    try {
-      let item = folder.getNextChild();
-      while (item !== null) {
-        try {
-          if (isCalendar && item.messageClass?.includes('IPM.Appointment')) {
-            const event = extractCalendarEvent(item, currentPath);
-            if (event.startTime) {
-              results.calendarEvents.push(event);
-            }
-          } else if (item.messageClass?.includes('IPM.Note') || !isCalendar) {
-            const email = extractEmail(item, currentPath, userEmail, isSentItems);
-            if (email.subject || email.body) {
-              results.emails.push(email);
-            }
-          }
-        } catch (itemError) {
-          results.errors.push(`Error processing item in ${currentPath}: ${itemError.message}`);
-        }
-        item = folder.getNextChild();
-      }
-    } catch (folderError) {
-      results.errors.push(`Error reading folder ${currentPath}: ${folderError.message}`);
-    }
-  }
-
-  // Process subfolders
-  if (folder.hasSubfolders) {
-    try {
-      const subfolders = folder.getSubFolders();
-      for (const subfolder of subfolders) {
-        processFolder(subfolder, currentPath, results, userEmail, foldersToImport);
-      }
-    } catch (error) {
-      results.errors.push(`Error accessing subfolders of ${currentPath}: ${error.message}`);
-    }
-  }
-}
-
-async function parsePstFile(filePath, userEmail, foldersToImport) {
-  const results = {
+function traversePst(filePath, options = {}) {
+  const result = {
     emails: [],
-    calendarEvents: [],
-    errors: [],
+    events: [],
+    stats: {
+      foldersProcessed: 0,
+      emailsFound: 0,
+      eventsFound: 0,
+      errors: 0,
+    },
   };
 
   console.log(`Opening PST file: ${filePath}`);
 
   try {
-    const pstFile = new PSTFile.PSTFile(filePath);
+    const pstFile = new PSTFile(filePath);
     const rootFolder = pstFile.getRootFolder();
 
-    console.log('Traversing folder structure...');
-    processFolder(rootFolder, '', results, userEmail, foldersToImport);
+    if (!rootFolder) {
+      throw new Error('Could not read PST root folder');
+    }
+
+    console.log('PST file opened successfully');
+
+    if (options.verbose) {
+      console.log(`Root folder: ${rootFolder.displayName || '(root)'}`);
+      console.log(`Root has subfolders: ${rootFolder.hasSubfolders}`);
+      console.log(`Root content count: ${rootFolder.contentCount || 0}`);
+    }
+
+    function processFolder(folder, path) {
+      const name = folder.displayName || '(unnamed)';
+      const currentPath = path ? `${path}/${name}` : name;
+
+      const isEmailFolder = folderMatches(name, CONFIG.FOLDERS_TO_IMPORT.email);
+      const isCalendarFolder = folderMatches(name, CONFIG.FOLDERS_TO_IMPORT.calendar);
+
+      result.stats.foldersProcessed++;
+
+      if (options.verbose) {
+        console.log(`  [${result.stats.foldersProcessed}] Folder: "${name}" (${folder.contentCount || 0} items)`);
+      }
+
+      // Process subfolders using getSubFolders()
+      if (folder.hasSubfolders) {
+        try {
+          const subfolders = folder.getSubFolders();
+          if (subfolders && subfolders.length > 0) {
+            for (const subfolder of subfolders) {
+              processFolder(subfolder, currentPath);
+            }
+          }
+        } catch (error) {
+          // Some folders like Search folders may not be accessible
+          if (options.verbose) {
+            console.error(`  Error getting subfolders in ${currentPath}:`, error.message);
+          }
+          result.stats.errors++;
+        }
+      }
+
+      // Process content items
+      if ((isEmailFolder || isCalendarFolder) && folder.contentCount > 0) {
+        try {
+          // Reset the iterator to the beginning
+          folder.moveChildCursorTo(0);
+          let item = folder.getNextChild();
+          while (item) {
+            if (options.maxItems && (result.emails.length + result.events.length) >= options.maxItems) {
+              console.log(`Reached max items limit (${options.maxItems})`);
+              return;
+            }
+
+            // Check if it's an appointment/calendar item
+            const msgClass = item.messageClass || '';
+            if (isCalendarFolder && msgClass.includes('IPM.Appointment')) {
+              const extracted = extractCalendarEvent(item, currentPath);
+              if (extracted && extracted.startTime) {
+                result.stats.eventsFound++;
+
+                const importItem = {
+                  type: 'meeting',
+                  externalId: generateExternalId('event', {
+                    subject: extracted.subject,
+                    date: extracted.startTime,
+                  }),
+                  subject: extracted.subject,
+                  body: extracted.body.substring(0, CONFIG.MAX_BODY_LENGTH),
+                  occurredAt: extracted.startTime,
+                  metadata: {
+                    folder: currentPath,
+                    location: extracted.location,
+                    endTime: extracted.endTime?.toISOString() || null,
+                    isAllDay: extracted.isAllDay,
+                    organizer: extracted.organizer,
+                    attendees: extracted.attendees,
+                    source: 'pst_import',
+                  },
+                };
+
+                result.events.push(importItem);
+              }
+            } else if (isEmailFolder) {
+              // It's an email
+              const extracted = extractEmail(item, currentPath);
+              if (extracted) {
+                result.stats.emailsFound++;
+
+                // Determine if sent or received
+                const isSent = folderMatches(name, ['sent']) ||
+                  (CONFIG.IMPORT_USER_EMAIL &&
+                   extracted.senderEmail.toLowerCase() === CONFIG.IMPORT_USER_EMAIL.toLowerCase());
+
+                const occurredAt = isSent ? extracted.sentAt : extracted.receivedAt;
+
+                if (occurredAt) {
+                  const body = extracted.bodyHtml || extracted.body;
+                  const importItem = {
+                    type: isSent ? 'email_sent' : 'email_received',
+                    externalId: generateExternalId('email', {
+                      subject: extracted.subject,
+                      date: occurredAt,
+                      sender: extracted.senderEmail,
+                    }),
+                    subject: extracted.subject,
+                    body: body.substring(0, CONFIG.MAX_BODY_LENGTH),
+                    occurredAt,
+                    metadata: {
+                      folder: currentPath,
+                      from: { name: extracted.senderName, email: extracted.senderEmail },
+                      to: extracted.recipients.filter(r => r.type === 'to'),
+                      cc: extracted.recipients.filter(r => r.type === 'cc'),
+                      hasAttachments: extracted.hasAttachments,
+                      attachmentCount: extracted.attachmentNames.length,
+                      messageId: extracted.messageId,
+                      source: 'pst_import',
+                    },
+                  };
+
+                  result.emails.push(importItem);
+                }
+              }
+            }
+
+            item = folder.getNextChild();
+          }
+        } catch (error) {
+          console.error(`Error processing items in ${currentPath}:`, error.message);
+          result.stats.errors++;
+        }
+      }
+    }
+
+    processFolder(rootFolder, '');
 
   } catch (error) {
-    results.errors.push(`Failed to parse PST file: ${error.message}`);
+    console.error('Error parsing PST file:', error);
+    throw error;
   }
 
-  return results;
+  return result;
 }
 
 // ============================================
-// DATABASE OPERATIONS
+// DATABASE IMPORT
 // ============================================
 
-async function getOrCreateExternalCompany() {
-  // Check if "PST Import" company exists
-  const { data: existing } = await supabase
-    .from('companies')
-    .select('id')
-    .eq('name', 'PST Import')
-    .single();
+async function importToDatabase(supabase, items, options = {}) {
+  const stats = {
+    imported: 0,
+    skipped: 0,
+    errors: 0,
+  };
 
-  if (existing) {
-    return existing.id;
-  }
+  // Get or create system user and company for imports
+  let userId = null;
+  let companyId = null;
 
-  // Create it
-  const { data: newCompany, error } = await supabase
-    .from('companies')
-    .insert({
-      name: 'PST Import',
-      status: 'cold_lead',
-      segment: 'smb',
-      industry: 'pest',
-    })
-    .select('id')
-    .single();
-
-  if (error) {
-    console.error('Failed to create PST Import company:', error.message);
-    return null;
-  }
-
-  return newCompany.id;
-}
-
-async function getSystemUserId() {
-  // Get the user matching the IMPORT_USER_EMAIL
-  const { data: user } = await supabase
+  // Try to find a system/admin user
+  const { data: users } = await supabase
     .from('users')
     .select('id')
-    .eq('email', CONFIG.IMPORT_USER_EMAIL)
-    .single();
+    .limit(1);
 
-  if (user) {
-    return user.id;
+  if (users && users.length > 0) {
+    userId = users[0].id;
+  } else {
+    console.error('No users found in database. Cannot import.');
+    return stats;
   }
 
-  // Fallback: try to find by email pattern if exact match fails
-  console.warn(`User with email ${CONFIG.IMPORT_USER_EMAIL} not found, falling back to first user`);
-  const { data: fallbackUser } = await supabase
-    .from('users')
+  // Try to find or create a company for external contacts
+  const { data: companies } = await supabase
+    .from('companies')
     .select('id')
-    .limit(1)
-    .single();
+    .eq('name', 'External Contacts')
+    .limit(1);
 
-  return fallbackUser?.id || null;
-}
+  if (companies && companies.length > 0) {
+    companyId = companies[0].id;
+  } else {
+    // Create the company
+    const { data: newCompany, error: companyError } = await supabase
+      .from('companies')
+      .insert({
+        name: 'External Contacts',
+        status: 'cold_lead',
+        segment: 'smb',
+        industry: 'Other',
+        agent_count: 0,
+      })
+      .select('id')
+      .single();
 
-async function checkExistingExternalId(externalId) {
-  const { data } = await supabase
-    .from('activities')
-    .select('id')
-    .eq('external_id', externalId)
-    .single();
-
-  return !!data;
-}
-
-async function importEmail(email, companyId, userId) {
-  const externalId = generateEmailExternalId(email);
-
-  // Check for duplicate
-  const exists = await checkExistingExternalId(externalId);
-  if (exists) {
-    return { status: 'skipped', reason: 'duplicate' };
+    if (companyError) {
+      console.error('Failed to create External Contacts company:', companyError);
+      return stats;
+    }
+    companyId = newCompany.id;
+    console.log('Created External Contacts company:', companyId);
   }
 
-  const activityType = email.isFromMe ? 'email_sent' : 'email_received';
-  const occurredAt = formatDate(email.sentDate) || formatDate(email.receivedDate) || new Date().toISOString();
+  console.log(`Using user ID: ${userId}`);
+  console.log(`Using company ID: ${companyId}`);
 
-  const { error } = await supabase.from('activities').insert({
-    company_id: companyId,
-    user_id: userId,
-    type: activityType,
-    subject: truncateText(email.subject, 500),
-    body: truncateText(email.body || email.bodyHtml || '', CONFIG.MAX_BODY_LENGTH),
-    external_id: externalId,
-    occurred_at: occurredAt,
-    metadata: {
-      source: 'pst_import',
-      folder: email.folder,
-      from: email.from,
-      fromEmail: email.fromEmail,
-      to: email.to,
-      cc: email.cc,
-      hasAttachments: email.hasAttachments,
-      attachmentCount: email.attachmentCount,
-      messageId: email.messageId,
-    },
-  });
-
-  if (error) {
-    return { status: 'error', reason: error.message };
+  // Process items in batches
+  const batches = [];
+  for (let i = 0; i < items.length; i += CONFIG.BATCH_SIZE) {
+    batches.push(items.slice(i, i + CONFIG.BATCH_SIZE));
   }
 
-  return { status: 'imported' };
-}
+  console.log(`Processing ${items.length} items in ${batches.length} batches...`);
 
-async function importCalendarEvent(event, companyId, userId) {
-  const externalId = generateEventExternalId(event);
+  for (let batchNum = 0; batchNum < batches.length; batchNum++) {
+    const batch = batches[batchNum];
+    console.log(`  Batch ${batchNum + 1}/${batches.length} (${batch.length} items)`);
 
-  // Check for duplicate
-  const exists = await checkExistingExternalId(externalId);
-  if (exists) {
-    return { status: 'skipped', reason: 'duplicate' };
+    for (const item of batch) {
+      // Check if already exists
+      const { data: existing } = await supabase
+        .from('activities')
+        .select('id')
+        .eq('external_id', item.externalId)
+        .single();
+
+      if (existing) {
+        stats.skipped++;
+        continue;
+      }
+
+      if (options.dryRun) {
+        stats.imported++;
+        continue;
+      }
+
+      // Insert the activity
+      const { error } = await supabase
+        .from('activities')
+        .insert({
+          user_id: userId,
+          company_id: companyId,
+          type: item.type,
+          subject: item.subject,
+          body: item.body,
+          metadata: item.metadata,
+          external_id: item.externalId,
+          occurred_at: item.occurredAt.toISOString(),
+        });
+
+      if (error) {
+        // Check if it's a duplicate key error (external_id unique constraint)
+        if (error.code === '23505') {
+          stats.skipped++;
+        } else {
+          console.error(`Error inserting activity:`, error.message);
+          stats.errors++;
+        }
+      } else {
+        stats.imported++;
+      }
+    }
   }
 
-  const occurredAt = formatDate(event.startTime) || new Date().toISOString();
-
-  const { error } = await supabase.from('activities').insert({
-    company_id: companyId,
-    user_id: userId,
-    type: 'meeting',
-    subject: truncateText(event.subject, 500),
-    body: truncateText(event.body, CONFIG.MAX_BODY_LENGTH),
-    external_id: externalId,
-    occurred_at: occurredAt,
-    metadata: {
-      source: 'pst_import',
-      folder: event.folder,
-      location: event.location,
-      endTime: formatDate(event.endTime),
-      isAllDay: event.isAllDay,
-      attendees: event.attendees,
-      organizer: event.organizer,
-    },
-  });
-
-  if (error) {
-    return { status: 'error', reason: error.message };
-  }
-
-  return { status: 'imported' };
+  return stats;
 }
 
 // ============================================
-// MAIN EXECUTION
+// MAIN
 // ============================================
 
 async function main() {
-  const startTime = Date.now();
-
-  console.log('='.repeat(50));
-  console.log('PST IMPORT STARTED');
-  console.log('='.repeat(50));
-  console.log(`File: ${CONFIG.PST_FILE_PATH}`);
+  console.log('=== PST Import Started ===');
   console.log(`Time: ${new Date().toISOString()}`);
   console.log('');
 
-  // Check if file exists
+  // Parse command line arguments
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+  const verbose = args.includes('--verbose');
+  let maxItems = null;
+
+  for (const arg of args) {
+    if (arg.startsWith('--max=')) {
+      maxItems = parseInt(arg.split('=')[1], 10);
+    }
+  }
+
+  if (dryRun) {
+    console.log('DRY RUN MODE - No changes will be made to the database');
+  }
+
+  if (maxItems) {
+    console.log(`Max items limit: ${maxItems}`);
+  }
+
+  console.log('');
+
+  // Check if PST file exists
   if (!existsSync(CONFIG.PST_FILE_PATH)) {
-    console.error(`ERROR: PST file not found: ${CONFIG.PST_FILE_PATH}`);
+    console.error(`PST file not found: ${CONFIG.PST_FILE_PATH}`);
     process.exit(1);
   }
 
-  // Get company and user IDs for the activities
-  const companyId = await getOrCreateExternalCompany();
-  const userId = await getSystemUserId();
+  console.log(`File: ${CONFIG.PST_FILE_PATH}`);
+  console.log('');
 
-  if (!companyId || !userId) {
-    console.error('ERROR: Could not get company or user ID');
+  // Load environment and create Supabase client
+  loadEnv();
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Missing environment variables');
     process.exit(1);
   }
 
-  console.log(`Using Company ID: ${companyId}`);
-  console.log(`Using User ID: ${userId}`);
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // Extract from PST
+  console.log('Extracting from PST file...');
+  const startExtract = Date.now();
+
+  const extractResult = traversePst(CONFIG.PST_FILE_PATH, { maxItems, verbose });
+
+  const extractTime = ((Date.now() - startExtract) / 1000).toFixed(1);
+  console.log('');
+  console.log(`Extraction complete in ${extractTime}s`);
+  console.log(`  Folders processed: ${extractResult.stats.foldersProcessed}`);
+  console.log(`  Emails found: ${extractResult.stats.emailsFound}`);
+  console.log(`  Calendar events found: ${extractResult.stats.eventsFound}`);
+  console.log(`  Errors: ${extractResult.stats.errors}`);
   console.log('');
 
-  // Parse the PST file
-  const parseResults = await parsePstFile(
-    CONFIG.PST_FILE_PATH,
-    CONFIG.IMPORT_USER_EMAIL,
-    CONFIG.FOLDERS_TO_IMPORT
-  );
+  // Combine emails and events for import
+  const allItems = [...extractResult.emails, ...extractResult.events];
 
-  console.log('');
-  console.log(`Found ${parseResults.emails.length} emails`);
-  console.log(`Found ${parseResults.calendarEvents.length} calendar events`);
-  console.log('');
-
-  // Import emails
-  const emailStats = { imported: 0, skipped: 0, errors: 0 };
-  console.log('Importing emails...');
-
-  for (const email of parseResults.emails) {
-    const result = await importEmail(email, companyId, userId);
-    if (result.status === 'imported') {
-      emailStats.imported++;
-    } else if (result.status === 'skipped') {
-      emailStats.skipped++;
-    } else {
-      emailStats.errors++;
-      if (emailStats.errors <= 5) {
-        console.error(`  Error importing email "${email.subject}": ${result.reason}`);
-      }
-    }
-
-    // Progress indicator
-    const total = emailStats.imported + emailStats.skipped + emailStats.errors;
-    if (total % 100 === 0) {
-      console.log(`  Processed ${total}/${parseResults.emails.length} emails...`);
-    }
+  if (allItems.length === 0) {
+    console.log('No items to import.');
+    return;
   }
 
-  console.log(`  Emails - Imported: ${emailStats.imported}, Skipped: ${emailStats.skipped}, Errors: ${emailStats.errors}`);
+  // Import to database
+  console.log('Importing to database...');
+  const startImport = Date.now();
+
+  const importStats = await importToDatabase(supabase, allItems, { dryRun });
+
+  const importTime = ((Date.now() - startImport) / 1000).toFixed(1);
   console.log('');
-
-  // Import calendar events
-  const calendarStats = { imported: 0, skipped: 0, errors: 0 };
-  console.log('Importing calendar events...');
-
-  for (const event of parseResults.calendarEvents) {
-    const result = await importCalendarEvent(event, companyId, userId);
-    if (result.status === 'imported') {
-      calendarStats.imported++;
-    } else if (result.status === 'skipped') {
-      calendarStats.skipped++;
-    } else {
-      calendarStats.errors++;
-      if (calendarStats.errors <= 5) {
-        console.error(`  Error importing event "${event.subject}": ${result.reason}`);
-      }
-    }
-  }
-
-  console.log(`  Calendar - Imported: ${calendarStats.imported}, Skipped: ${calendarStats.skipped}, Errors: ${calendarStats.errors}`);
+  console.log('=== Import Complete ===');
+  console.log(`  Imported: ${importStats.imported}`);
+  console.log(`  Skipped (duplicates): ${importStats.skipped}`);
+  console.log(`  Errors: ${importStats.errors}`);
+  console.log(`  Duration: ${importTime}s`);
   console.log('');
-
-  // Summary
-  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-
-  console.log('='.repeat(50));
-  console.log('IMPORT COMPLETE');
-  console.log('='.repeat(50));
-  console.log(`Total Imported: ${emailStats.imported + calendarStats.imported}`);
-  console.log(`Total Skipped (duplicates): ${emailStats.skipped + calendarStats.skipped}`);
-  console.log(`Total Errors: ${emailStats.errors + calendarStats.errors}`);
-  console.log(`Parse Errors: ${parseResults.errors.length}`);
-  console.log(`Duration: ${duration} seconds`);
-
-  if (parseResults.errors.length > 0) {
-    console.log('');
-    console.log('Parse Errors:');
-    parseResults.errors.slice(0, 10).forEach(err => console.log(`  - ${err}`));
-    if (parseResults.errors.length > 10) {
-      console.log(`  ... and ${parseResults.errors.length - 10} more`);
-    }
-  }
 }
 
 main().catch(error => {
