@@ -32,6 +32,7 @@ import {
   type Contact,
   type Deal,
 } from '@/types';
+import { CompanySummaryCard } from '@/components/ai/summaries';
 
 interface CompanyDetailProps {
   company: Company;
@@ -238,7 +239,11 @@ export function CompanyDetail({
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="space-y-6">
+          {/* AI Summary */}
+          <CompanySummaryCard companyId={company.id} />
+
+          <div className="grid grid-cols-2 gap-6">
           {/* Panel 1: Current Stack */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -423,6 +428,7 @@ export function CompanyDetail({
             ) : (
               <p className="text-sm text-gray-500">No team members assigned</p>
             )}
+          </div>
           </div>
         </div>
       )}

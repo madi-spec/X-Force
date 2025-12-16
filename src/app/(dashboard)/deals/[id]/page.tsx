@@ -31,6 +31,7 @@ import { TeamSection } from '@/components/deals/TeamSection';
 import { ActivityLogger } from '@/components/deals/ActivityLogger';
 import { MeetingActivityCard } from '@/components/meetings';
 import { HealthScoreBreakdown } from '@/components/ai/health';
+import { DealSummaryCard } from '@/components/ai/summaries';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   getHealthScoreColor,
@@ -497,6 +498,9 @@ export default async function DealPage({ params }: DealPageProps) {
             initialScore={deal.health_score}
             initialTrend={deal.health_trend}
           />
+
+          {/* AI Deal Summary */}
+          <DealSummaryCard dealId={id} />
 
           {/* Deal Info */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

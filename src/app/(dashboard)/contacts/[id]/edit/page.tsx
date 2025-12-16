@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ContactForm } from '@/components/contacts/ContactForm';
+import { ContactSummaryCard } from '@/components/ai/summaries';
 import { ArrowLeft } from 'lucide-react';
 
 interface EditContactPageProps {
@@ -35,7 +36,7 @@ export default async function EditContactPage({ params }: EditContactPageProps) 
     .order('name');
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <div className="mb-6">
         <Link
           href={`/companies/${contact.company_id}`}
@@ -50,11 +51,21 @@ export default async function EditContactPage({ params }: EditContactPageProps) 
         </p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <ContactForm
-          contact={contact}
-          companies={companies || []}
-        />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Form */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <ContactForm
+              contact={contact}
+              companies={companies || []}
+            />
+          </div>
+        </div>
+
+        {/* Sidebar - AI Summary */}
+        <div className="space-y-6">
+          <ContactSummaryCard contactId={id} />
+        </div>
       </div>
     </div>
   );
