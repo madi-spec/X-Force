@@ -10,9 +10,13 @@ import {
   Clock,
   FileText,
   AlertCircle,
+  Mail,
+  Phone,
+  Play,
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { TranscriptReviewTaskModal } from './TranscriptReviewTaskModal';
+import { TaskActionModal } from './TaskActionModal';
 import type { Task } from '@/types';
 
 const priorityColors: Record<string, string> = {
@@ -46,6 +50,7 @@ export function TasksList({
   const router = useRouter();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showActionModal, setShowActionModal] = useState(false);
 
   const handleTaskClick = (task: Task) => {
     // Check if this is a fireflies_ai task that needs the special modal
@@ -55,11 +60,87 @@ export function TasksList({
     }
   };
 
+  const handleActionClick = (task: Task) => {
+    setSelectedTask(task);
+    setShowActionModal(true);
+  };
+
   const handleResolved = () => {
     // Refresh the page to show updated tasks
     router.refresh();
     setShowReviewModal(false);
     setSelectedTask(null);
+  };
+
+  const handleActionCompleted = () => {
+    router.refresh();
+    setShowActionModal(false);
+    setSelectedTask(null);
+  };
+
+  const getActionButton = (task: Task) => {
+    if (task.completed_at) return null;
+
+    // Don't show action button for fireflies review tasks (they have their own button)
+    if (task.source === 'fireflies_ai' && task.type === 'review') return null;
+
+    switch (task.type) {
+      case 'email':
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleActionClick(task);
+            }}
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-800 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors"
+          >
+            <Mail className="h-4 w-4" />
+            Compose Email
+          </button>
+        );
+      case 'call':
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleActionClick(task);
+            }}
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-800 text-sm font-medium rounded-lg hover:bg-green-200 transition-colors"
+          >
+            <Phone className="h-4 w-4" />
+            Log Call
+          </button>
+        );
+      case 'meeting':
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleActionClick(task);
+            }}
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-800 text-sm font-medium rounded-lg hover:bg-purple-200 transition-colors"
+          >
+            <Calendar className="h-4 w-4" />
+            Complete Meeting
+          </button>
+        );
+      case 'follow_up':
+      case 'custom':
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleActionClick(task);
+            }}
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            <Play className="h-4 w-4" />
+            Complete Task
+          </button>
+        );
+      default:
+        return null;
+    }
   };
 
   const TaskItem = ({ task }: { task: Task }) => {
@@ -139,7 +220,7 @@ export function TasksList({
           </div>
 
           {/* Special action button for fireflies tasks */}
-          {isFirefliesReview && (
+          {isFirefliesReview && !task.completed_at && (
             <button
               onClick={() => handleTaskClick(task)}
               className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-800 text-sm font-medium rounded-lg hover:bg-amber-200 transition-colors"
@@ -148,6 +229,9 @@ export function TasksList({
               Review & Assign
             </button>
           )}
+
+          {/* Action buttons for other task types */}
+          {getActionButton(task)}
         </div>
       </div>
     );
@@ -233,7 +317,7 @@ export function TasksList({
       </div>
 
       {/* Transcript Review Modal */}
-      {selectedTask && (
+      {selectedTask && showReviewModal && (
         <TranscriptReviewTaskModal
           isOpen={showReviewModal}
           onClose={() => {
@@ -242,6 +326,19 @@ export function TasksList({
           }}
           task={selectedTask}
           onResolved={handleResolved}
+        />
+      )}
+
+      {/* Task Action Modal */}
+      {selectedTask && showActionModal && (
+        <TaskActionModal
+          isOpen={showActionModal}
+          onClose={() => {
+            setShowActionModal(false);
+            setSelectedTask(null);
+          }}
+          task={selectedTask}
+          onCompleted={handleActionCompleted}
         />
       )}
     </>
