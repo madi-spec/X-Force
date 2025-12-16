@@ -636,19 +636,19 @@ export default function ActivityReviewPage() {
                   <div className="mb-4">
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Details</h4>
                     <div className="bg-white rounded-lg border border-gray-200 p-3 text-sm">
-                      {activity.metadata?.fromEmail && (
+                      {Boolean(activity.metadata?.fromEmail) && (
                         <p className="text-gray-600">
-                          <strong>From:</strong> {String(activity.metadata.fromEmail)}
+                          <strong>From:</strong> {String(activity.metadata?.fromEmail)}
                         </p>
                       )}
-                      {activity.metadata?.to && Array.isArray(activity.metadata.to) && (
+                      {Array.isArray(activity.metadata?.to) && (
                         <p className="text-gray-600">
-                          <strong>To:</strong> {activity.metadata.to.join(', ')}
+                          <strong>To:</strong> {(activity.metadata.to as string[]).join(', ')}
                         </p>
                       )}
-                      {activity.metadata?.attendees && Array.isArray(activity.metadata.attendees) && (
+                      {Array.isArray(activity.metadata?.attendees) && (
                         <p className="text-gray-600">
-                          <strong>Attendees:</strong> {activity.metadata.attendees.join(', ')}
+                          <strong>Attendees:</strong> {(activity.metadata.attendees as string[]).join(', ')}
                         </p>
                       )}
                       {activity.body && (
