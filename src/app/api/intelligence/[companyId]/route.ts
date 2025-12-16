@@ -100,7 +100,7 @@ export async function POST(
     // Get company info
     const { data: company, error: companyError } = await supabase
       .from('companies')
-      .select('id, name, address')
+      .select('id, name, address, domain')
       .eq('id', companyId)
       .single();
 
@@ -109,6 +109,14 @@ export async function POST(
         { error: 'Company not found' },
         { status: 404 }
       );
+    }
+
+    // Save domain to company if provided and not already set
+    if (requestDomain && requestDomain !== company.domain) {
+      await supabase
+        .from('companies')
+        .update({ domain: requestDomain })
+        .eq('id', companyId);
     }
 
     // Check if collection is already running
@@ -130,8 +138,8 @@ export async function POST(
       });
     }
 
-    // Use provided domain or try to extract from company
-    const domain = requestDomain || extractDomain(company);
+    // Use provided domain, stored domain, or try to extract from company
+    const domain = requestDomain || company.domain || extractDomain(company);
 
     // Start collection (in background for this example, or could be async job)
     // For simplicity, we'll run it inline but this could be a queue job
@@ -163,7 +171,7 @@ export async function POST(
 // HELPERS
 // ============================================
 
-function extractDomain(company: { name: string; address?: unknown }): string | null {
+function extractDomain(company: { name: string; address?: unknown; domain?: string | null }): string | null {
   // This is a placeholder - in a real app, you'd store domain on company
   // Or use an enrichment API to find it
 
