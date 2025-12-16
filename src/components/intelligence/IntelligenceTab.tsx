@@ -55,6 +55,7 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [domain, setDomain] = useState('');
 
   const fetchIntelligence = useCallback(async () => {
     try {
@@ -89,13 +90,14 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
     }
   };
 
-  const handleCollect = async () => {
+  const handleCollect = async (forceDomain?: string) => {
     setRefreshing(true);
     try {
+      const domainToUse = forceDomain || domain;
       const response = await fetch(`/api/intelligence/${companyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: false }),
+        body: JSON.stringify({ force: false, domain: domainToUse || undefined }),
       });
       if (!response.ok) throw new Error('Failed to start collection');
       await fetchIntelligence();
@@ -128,14 +130,37 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
 
   if (!data?.intelligence) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+      <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-sm border border-gray-200 dark:border-[#2a2a2a] p-8 text-center">
         <Brain className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No Intelligence Yet</h3>
-        <p className="text-gray-500 mb-4">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Intelligence Yet</h3>
+        <p className="text-gray-500 mb-6">
           Gather AI-powered insights about {companyName} from multiple sources.
         </p>
+
+        {/* Domain Input */}
+        <div className="max-w-md mx-auto mb-6">
+          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 text-left">
+            Company Website Domain
+          </label>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 relative">
+              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="example.com"
+                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-1 text-left">
+            Enter the company's website domain to enable website and social media collection.
+          </p>
+        </div>
+
         <button
-          onClick={handleCollect}
+          onClick={() => handleCollect()}
           disabled={refreshing}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 mx-auto"
         >
