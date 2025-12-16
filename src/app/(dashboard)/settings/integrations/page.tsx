@@ -71,14 +71,14 @@ export default async function IntegrationsPage({
 
       {/* Success/Error Messages */}
       {successMessage && (
-        <div className="mb-6 flex items-center gap-2 p-4 rounded-lg bg-green-50 border border-green-200 text-green-700">
+        <div className="mb-6 flex items-center gap-2 p-4 rounded-xl bg-green-50 border border-green-200 text-green-700">
           <CheckCircle className="h-5 w-5" />
           {successMessage}
         </div>
       )}
 
       {errorMessage && (
-        <div className="mb-6 flex items-center gap-2 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
+        <div className="mb-6 flex items-center gap-2 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700">
           <AlertCircle className="h-5 w-5" />
           {errorMessage}
         </div>

@@ -89,7 +89,7 @@ export function CommandCenter({ userName, stats }: CommandCenterProps) {
                 <Brain className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">AI Command Center</h1>
+                <h1 className="text-xl font-normal text-gray-900">AI Command Center</h1>
                 <p className="text-sm text-gray-500">
                   Good {getGreeting()}, {userName}. Here&apos;s your pipeline intelligence.
                 </p>

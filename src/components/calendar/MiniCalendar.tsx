@@ -65,7 +65,7 @@ export function MiniCalendar({ selectedDate, onDateSelect, eventDates }: MiniCal
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-3">
+    <div className="bg-white rounded-xl border border-gray-200 p-3">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <button

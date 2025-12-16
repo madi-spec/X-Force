@@ -162,7 +162,7 @@ export function CompanyDetail({
               </div>
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold text-gray-900">{company.name}</h1>
+                  <h1 className="text-xl font-normal text-gray-900">{company.name}</h1>
                   <span className={cn('text-sm font-medium px-2.5 py-0.5 rounded-full', status.color)}>
                     {status.label}
                   </span>

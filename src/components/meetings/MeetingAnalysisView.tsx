@@ -80,7 +80,7 @@ export function MeetingAnalysisView({
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-xl font-normal text-gray-900">
                 Meeting Analysis: {transcription.title}
               </h1>
               <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">

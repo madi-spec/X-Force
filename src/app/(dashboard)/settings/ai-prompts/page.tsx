@@ -232,7 +232,7 @@ export default function AIPromptsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowHistory(!showHistory)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-xl"
                   >
                     <History className="h-4 w-4" />
                     History
@@ -240,7 +240,7 @@ export default function AIPromptsPage() {
                   <button
                     onClick={handleRevertToDefault}
                     disabled={saving}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-xl"
                   >
                     <RotateCcw className="h-4 w-4" />
                     Reset to Default

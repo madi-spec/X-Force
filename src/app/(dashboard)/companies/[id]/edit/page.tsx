@@ -32,7 +32,7 @@ export default async function EditCompanyPage({ params }: EditCompanyPageProps) 
           <ArrowLeft className="h-4 w-4" />
           Back to Company
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">Edit Company</h1>
+        <h1 className="text-xl font-normal text-gray-900">Edit Company</h1>
         <p className="text-gray-500 text-sm mt-1">
           Update company information
         </p>
