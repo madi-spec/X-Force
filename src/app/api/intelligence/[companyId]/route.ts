@@ -93,7 +93,7 @@ export async function POST(
   try {
     const { companyId } = await params;
     const body = await request.json().catch(() => ({}));
-    const { force = false, sources } = body;
+    const { force = false, sources, domain: requestDomain } = body;
 
     const supabase = createAdminClient();
 
@@ -130,9 +130,8 @@ export async function POST(
       });
     }
 
-    // Extract domain from company address or name
-    // In a real scenario, you'd have a domain field on the company
-    const domain = extractDomain(company);
+    // Use provided domain or try to extract from company
+    const domain = requestDomain || extractDomain(company);
 
     // Start collection (in background for this example, or could be async job)
     // For simplicity, we'll run it inline but this could be a queue job

@@ -1,0 +1,82 @@
+[Tue 12/16/2025  5:00:01.62] Starting PST Import 
+==================================================
+PST IMPORT STARTED
+==================================================
+File: C:\Users\tmort\OneDrive\Desktop\xraisales@affiliatedtech.com.pst
+Time: 2025-12-16T10:00:01.792Z
+
+Using Company ID: 44121f64-f377-4cdd-ab5d-150c392efa3a
+Using User ID: 11111111-1111-1111-1111-111111111009
+
+Opening PST file: C:\Users\tmort\OneDrive\Desktop\xraisales@affiliatedtech.com.pst
+Traversing folder structure...
+  Processing: Unknown/Top of Outlook data file/Sent Items (268 items)
+PSTUtil::createAppropriatePSTMessageObject unknown message type: IPM.Sharing
+PSTUtil::createAppropriatePSTMessageObject unknown message type: IPM.Sharing
+PSTUtil::createAppropriatePSTMessageObject unknown message type: IPM.Sharing
+  Processing: Unknown/Top of Outlook data file/Inbox (20 items)
+  Processing: Unknown/Top of Outlook data file/Calendar (80 items)
+  Processing: Unknown/Top of Outlook data file/Calendar/United States holidays (103 items)
+
+Found 285 emails
+Found 183 calendar events
+
+Importing emails...
+  Processed 100/285 emails...
+  Processed 200/285 emails...
+  Emails - Imported: 2, Skipped: 283, Errors: 0
+
+Importing calendar events...
+  Calendar - Imported: 1, Skipped: 182, Errors: 0
+
+==================================================
+IMPORT COMPLETE
+==================================================
+Total Imported: 3
+Total Skipped (duplicates): 465
+Total Errors: 0
+Parse Errors: 0
+Duration: 37.4 seconds
+[Tue 12/16/2025  5:00:39.24] PST Import completed 
+ 
+[Tue 12/16/2025  6:00:01.91] Starting PST Import 
+==================================================
+PST IMPORT STARTED
+==================================================
+File: C:\Users\tmort\OneDrive\Desktop\xraisales@affiliatedtech.com.pst
+Time: 2025-12-16T11:00:02.068Z
+
+Using Company ID: 44121f64-f377-4cdd-ab5d-150c392efa3a
+Using User ID: 11111111-1111-1111-1111-111111111009
+
+Opening PST file: C:\Users\tmort\OneDrive\Desktop\xraisales@affiliatedtech.com.pst
+Traversing folder structure...
+  Processing: Unknown/Top of Outlook data file/Sent Items (268 items)
+PSTUtil::createAppropriatePSTMessageObject unknown message type: IPM.Sharing
+PSTUtil::createAppropriatePSTMessageObject unknown message type: IPM.Sharing
+PSTUtil::createAppropriatePSTMessageObject unknown message type: IPM.Sharing
+  Processing: Unknown/Top of Outlook data file/Inbox (20 items)
+  Processing: Unknown/Top of Outlook data file/Calendar (80 items)
+  Processing: Unknown/Top of Outlook data file/Calendar/United States holidays (103 items)
+
+Found 285 emails
+Found 183 calendar events
+
+Importing emails...
+  Processed 100/285 emails...
+  Processed 200/285 emails...
+  Emails - Imported: 0, Skipped: 285, Errors: 0
+
+Importing calendar events...
+  Calendar - Imported: 0, Skipped: 183, Errors: 0
+
+==================================================
+IMPORT COMPLETE
+==================================================
+Total Imported: 0
+Total Skipped (duplicates): 468
+Total Errors: 0
+Parse Errors: 0
+Duration: 36.9 seconds
+[Tue 12/16/2025  6:00:38.97] PST Import completed 
+ 

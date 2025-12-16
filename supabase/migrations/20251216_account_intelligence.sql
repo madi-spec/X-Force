@@ -178,83 +178,27 @@ ALTER TABLE intelligence_sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contact_intelligence ENABLE ROW LEVEL SECURITY;
 ALTER TABLE industry_mentions ENABLE ROW LEVEL SECURITY;
 
--- Policies for account_intelligence
-CREATE POLICY "Users can view intelligence for companies they can access" ON account_intelligence
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM companies c
-      WHERE c.id = account_intelligence.company_id
-      AND (
-        c.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM deal_team dt
-          JOIN deals d ON d.id = dt.deal_id
-          WHERE d.company_id = c.id AND dt.user_id = auth.uid()
-        )
-      )
-    )
-  );
+-- Simple policies: authenticated users can view, service role can manage all
+CREATE POLICY "Authenticated users can view intelligence" ON account_intelligence
+  FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "Service role can manage all intelligence" ON account_intelligence
   FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
--- Policies for intelligence_sources
-CREATE POLICY "Users can view sources for accessible intelligence" ON intelligence_sources
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM account_intelligence ai
-      JOIN companies c ON c.id = ai.company_id
-      WHERE ai.id = intelligence_sources.account_intelligence_id
-      AND (
-        c.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM deal_team dt
-          JOIN deals d ON d.id = dt.deal_id
-          WHERE d.company_id = c.id AND dt.user_id = auth.uid()
-        )
-      )
-    )
-  );
+CREATE POLICY "Authenticated users can view sources" ON intelligence_sources
+  FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "Service role can manage all sources" ON intelligence_sources
   FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
--- Policies for contact_intelligence
-CREATE POLICY "Users can view contact intel for accessible companies" ON contact_intelligence
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM companies c
-      WHERE c.id = contact_intelligence.company_id
-      AND (
-        c.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM deal_team dt
-          JOIN deals d ON d.id = dt.deal_id
-          WHERE d.company_id = c.id AND dt.user_id = auth.uid()
-        )
-      )
-    )
-  );
+CREATE POLICY "Authenticated users can view contact intel" ON contact_intelligence
+  FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "Service role can manage all contact intel" ON contact_intelligence
   FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
--- Policies for industry_mentions
-CREATE POLICY "Users can view mentions for accessible companies" ON industry_mentions
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM companies c
-      WHERE c.id = industry_mentions.company_id
-      AND (
-        c.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM deal_team dt
-          JOIN deals d ON d.id = dt.deal_id
-          WHERE d.company_id = c.id AND dt.user_id = auth.uid()
-        )
-      )
-    )
-  );
+CREATE POLICY "Authenticated users can view mentions" ON industry_mentions
+  FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "Service role can manage all mentions" ON industry_mentions
   FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
