@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import type { MeetingAnalysis } from '@/types';
+import { getPromptWithVariables } from './promptManager';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -52,7 +53,7 @@ export async function analyzeMeetingTranscription(
     companyContext = await getCompanyContext(context.companyId);
   }
 
-  const prompt = buildAnalysisPrompt(
+  const prompt = await buildAnalysisPrompt(
     transcriptionText,
     context,
     dealContext,
@@ -157,12 +158,12 @@ async function getCompanyContext(companyId: string): Promise<CompanyContext | nu
   };
 }
 
-function buildAnalysisPrompt(
+async function buildAnalysisPrompt(
   transcription: string,
   context: AnalysisContext,
   dealContext: DealContext | null,
   companyContext: CompanyContext | null
-): string {
+): Promise<string> {
   let contextSection = '';
 
   if (dealContext) {
@@ -191,6 +192,20 @@ function buildAnalysisPrompt(
 `;
   }
 
+  // Try to get the prompt from the database
+  const dbPromptResult = await getPromptWithVariables('meeting_analysis', {
+    title: context.title,
+    meetingDate: context.meetingDate,
+    attendees: context.attendees?.join(', ') || 'Not specified',
+    contextSection,
+    transcription,
+  });
+
+  if (dbPromptResult) {
+    return dbPromptResult.prompt;
+  }
+
+  // Fallback to hardcoded prompt if not in database
   return `You are an expert sales analyst for a B2B SaaS company that sells voice phone systems and AI solutions to the pest control and lawn care industry. Analyze this meeting transcription and extract actionable intelligence.
 
 ## Meeting Information

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { Award, User, Shield, Bell, Upload, Link2 } from 'lucide-react';
+import { Award, User, Shield, Bell, Upload, Link2, Sparkles, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatDate } from '@/lib/utils';
 import { TeamManagement } from '@/components/settings/TeamManagement';
@@ -172,6 +172,48 @@ export default async function SettingsPage() {
                 <p className="text-sm text-gray-500">
                   Connect to sync emails and calendar events
                 </p>
+              </div>
+              <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* AI Settings Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Sparkles className="h-5 w-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900">AI Settings</h2>
+          </div>
+
+          <div className="space-y-4">
+            <Link
+              href="/settings/ai-prompts"
+              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+            >
+              <div>
+                <p className="font-medium text-gray-900 group-hover:text-blue-700">
+                  AI Prompts
+                </p>
+                <p className="text-sm text-gray-500">
+                  Edit and customize the prompts used by AI features
+                </p>
+              </div>
+              <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
+            </Link>
+            <Link
+              href="/settings/transcripts"
+              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-gray-400 group-hover:text-blue-600" />
+                <div>
+                  <p className="font-medium text-gray-900 group-hover:text-blue-700">
+                    Transcripts Log
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    View all synced meeting transcripts and their analysis status
+                  </p>
+                </div>
               </div>
               <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
             </Link>

@@ -5,6 +5,7 @@
 
 import { callAIJson, logAIUsage } from './core/aiClient';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getPrompt } from './promptManager';
 
 export interface EntityMatchCandidate {
   id: string;
@@ -183,7 +184,55 @@ export async function aiMatchTranscriptToEntities(
     ? transcriptText.slice(0, maxTranscriptLength) + '\n\n[... transcript truncated for analysis ...]'
     : transcriptText;
 
-  const prompt = `You are analyzing a sales meeting transcript to determine which company and deal it should be associated with in our CRM.
+  // Default schema for entity matching (used as fallback)
+  const defaultEntityMatchingSchema = `{
+  "companyMatch": {
+    "id": "UUID of matched company or null",
+    "name": "Company name",
+    "matchScore": 0.0-1.0,
+    "matchReasons": ["Why this company was matched"]
+  } | null,
+  "dealMatch": {
+    "id": "UUID of matched deal or null",
+    "name": "Deal name",
+    "matchScore": 0.0-1.0,
+    "matchReasons": ["Why this deal was matched"]
+  } | null,
+  "suggestedSalesTeam": "voice_outside|voice_inside|xrai|null",
+  "overallConfidence": 0.0-1.0,
+  "reasoning": "Explanation of the matching logic",
+  "extractedCompanyName": "Company name mentioned in transcript (even if not in CRM)",
+  "extractedPersonNames": ["Names of people mentioned"],
+  "extractedTopics": ["Key topics discussed"],
+  "requiresHumanReview": true/false,
+  "reviewReason": "Why human review is needed or null"
+}
+
+Important:
+- Set requiresHumanReview=true if confidence < 0.6 or if there are multiple possible matches
+- Set requiresHumanReview=true if a company is mentioned but doesn't exist in the CRM
+- Only match to a deal if you're confident it's the right one
+- If the transcript mentions a company not in our CRM, set extractedCompanyName but companyMatch to null`;
+
+  // Try to get the prompt from the database
+  const dbPromptData = await getPrompt('entity_matching');
+
+  let prompt: string;
+  let schema: string;
+
+  if (dbPromptData) {
+    // Replace variables in the template
+    prompt = dbPromptData.prompt_template
+      .replace(/\{\{title\}\}/g, title)
+      .replace(/\{\{participantList\}\}/g, participantList || 'No participants listed')
+      .replace(/\{\{truncatedTranscript\}\}/g, truncatedTranscript)
+      .replace(/\{\{companyList\}\}/g, companyList || 'No companies found')
+      .replace(/\{\{dealList\}\}/g, dealList || 'No active deals found')
+      .replace(/\{\{contactList\}\}/g, contactList || 'No contacts found');
+    schema = dbPromptData.schema_template || defaultEntityMatchingSchema;
+  } else {
+    // Fallback to hardcoded prompt
+    prompt = `You are analyzing a sales meeting transcript to determine which company and deal it should be associated with in our CRM.
 
 ## Meeting Title
 ${title}
@@ -219,35 +268,8 @@ Look for:
 - Product discussions (Voice, X-RAI, AI Agents)
 
 Respond with JSON:`;
-
-  const schema = `{
-  "companyMatch": {
-    "id": "UUID of matched company or null",
-    "name": "Company name",
-    "matchScore": 0.0-1.0,
-    "matchReasons": ["Why this company was matched"]
-  } | null,
-  "dealMatch": {
-    "id": "UUID of matched deal or null",
-    "name": "Deal name",
-    "matchScore": 0.0-1.0,
-    "matchReasons": ["Why this deal was matched"]
-  } | null,
-  "suggestedSalesTeam": "voice_outside|voice_inside|xrai|null",
-  "overallConfidence": 0.0-1.0,
-  "reasoning": "Explanation of the matching logic",
-  "extractedCompanyName": "Company name mentioned in transcript (even if not in CRM)",
-  "extractedPersonNames": ["Names of people mentioned"],
-  "extractedTopics": ["Key topics discussed"],
-  "requiresHumanReview": true/false,
-  "reviewReason": "Why human review is needed or null"
-}
-
-Important:
-- Set requiresHumanReview=true if confidence < 0.6 or if there are multiple possible matches
-- Set requiresHumanReview=true if a company is mentioned but doesn't exist in the CRM
-- Only match to a deal if you're confident it's the right one
-- If the transcript mentions a company not in our CRM, set extractedCompanyName but companyMatch to null`;
+    schema = defaultEntityMatchingSchema;
+  }
 
   const startTime = Date.now();
 
@@ -400,39 +422,8 @@ export async function extractEntityDataFromTranscript(
     .map((p) => `- ${p.name}${p.email ? ` (${p.email})` : ''}`)
     .join('\n');
 
-  const prompt = `You are analyzing a sales meeting transcript to extract information for creating new CRM records.
-
-## Context
-This is for X-RAI Labs, which sells:
-- Voice phone systems for pest control and lawn care companies
-- X-RAI platform (call analytics, performance tracking)
-- AI Agents (receptionist, dispatch, sales bots)
-
-## Meeting Title
-${title}
-
-## Meeting Participants
-${participantList || 'No participants listed'}
-
-## Transcript
-${truncatedTranscript}
-
----
-
-Extract detailed information to create a new company, contacts, and deal in the CRM.
-
-Look for:
-- Company name (from conversation or email domains like @pestcompany.com)
-- Industry (pest control, lawn care, or both)
-- Company size hints (number of technicians, trucks, locations, call volume)
-- People's names, titles, and roles
-- Products being discussed or demoed
-- Budget or value hints
-- Location information
-
-Respond with JSON:`;
-
-  const schema = `{
+  // Default schema for entity extraction (used as fallback)
+  const defaultEntityExtractionSchema = `{
   "company": {
     "name": "Company name (required - extract from conversation or email domain)",
     "industry": "pest|lawn|both|null",
@@ -468,6 +459,55 @@ Important:
 - Set isPrimary=true for the main point of contact
 - Estimate deal value based on: SMB $5-15K, Mid-Market $15-50K, Enterprise $50-150K
 - Set salesTeam based on primary product interest (Voice products = voice teams, X-RAI/AI = xrai)`;
+
+  // Try to get the prompt from the database
+  const dbPromptData = await getPrompt('entity_extraction');
+
+  let prompt: string;
+  let schema: string;
+
+  if (dbPromptData) {
+    // Replace variables in the template
+    prompt = dbPromptData.prompt_template
+      .replace(/\{\{title\}\}/g, title)
+      .replace(/\{\{participantList\}\}/g, participantList || 'No participants listed')
+      .replace(/\{\{truncatedTranscript\}\}/g, truncatedTranscript);
+    schema = dbPromptData.schema_template || defaultEntityExtractionSchema;
+  } else {
+    // Fallback to hardcoded prompt
+    prompt = `You are analyzing a sales meeting transcript to extract information for creating new CRM records.
+
+## Context
+This is for X-RAI Labs, which sells:
+- Voice phone systems for pest control and lawn care companies
+- X-RAI platform (call analytics, performance tracking)
+- AI Agents (receptionist, dispatch, sales bots)
+
+## Meeting Title
+${title}
+
+## Meeting Participants
+${participantList || 'No participants listed'}
+
+## Transcript
+${truncatedTranscript}
+
+---
+
+Extract detailed information to create a new company, contacts, and deal in the CRM.
+
+Look for:
+- Company name (from conversation or email domains like @pestcompany.com)
+- Industry (pest control, lawn care, or both)
+- Company size hints (number of technicians, trucks, locations, call volume)
+- People's names, titles, and roles
+- Products being discussed or demoed
+- Budget or value hints
+- Location information
+
+Respond with JSON:`;
+    schema = defaultEntityExtractionSchema;
+  }
 
   try {
     const { data, usage, latencyMs } = await callAIJson<ExtractedEntityData>({
