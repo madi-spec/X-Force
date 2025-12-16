@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { Award, User, Shield, Bell, Upload, Link2, Sparkles, FileText } from 'lucide-react';
+import { Award, User, Shield, Bell, Upload, Link2, Sparkles, FileText, ClipboardCheck } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatDate } from '@/lib/utils';
 import { TeamManagement } from '@/components/settings/TeamManagement';
@@ -149,6 +149,23 @@ export default async function SettingsPage() {
                 </p>
               </div>
               <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
+            </Link>
+            <Link
+              href="/settings/activity-review"
+              className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <ClipboardCheck className="h-5 w-5 text-amber-500" />
+                <div>
+                  <p className="font-medium text-gray-900 group-hover:text-amber-700">
+                    Activity Review
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Review and match imported emails and calendar events to deals
+                  </p>
+                </div>
+              </div>
+              <span className="text-gray-400 group-hover:text-amber-600">&rarr;</span>
             </Link>
           </div>
         </div>
