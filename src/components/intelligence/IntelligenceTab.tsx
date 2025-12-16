@@ -24,6 +24,9 @@ import {
   Mail,
   Phone,
   ExternalLink,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import type {
@@ -63,9 +66,13 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
       if (!response.ok) throw new Error('Failed to fetch intelligence');
       const result = await response.json();
       setData(result);
-      // Pre-fill domain input with stored domain
-      if (result.companyDomain && !domain) {
-        setDomain(result.companyDomain);
+      // Pre-fill domain input with stored domain or suggested domain from contacts
+      if (!domain) {
+        if (result.companyDomain) {
+          setDomain(result.companyDomain);
+        } else if (result.suggestedDomain) {
+          setDomain(result.suggestedDomain);
+        }
       }
       setError(null);
     } catch (err) {
@@ -112,6 +119,23 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
     }
   };
 
+  const handleSaveDomain = async (newDomain: string) => {
+    try {
+      // Save domain by triggering a collection with the new domain
+      // The API will save it to the company record
+      const response = await fetch(`/api/intelligence/${companyId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: false, domain: newDomain }),
+      });
+      if (!response.ok) throw new Error('Failed to save domain');
+      setDomain(newDomain);
+      await fetchIntelligence();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save domain');
+    }
+  };
+
   if (loading) {
     return <IntelligenceSkeleton />;
   }
@@ -133,6 +157,8 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
   }
 
   if (!data?.intelligence) {
+    const hasSuggestedDomain = data?.suggestedDomain && !data?.companyDomain;
+
     return (
       <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-sm border border-gray-200 dark:border-[#2a2a2a] p-8 text-center">
         <Brain className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -145,6 +171,11 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
         <div className="max-w-md mx-auto mb-6">
           <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 text-left">
             Company Website Domain
+            {hasSuggestedDomain && (
+              <span className="ml-2 text-green-600 normal-case font-normal">
+                (detected from contact emails)
+              </span>
+            )}
           </label>
           <div className="flex items-center gap-2">
             <div className="flex-1 relative">
@@ -154,12 +185,17 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder="example.com"
-                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={cn(
+                  "w-full pl-10 pr-4 py-2 text-sm border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                  hasSuggestedDomain ? "border-green-300 dark:border-green-700" : "border-gray-200 dark:border-gray-700"
+                )}
               />
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-1 text-left">
-            Enter the company's website domain to enable website and social media collection.
+            {hasSuggestedDomain
+              ? "This domain was detected from contact email addresses. Edit if needed."
+              : "Enter the company's website domain to enable website and social media collection."}
           </p>
         </div>
 
@@ -195,6 +231,7 @@ export function IntelligenceTab({ companyId, companyName }: IntelligenceTabProps
         lastCollectedAt={lastCollectedAt}
         companyDomain={companyDomain}
         onRefresh={handleRefresh}
+        onSaveDomain={handleSaveDomain}
         refreshing={refreshing}
       />
 
@@ -244,6 +281,7 @@ function IntelligenceHeader({
   lastCollectedAt,
   companyDomain,
   onRefresh,
+  onSaveDomain,
   refreshing,
 }: {
   intelligence: AccountIntelligence;
@@ -251,8 +289,29 @@ function IntelligenceHeader({
   lastCollectedAt: string | null;
   companyDomain: string | null;
   onRefresh: () => void;
+  onSaveDomain: (domain: string) => Promise<void>;
   refreshing: boolean;
 }) {
+  const [isEditingDomain, setIsEditingDomain] = useState(false);
+  const [editDomain, setEditDomain] = useState(companyDomain || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!editDomain.trim()) return;
+    setSaving(true);
+    try {
+      await onSaveDomain(editDomain.trim());
+      setIsEditingDomain(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditDomain(companyDomain || '');
+    setIsEditingDomain(false);
+  };
+
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -272,11 +331,48 @@ function IntelligenceHeader({
                 <span className="ml-2 text-amber-600">(Stale)</span>
               )}
             </span>
-            {companyDomain && (
-              <span className="flex items-center gap-1 text-gray-400">
+            {isEditingDomain ? (
+              <div className="flex items-center gap-1">
+                <Globe className="h-3 w-3 text-gray-400" />
+                <input
+                  type="text"
+                  value={editDomain}
+                  onChange={(e) => setEditDomain(e.target.value)}
+                  placeholder="example.com"
+                  className="w-40 px-2 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSave();
+                    if (e.key === 'Escape') handleCancel();
+                  }}
+                />
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !editDomain.trim()}
+                  className="p-1 text-green-600 hover:bg-green-50 rounded disabled:opacity-50"
+                  title="Save"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={handleCancel}
+                  disabled={saving}
+                  className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                  title="Cancel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsEditingDomain(true)}
+                className="flex items-center gap-1 text-gray-400 hover:text-gray-600 group"
+                title="Edit domain"
+              >
                 <Globe className="h-3 w-3" />
-                {companyDomain}
-              </span>
+                <span>{companyDomain || 'Add domain'}</span>
+                <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
             )}
           </div>
         </div>

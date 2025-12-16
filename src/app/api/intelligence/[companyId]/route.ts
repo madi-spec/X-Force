@@ -35,6 +35,9 @@ export async function GET(
 
     const companyDomain = company?.domain || null;
 
+    // Try to get suggested domain from contacts if no stored domain
+    const suggestedDomain = companyDomain ? null : await extractDomainFromContacts(supabase, companyId);
+
     // Get main intelligence record
     const intelligence = await getIntelligence(companyId);
 
@@ -47,6 +50,7 @@ export async function GET(
         isStale: true,
         lastCollectedAt: null,
         companyDomain,
+        suggestedDomain,
       });
     }
 
@@ -83,6 +87,7 @@ export async function GET(
       isStale,
       lastCollectedAt: intelligence.last_collected_at,
       companyDomain,
+      suggestedDomain,
     });
   } catch (error) {
     console.error('[API] Error getting intelligence:', error);
@@ -149,8 +154,11 @@ export async function POST(
       });
     }
 
-    // Use provided domain, stored domain, or try to extract from company
-    const domain = requestDomain || company.domain || extractDomain(company);
+    // Use provided domain, stored domain, or try to extract from contacts
+    let domain = requestDomain || company.domain;
+    if (!domain) {
+      domain = await extractDomainFromContacts(supabase, companyId);
+    }
 
     // Start collection (in background for this example, or could be async job)
     // For simplicity, we'll run it inline but this could be a queue job
@@ -182,19 +190,82 @@ export async function POST(
 // HELPERS
 // ============================================
 
+// Generic/personal email domains to exclude
+const GENERIC_EMAIL_DOMAINS = new Set([
+  // Major providers
+  'gmail.com', 'googlemail.com', 'google.com',
+  'yahoo.com', 'yahoo.co.uk', 'ymail.com', 'rocketmail.com',
+  'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com', 'msn.com',
+  'aol.com', 'aim.com',
+  'icloud.com', 'me.com', 'mac.com',
+  'protonmail.com', 'proton.me',
+  'zoho.com', 'zohomail.com',
+  'mail.com', 'email.com',
+  'gmx.com', 'gmx.net',
+  'yandex.com', 'yandex.ru',
+  'qq.com', '163.com', '126.com',
+  // ISP emails
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',
+  'charter.net', 'cox.net', 'earthlink.net', 'frontier.com',
+  // Other common
+  'fastmail.com', 'tutanota.com', 'hushmail.com',
+  'inbox.com', 'mail.ru', 'rediffmail.com',
+]);
+
+/**
+ * Extract business domain from contact email addresses
+ */
+async function extractDomainFromContacts(
+  supabase: ReturnType<typeof createAdminClient>,
+  companyId: string
+): Promise<string | null> {
+  // Get contacts for this company
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('email')
+    .eq('company_id', companyId)
+    .not('email', 'is', null);
+
+  if (!contacts || contacts.length === 0) {
+    return null;
+  }
+
+  // Extract unique domains from emails, excluding generic ones
+  const businessDomains: Map<string, number> = new Map();
+
+  for (const contact of contacts) {
+    if (!contact.email) continue;
+
+    const email = contact.email.toLowerCase().trim();
+    const atIndex = email.lastIndexOf('@');
+    if (atIndex === -1) continue;
+
+    const domain = email.substring(atIndex + 1);
+    if (!domain || GENERIC_EMAIL_DOMAINS.has(domain)) continue;
+
+    // Count occurrences of each domain
+    businessDomains.set(domain, (businessDomains.get(domain) || 0) + 1);
+  }
+
+  if (businessDomains.size === 0) {
+    return null;
+  }
+
+  // Return the most common business domain
+  let bestDomain = '';
+  let bestCount = 0;
+  for (const [domain, count] of businessDomains) {
+    if (count > bestCount) {
+      bestDomain = domain;
+      bestCount = count;
+    }
+  }
+
+  return bestDomain || null;
+}
+
 function extractDomain(company: { name: string; address?: unknown; domain?: string | null }): string | null {
   // This is a placeholder - in a real app, you'd store domain on company
   // Or use an enrichment API to find it
-
-  // Try to derive from company name (very basic)
-  const name = company.name.toLowerCase();
-
-  // Common patterns
-  const cleanName = name
-    .replace(/\s+/g, '')
-    .replace(/[^a-z0-9]/g, '');
-
-  // Return a guess (in production, use Apollo or similar to find actual domain)
-  // For now, return null to indicate we don't know
   return null;
 }

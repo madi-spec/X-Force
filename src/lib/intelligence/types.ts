@@ -525,6 +525,7 @@ export interface GetIntelligenceResponse {
   isStale: boolean;
   lastCollectedAt: string | null;
   companyDomain: string | null;
+  suggestedDomain: string | null;  // Auto-detected from contact emails
 }
 
 export interface TriggerCollectionRequest {
