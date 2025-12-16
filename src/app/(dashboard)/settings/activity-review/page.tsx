@@ -82,11 +82,18 @@ export default function ActivityReviewPage() {
   // Form data for creating new entities
   const [newCompanyName, setNewCompanyName] = useState('');
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [companySearch, setCompanySearch] = useState('');
+  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
   const [newDealName, setNewDealName] = useState('');
   const [newDealStage, setNewDealStage] = useState('new_lead');
   const [contactsToCreate, setContactsToCreate] = useState<ExtractedContact[]>([]);
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(null);
   const [createdDealId, setCreatedDealId] = useState<string | null>(null);
+
+  // Filtered companies for search
+  const filteredCompanies = companies.filter((c) =>
+    c.name.toLowerCase().includes(companySearch.toLowerCase())
+  );
 
   const fetchActivities = useCallback(async () => {
     setLoading(true);
@@ -310,6 +317,8 @@ export default function ActivityReviewPage() {
     setCreatingEntity(false);
     setNewCompanyName('');
     setSelectedCompanyId('');
+    setCompanySearch('');
+    setShowCompanyDropdown(false);
     setNewDealName('');
     setContactsToCreate([]);
     setCreatedCompanyId(null);
@@ -831,37 +840,105 @@ export default function ActivityReviewPage() {
                   </div>
 
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Existing Company
-                      </label>
-                      <select
-                        value={selectedCompanyId}
-                        onChange={(e) => {
-                          setSelectedCompanyId(e.target.value);
-                          if (e.target.value) setNewCompanyName('');
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">-- Create new company --</option>
-                        {companies.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Selected Company Display */}
+                    {selectedCompanyId && (
+                      <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4 text-blue-600" />
+                          <span className="font-medium text-blue-900">
+                            {companies.find((c) => c.id === selectedCompanyId)?.name}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedCompanyId('');
+                            setCompanySearch('');
+                          }}
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    )}
 
+                    {/* Company Search */}
+                    {!selectedCompanyId && (
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Search Existing Companies
+                        </label>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <input
+                            type="text"
+                            value={companySearch}
+                            onChange={(e) => {
+                              setCompanySearch(e.target.value);
+                              setShowCompanyDropdown(true);
+                            }}
+                            onFocus={() => setShowCompanyDropdown(true)}
+                            placeholder="Type to search companies..."
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        {/* Company Dropdown */}
+                        {showCompanyDropdown && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {filteredCompanies.length > 0 ? (
+                              <>
+                                {filteredCompanies.slice(0, 10).map((c) => (
+                                  <button
+                                    key={c.id}
+                                    onClick={() => {
+                                      setSelectedCompanyId(c.id);
+                                      setCompanySearch('');
+                                      setShowCompanyDropdown(false);
+                                      setNewCompanyName('');
+                                    }}
+                                    className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <Building2 className="h-4 w-4 text-gray-400" />
+                                    <span>{c.name}</span>
+                                  </button>
+                                ))}
+                                {filteredCompanies.length > 10 && (
+                                  <div className="px-4 py-2 text-sm text-gray-500 border-t">
+                                    +{filteredCompanies.length - 10} more results
+                                  </div>
+                                )}
+                              </>
+                            ) : companySearch ? (
+                              <div className="px-4 py-3 text-sm text-gray-500">
+                                No companies found matching &quot;{companySearch}&quot;
+                              </div>
+                            ) : (
+                              <div className="px-4 py-2 text-sm text-gray-500">
+                                Type to search...
+                              </div>
+                            )}
+                            <button
+                              onClick={() => setShowCompanyDropdown(false)}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 border-t"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Create New Company */}
                     {!selectedCompanyId && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          New Company Name
+                          Or Create New Company
                         </label>
                         <input
                           type="text"
                           value={newCompanyName}
                           onChange={(e) => setNewCompanyName(e.target.value)}
-                          placeholder="Enter company name"
+                          placeholder="Enter new company name"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
