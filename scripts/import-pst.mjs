@@ -293,14 +293,26 @@ async function getOrCreateExternalCompany() {
 }
 
 async function getSystemUserId() {
-  // Get the first admin user or any user as the owner
+  // Get the user matching the IMPORT_USER_EMAIL
   const { data: user } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', CONFIG.IMPORT_USER_EMAIL)
+    .single();
+
+  if (user) {
+    return user.id;
+  }
+
+  // Fallback: try to find by email pattern if exact match fails
+  console.warn(`User with email ${CONFIG.IMPORT_USER_EMAIL} not found, falling back to first user`);
+  const { data: fallbackUser } = await supabase
     .from('users')
     .select('id')
     .limit(1)
     .single();
 
-  return user?.id || null;
+  return fallbackUser?.id || null;
 }
 
 async function checkExistingExternalId(externalId) {
