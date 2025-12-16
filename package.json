@@ -24,6 +24,7 @@
     "lucide-react": "^0.561.0",
     "next": "16.0.10",
     "papaparse": "^5.5.3",
+    "pst-extractor": "^1.11.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "tailwind-merge": "^3.4.0"
