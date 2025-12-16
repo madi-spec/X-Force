@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
+  const authSupabase = await createClient();
 
   // Check authentication
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await authSupabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Use admin client for data queries to bypass RLS
+  const supabase = createAdminClient();
 
   // Parse query parameters
   const searchParams = request.nextUrl.searchParams;
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest) {
       analysis,
       summary,
       attendees,
-      fireflies_meeting_id,
+      external_id,
       company_id,
       deal_id,
       created_at,
@@ -96,7 +100,7 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('Error fetching transcripts:', error);
-    return NextResponse.json({ error: 'Failed to fetch transcripts' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch transcripts', details: error.message }, { status: 500 });
   }
 
   // Format the response
@@ -113,7 +117,7 @@ export async function GET(request: NextRequest) {
       wordCount: t.word_count,
       summary: t.summary,
       attendees: t.attendees,
-      firefliesMeetingId: t.fireflies_meeting_id,
+      externalId: t.external_id,
       createdAt: t.created_at,
       updatedAt: t.updated_at,
       company: company ? {

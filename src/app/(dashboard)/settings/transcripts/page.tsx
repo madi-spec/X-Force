@@ -73,6 +73,11 @@ export default function TranscriptsPage() {
       const res = await fetch(`/api/transcripts?${params.toString()}`);
       const data = await res.json();
 
+      if (!res.ok) {
+        console.error('API Error:', data.error, data.details || '');
+        return;
+      }
+
       setTranscripts(data.transcripts || []);
       setPagination(data.pagination || pagination);
       setStats(data.stats || null);
