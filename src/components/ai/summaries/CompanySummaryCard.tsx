@@ -128,7 +128,9 @@ export function CompanySummaryCard({ companyId, initialSummary, className, compa
         {summary.opportunities?.[0] && (
           <div className="mt-2 text-xs bg-green-50 text-green-700 p-2 rounded-lg">
             <span className="font-medium">Opportunity: </span>
-            {summary.opportunities[0]}
+            {typeof summary.opportunities[0] === 'string'
+              ? summary.opportunities[0]
+              : (summary.opportunities[0] as { description?: string; type?: string })?.description || (summary.opportunities[0] as { type?: string })?.type || ''}
           </div>
         )}
       </div>
@@ -290,7 +292,7 @@ export function CompanySummaryCard({ companyId, initialSummary, className, compa
                 {summary.risks.slice(0, 3).map((risk, i) => (
                   <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
                     <span className="text-red-400">•</span>
-                    {risk}
+                    {typeof risk === 'string' ? risk : (risk as { description?: string; type?: string })?.description || (risk as { type?: string })?.type || JSON.stringify(risk)}
                   </li>
                 ))}
               </ul>
@@ -306,7 +308,7 @@ export function CompanySummaryCard({ companyId, initialSummary, className, compa
                 {summary.opportunities.slice(0, 3).map((opp, i) => (
                   <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
                     <span className="text-green-400">•</span>
-                    {opp}
+                    {typeof opp === 'string' ? opp : (opp as { description?: string; type?: string })?.description || (opp as { type?: string })?.type || JSON.stringify(opp)}
                   </li>
                 ))}
               </ul>
