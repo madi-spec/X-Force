@@ -3,7 +3,7 @@
  * Generates AI-powered summaries for contacts
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '../core/aiClient';
 import { createHash } from 'crypto';
 import type { ContactSummary, GenerateSummaryOptions, SummaryResult } from './types';
@@ -52,7 +52,7 @@ interface ContactContext {
 // ============================================
 
 async function gatherContactContext(contactId: string, options: GenerateSummaryOptions = {}): Promise<ContactContext> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const maxActivities = options.maxActivities || 30;
 
   // Fetch contact with company
@@ -265,7 +265,7 @@ export async function generateContactSummary(
   contactId: string,
   options: GenerateSummaryOptions = {}
 ): Promise<SummaryResult<ContactSummary>> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const startTime = Date.now();
 
   // Gather context
@@ -378,7 +378,7 @@ export async function generateContactSummary(
 // ============================================
 
 export async function getContactSummary(contactId: string): Promise<ContactSummary | null> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data } = await supabase
     .from('ai_summaries')
@@ -397,7 +397,7 @@ export async function getContactSummary(contactId: string): Promise<ContactSumma
 // ============================================
 
 export async function isContactSummaryStale(contactId: string): Promise<boolean> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data } = await supabase
     .from('ai_summaries')

@@ -3,7 +3,7 @@
  * Generates AI-powered summaries for deals
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '../core/aiClient';
 import { createHash } from 'crypto';
 import type { DealSummary, GenerateSummaryOptions, SummaryResult } from './types';
@@ -67,7 +67,7 @@ interface DealContext {
 // ============================================
 
 async function gatherDealContext(dealId: string, options: GenerateSummaryOptions = {}): Promise<DealContext> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const maxActivities = options.maxActivities || 50;
 
   // Fetch deal with company
@@ -294,7 +294,7 @@ export async function generateDealSummary(
   dealId: string,
   options: GenerateSummaryOptions = {}
 ): Promise<SummaryResult<DealSummary>> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const startTime = Date.now();
 
   // Gather context
@@ -412,7 +412,7 @@ export async function generateDealSummary(
 // ============================================
 
 export async function getDealSummary(dealId: string): Promise<DealSummary | null> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data } = await supabase
     .from('ai_summaries')
@@ -431,7 +431,7 @@ export async function getDealSummary(dealId: string): Promise<DealSummary | null
 // ============================================
 
 export async function isDealSummaryStale(dealId: string): Promise<boolean> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data } = await supabase
     .from('ai_summaries')

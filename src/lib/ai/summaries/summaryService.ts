@@ -3,7 +3,7 @@
  * Main orchestration service for AI summaries
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { generateDealSummary, getDealSummary, isDealSummaryStale } from './dealSummary';
 import { generateCompanySummary, getCompanySummary, isCompanySummaryStale } from './companySummary';
 import { generateContactSummary, getContactSummary, isContactSummaryStale } from './contactSummary';
@@ -160,7 +160,7 @@ export async function generateDealSummariesBatch(
  * Generate summaries for all stale deals
  */
 export async function refreshStaleDealSummaries(): Promise<BatchSummaryResult> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Get all open deals
   const { data: deals } = await supabase
@@ -186,7 +186,7 @@ export async function generateCompanyRelatedSummaries(
   deals: BatchSummaryResult;
   contacts: BatchSummaryResult;
 }> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Generate company summary
   let companySummary: SummaryResult<CompanySummary> | null = null;
@@ -266,7 +266,7 @@ export async function generateCompanyRelatedSummaries(
  * Called when deal data changes
  */
 export async function markDealSummariesStale(dealId: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   await supabase
     .from('ai_summaries')
@@ -279,7 +279,7 @@ export async function markDealSummariesStale(dealId: string): Promise<void> {
  * Called when company data changes
  */
 export async function markCompanySummariesStale(companyId: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   await supabase
     .from('ai_summaries')
@@ -292,7 +292,7 @@ export async function markCompanySummariesStale(companyId: string): Promise<void
  * Called when contact data changes
  */
 export async function markContactSummariesStale(contactId: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   await supabase
     .from('ai_summaries')
@@ -309,7 +309,7 @@ export async function markRelatedSummariesStale(params: {
   companyId?: string;
   contactId?: string;
 }): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const updates: Promise<void>[] = [];
 
@@ -345,7 +345,7 @@ export interface SummaryStats {
  * Get summary statistics
  */
 export async function getSummaryStats(): Promise<SummaryStats> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: summaries } = await supabase
     .from('ai_summaries')
@@ -413,7 +413,7 @@ export async function getSummaryStats(): Promise<SummaryStats> {
  * Run periodically as cleanup
  */
 export async function cleanupOrphanedSummaries(): Promise<number> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   let deleted = 0;
 
   // Delete summaries for deleted deals

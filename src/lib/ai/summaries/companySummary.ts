@@ -3,7 +3,7 @@
  * Generates AI-powered summaries for companies
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '../core/aiClient';
 import { createHash } from 'crypto';
 import type { CompanySummary, GenerateSummaryOptions, SummaryResult } from './types';
@@ -61,7 +61,7 @@ interface CompanyContext {
 // ============================================
 
 async function gatherCompanyContext(companyId: string, options: GenerateSummaryOptions = {}): Promise<CompanyContext> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const maxActivities = options.maxActivities || 50;
 
   // Fetch company
@@ -317,7 +317,7 @@ export async function generateCompanySummary(
   companyId: string,
   options: GenerateSummaryOptions = {}
 ): Promise<SummaryResult<CompanySummary>> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const startTime = Date.now();
 
   // Gather context
@@ -429,7 +429,7 @@ export async function generateCompanySummary(
 // ============================================
 
 export async function getCompanySummary(companyId: string): Promise<CompanySummary | null> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data } = await supabase
     .from('ai_summaries')
@@ -448,7 +448,7 @@ export async function getCompanySummary(companyId: string): Promise<CompanySumma
 // ============================================
 
 export async function isCompanySummaryStale(companyId: string): Promise<boolean> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data } = await supabase
     .from('ai_summaries')
