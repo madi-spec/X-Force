@@ -121,6 +121,11 @@ export function EmailListItem({
 
         {/* Tags */}
         <div className="flex-shrink-0 flex items-center gap-1">
+          {email.isPst && (
+            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
+              PST
+            </span>
+          )}
           {email.contact && (
             <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded">
               Contact

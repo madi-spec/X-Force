@@ -1,11 +1,13 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { Mail, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { InboxClient } from './inbox-client';
 
 export default async function InboxPage() {
   const supabase = await createClient();
+  const adminSupabase = createAdminClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -32,8 +34,8 @@ export default async function InboxPage() {
 
   const isConnected = microsoftConnection?.is_active ?? false;
 
-  // Get email activities for the user
-  const { data: emailActivities } = await supabase
+  // Get email activities for the user (Microsoft synced)
+  const { data: userEmailActivities } = await supabase
     .from('activities')
     .select(`
       id,
@@ -41,6 +43,7 @@ export default async function InboxPage() {
       body,
       occurred_at,
       metadata,
+      external_id,
       contact:contacts(
         id,
         name,
@@ -54,8 +57,46 @@ export default async function InboxPage() {
     .order('occurred_at', { ascending: false })
     .limit(100);
 
-  // If not connected, show setup prompt
-  if (!isConnected) {
+  // Get PST-imported emails (use admin client to bypass RLS)
+  const { data: pstEmailActivities } = await adminSupabase
+    .from('activities')
+    .select(`
+      id,
+      subject,
+      body,
+      occurred_at,
+      metadata,
+      external_id,
+      contact:contacts(
+        id,
+        name,
+        email,
+        company:companies(id, name)
+      ),
+      deal:deals(id, name)
+    `)
+    .in('type', ['email_sent', 'email_received'])
+    .like('external_id', 'pst_%')
+    .order('occurred_at', { ascending: false })
+    .limit(200);
+
+  // Combine and deduplicate emails
+  const allEmailActivities = [...(userEmailActivities || []), ...(pstEmailActivities || [])];
+  const seenIds = new Set<string>();
+  const emailActivities = allEmailActivities
+    .filter(e => {
+      if (seenIds.has(e.id)) return false;
+      seenIds.add(e.id);
+      return true;
+    })
+    .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
+    .slice(0, 200);
+
+  const pstCount = emailActivities.filter(e => e.external_id?.startsWith('pst_')).length;
+  const microsoftCount = emailActivities.length - pstCount;
+
+  // If not connected and no PST emails, show setup prompt
+  if (!isConnected && pstCount === 0) {
     return (
       <div>
         <div className="flex items-center justify-between mb-6">
@@ -110,6 +151,40 @@ export default async function InboxPage() {
       ? activity.deal[0]
       : activity.deal;
 
+    // Determine source and normalize metadata
+    const isPst = activity.external_id?.startsWith('pst_');
+    const rawMetadata = activity.metadata || {};
+
+    // Normalize metadata - PST emails have different structure
+    let normalizedMetadata: {
+      direction?: 'inbound' | 'outbound';
+      from?: { address: string; name?: string };
+      to?: Array<{ address: string; name?: string }>;
+      has_contact?: boolean;
+      source?: string;
+      folder?: string;
+    };
+
+    if (isPst) {
+      // PST metadata format
+      const pstMeta = rawMetadata as {
+        fromEmail?: string;
+        from?: string;
+        to?: string[];
+        folder?: string;
+        source?: string;
+      };
+      normalizedMetadata = {
+        direction: pstMeta.folder?.toLowerCase().includes('sent') ? 'outbound' : 'inbound',
+        from: { address: pstMeta.fromEmail || '', name: pstMeta.from || '' },
+        to: (pstMeta.to || []).map(addr => ({ address: addr, name: '' })),
+        source: 'pst',
+        folder: pstMeta.folder,
+      };
+    } else {
+      normalizedMetadata = rawMetadata as typeof normalizedMetadata;
+    }
+
     return {
       id: activity.id,
       subject: activity.subject || '',
@@ -128,14 +203,15 @@ export default async function InboxPage() {
         id: dealData.id,
         name: dealData.name,
       } : null,
-      metadata: (activity.metadata || {}) as {
-        direction?: 'inbound' | 'outbound';
-        from?: { address: string; name?: string };
-        to?: Array<{ address: string; name?: string }>;
-        has_contact?: boolean;
-      },
+      metadata: normalizedMetadata,
+      isPst,
     };
   });
+
+  // Build status message
+  const statusParts: string[] = [];
+  if (pstCount > 0) statusParts.push(`${pstCount} from PST`);
+  if (microsoftCount > 0) statusParts.push(`${microsoftCount} from Microsoft`);
 
   return (
     <div className="h-[calc(100vh-8rem)]">
@@ -143,7 +219,7 @@ export default async function InboxPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Inbox</h1>
           <p className="text-gray-500 text-sm mt-1">
-            {emails.length} synced emails
+            {emails.length} emails{statusParts.length > 0 ? ` (${statusParts.join(', ')})` : ''}
             {microsoftConnection?.last_sync_at && (
               <span className="text-gray-400">
                 {' '}· Last synced {new Date(microsoftConnection.last_sync_at).toLocaleString()}

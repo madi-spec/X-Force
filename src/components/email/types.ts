@@ -21,7 +21,11 @@ export interface EmailMessage {
     from?: { address: string; name?: string };
     to?: Array<{ address: string; name?: string }>;
     has_contact?: boolean;
+    source?: string;
+    folder?: string;
   };
+  // Source indicator
+  isPst?: boolean;
   // Client-side state
   isRead?: boolean;
   isStarred?: boolean;
@@ -29,7 +33,7 @@ export interface EmailMessage {
 }
 
 export type EmailFolder = 'inbox' | 'sent' | 'all';
-export type EmailFilter = 'all' | 'unread' | 'starred' | 'contacts';
+export type EmailFilter = 'all' | 'unread' | 'starred' | 'contacts' | 'pst';
 
 export function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);

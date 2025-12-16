@@ -43,6 +43,7 @@ export function InboxClient({ emails: initialEmails }: InboxClientProps) {
     unread: emails.filter(e => !e.isRead).length,
     starred: emails.filter(e => e.isStarred).length,
     contacts: emails.filter(e => e.contact !== null).length,
+    pst: emails.filter(e => e.isPst).length,
   }), [emails]);
 
   // Filter and search emails
@@ -63,6 +64,8 @@ export function InboxClient({ emails: initialEmails }: InboxClientProps) {
       result = result.filter(e => e.isStarred);
     } else if (filter === 'contacts') {
       result = result.filter(e => e.contact !== null);
+    } else if (filter === 'pst') {
+      result = result.filter(e => e.isPst);
     }
 
     // Search

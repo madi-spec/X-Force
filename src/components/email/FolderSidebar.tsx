@@ -1,6 +1,6 @@
 'use client';
 
-import { Inbox, Send, Mail, Star, Users, Tag } from 'lucide-react';
+import { Inbox, Send, Mail, Star, Users, Tag, FileArchive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EmailFolder, EmailFilter } from './types';
 
@@ -16,6 +16,7 @@ interface FolderSidebarProps {
     unread: number;
     starred: number;
     contacts: number;
+    pst: number;
   };
   onComposeClick: () => void;
 }
@@ -37,6 +38,7 @@ export function FolderSidebar({
   const labels: { id: EmailFilter; label: string; icon: typeof Star; count: number; color: string }[] = [
     { id: 'starred', label: 'Starred', icon: Star, count: counts.starred, color: 'text-yellow-500' },
     { id: 'contacts', label: 'Contacts', icon: Users, count: counts.contacts, color: 'text-green-500' },
+    { id: 'pst', label: 'PST Import', icon: FileArchive, count: counts.pst, color: 'text-purple-500' },
   ];
 
   return (
@@ -126,6 +128,11 @@ export function FolderSidebar({
           </span>
         </div>
         <div className="px-3 space-y-1">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Tag className="h-4 w-4" />
+            <span className="w-2 h-2 rounded-full bg-purple-500" />
+            <span>PST Import</span>
+          </div>
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <Tag className="h-4 w-4" />
             <span className="w-2 h-2 rounded-full bg-green-500" />

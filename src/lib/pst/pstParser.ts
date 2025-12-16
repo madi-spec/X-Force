@@ -124,15 +124,15 @@ function processFolder(
         let item = folder.getNextChild();
         while (item !== null) {
           try {
-            if (isCalendar && item instanceof PSTFile.PSTAppointment) {
-              const appointment = item as PSTFile.PSTAppointment;
-              const event = extractCalendarEvent(appointment, currentPath);
+            // Use messageClass to determine item type
+            const messageClass = (item as { messageClass?: string }).messageClass || '';
+            if (isCalendar && messageClass.includes('IPM.Appointment')) {
+              const event = extractCalendarEvent(item, currentPath);
               if (event.startTime) {
                 result.calendarEvents.push(event);
               }
-            } else if (item instanceof PSTFile.PSTMessage) {
-              const message = item as PSTFile.PSTMessage;
-              const email = extractEmail(message, currentPath, userEmail, isSentItems);
+            } else if (messageClass.includes('IPM.Note') || !isCalendar) {
+              const email = extractEmail(item, currentPath, userEmail, isSentItems);
               if (email.subject || email.body) {
                 result.emails.push(email);
               }
@@ -161,13 +161,14 @@ function processFolder(
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractEmail(
-  message: PSTFile.PSTMessage,
+  item: any,
   folder: string,
   userEmail: string,
   isSentItems: boolean
 ): PSTEmail {
-  const senderEmail = message.senderEmailAddress || '';
+  const senderEmail = item.senderEmailAddress || '';
   const isFromMe = isSentItems || senderEmail.toLowerCase() === userEmail.toLowerCase();
 
   // Get recipients
@@ -175,9 +176,9 @@ function extractEmail(
   const ccRecipients: string[] = [];
 
   try {
-    const recipientCount = message.numberOfRecipients;
+    const recipientCount = item.numberOfRecipients || 0;
     for (let i = 0; i < recipientCount; i++) {
-      const recipient = message.getRecipient(i);
+      const recipient = item.getRecipient?.(i);
       if (recipient) {
         const email = recipient.smtpAddress || recipient.emailAddress || '';
         const recipientType = recipient.recipientType;
@@ -193,33 +194,34 @@ function extractEmail(
   }
 
   return {
-    messageId: message.internetMessageId || null,
-    subject: message.subject || '',
-    body: message.body || '',
-    bodyHtml: message.bodyHTML || null,
-    from: message.senderName || '',
+    messageId: item.internetMessageId || null,
+    subject: item.subject || '',
+    body: item.body || '',
+    bodyHtml: item.bodyHTML || null,
+    from: item.senderName || '',
     fromEmail: senderEmail,
     to: toRecipients,
     cc: ccRecipients,
-    sentDate: message.clientSubmitTime || null,
-    receivedDate: message.messageDeliveryTime || null,
+    sentDate: item.clientSubmitTime || null,
+    receivedDate: item.messageDeliveryTime || null,
     folder,
-    hasAttachments: message.hasAttachments,
-    attachmentCount: message.numberOfAttachments,
+    hasAttachments: item.hasAttachments || false,
+    attachmentCount: item.numberOfAttachments || 0,
     isFromMe,
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractCalendarEvent(
-  appointment: PSTFile.PSTAppointment,
+  item: any,
   folder: string
 ): PSTCalendarEvent {
   // Extract attendees
   const attendees: string[] = [];
   try {
-    const recipientCount = appointment.numberOfRecipients;
+    const recipientCount = item.numberOfRecipients || 0;
     for (let i = 0; i < recipientCount; i++) {
-      const recipient = appointment.getRecipient(i);
+      const recipient = item.getRecipient?.(i);
       if (recipient) {
         const email = recipient.smtpAddress || recipient.emailAddress || '';
         if (email) attendees.push(email);
@@ -230,14 +232,14 @@ function extractCalendarEvent(
   }
 
   return {
-    subject: appointment.subject || '',
-    body: appointment.body || '',
-    location: appointment.location || null,
-    startTime: appointment.startTime || null,
-    endTime: appointment.endTime || null,
-    isAllDay: appointment.subType === 1,
+    subject: item.subject || '',
+    body: item.body || '',
+    location: item.location || null,
+    startTime: item.startTime || null,
+    endTime: item.endTime || null,
+    isAllDay: item.subType === 1,
     attendees,
-    organizer: appointment.senderEmailAddress || null,
+    organizer: item.senderEmailAddress || null,
     folder,
   };
 }
