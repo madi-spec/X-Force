@@ -3,7 +3,10 @@
  * Parses Outlook PST files and extracts emails and calendar events
  */
 
-import PSTFile from 'pst-extractor';
+import { PSTFile, PSTMessage, PSTFolder } from 'pst-extractor';
+import type { PSTAppointment } from 'pst-extractor/dist/PSTAppointment.class';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { PSTAppointment: PSTAppointmentClass } = require('pst-extractor/dist/PSTAppointment.class');
 import { createHash } from 'crypto';
 
 // ============================================
@@ -113,7 +116,7 @@ function folderMatches(folderName: string, targets: string[]): boolean {
 /**
  * Extract email from PST message
  */
-function extractEmail(message: PSTFile.PSTMessage, folderPath: string): PstEmail | null {
+function extractEmail(message: PSTMessage, folderPath: string): PstEmail | null {
   try {
     // Get recipients
     const recipients: PstEmail['recipients'] = [];
@@ -191,7 +194,7 @@ function extractEmail(message: PSTFile.PSTMessage, folderPath: string): PstEmail
 /**
  * Extract calendar event from PST appointment
  */
-function extractCalendarEvent(appointment: PSTFile.PSTAppointment, folderPath: string): PstCalendarEvent | null {
+function extractCalendarEvent(appointment: PSTAppointment, folderPath: string): PstCalendarEvent | null {
   try {
     // Get attendees
     const attendees: PstCalendarEvent['attendees'] = [];
@@ -219,7 +222,7 @@ function extractCalendarEvent(appointment: PSTFile.PSTAppointment, folderPath: s
       location: appointment.location || null,
       startTime: appointment.startTime || null,
       endTime: appointment.endTime || null,
-      isAllDay: appointment.subType === 1,
+      isAllDay: appointment.subType === true,
       organizer: appointment.senderName || null,
       attendees,
       folder: folderPath,
@@ -258,7 +261,7 @@ interface TraversalResult {
  * Recursively traverse PST folders and extract items
  */
 function traverseFolder(
-  folder: PSTFile.PSTFolder,
+  folder: PSTFolder,
   folderPath: string,
   options: TraversalOptions,
   result: TraversalResult
@@ -292,7 +295,7 @@ function traverseFolder(
   // Process emails
   if (isEmailFolder && folder.contentCount > 0) {
     try {
-      let email = folder.getNextChild() as PSTFile.PSTMessage | null;
+      let email = folder.getNextChild() as PSTMessage | null;
       while (email) {
         if (options.maxItems && (result.emails.length + result.events.length) >= options.maxItems) {
           break;
@@ -339,7 +342,7 @@ function traverseFolder(
           }
         }
 
-        email = folder.getNextChild() as PSTFile.PSTMessage | null;
+        email = folder.getNextChild() as PSTMessage | null;
       }
     } catch (error) {
       console.error(`Error processing emails in ${currentPath}:`, error);
@@ -357,7 +360,7 @@ function traverseFolder(
         }
 
         // Check if it's an appointment
-        if (item instanceof PSTFile.PSTAppointment) {
+        if (item instanceof PSTAppointmentClass) {
           const extracted = extractCalendarEvent(item, currentPath);
           if (extracted && extracted.startTime) {
             result.stats.eventsFound++;
@@ -366,6 +369,7 @@ function traverseFolder(
               type: 'meeting',
               externalId: generateExternalId('event', {
                 subject: extracted.subject,
+                date: extracted.startTime,
                 startTime: extracted.startTime,
               }),
               subject: extracted.subject,
@@ -424,7 +428,7 @@ export async function parsePstFile(
   };
 
   try {
-    const pstFile = new PSTFile.default(filePath);
+    const pstFile = new PSTFile(filePath);
     const rootFolder = pstFile.getRootFolder();
 
     if (!rootFolder) {
@@ -452,14 +456,14 @@ export function getPstFolderStructure(filePath: string): string[] {
   const folders: string[] = [];
 
   try {
-    const pstFile = new PSTFile.default(filePath);
+    const pstFile = new PSTFile(filePath);
     const rootFolder = pstFile.getRootFolder();
 
     if (!rootFolder) {
       throw new Error('Could not read PST root folder');
     }
 
-    function traverse(folder: PSTFile.PSTFolder, path: string): void {
+    function traverse(folder: PSTFolder, path: string): void {
       const name = folder.displayName || 'Unknown';
       const currentPath = path ? `${path}/${name}` : name;
       const itemCount = folder.contentCount || 0;
@@ -469,7 +473,7 @@ export function getPstFolderStructure(filePath: string): string[] {
       if (folder.hasSubfolders) {
         let child = folder.getNextChild();
         while (child) {
-          if (child instanceof PSTFile.PSTFolder) {
+          if (child instanceof PSTFolder) {
             traverse(child, currentPath);
           }
           child = folder.getNextChild();

@@ -33,6 +33,7 @@ import {
   type Deal,
 } from '@/types';
 import { CompanySummaryCard } from '@/components/ai/summaries';
+import { IntelligenceTab } from '@/components/intelligence';
 
 interface CompanyDetailProps {
   company: Company;
@@ -68,6 +69,7 @@ const tabs = [
   { id: 'activities', label: 'Activities' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'products', label: 'Products' },
+  { id: 'intelligence', label: 'Intelligence' },
 ];
 
 export function CompanyDetail({
@@ -701,6 +703,10 @@ export function CompanyDetail({
             ))}
           </div>
         </div>
+      )}
+
+      {activeTab === 'intelligence' && (
+        <IntelligenceTab companyId={company.id} companyName={company.name} />
       )}
     </div>
   );
