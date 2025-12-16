@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '../core/aiClient';
+import { getPromptWithVariables } from '../promptManager';
 import { createHash } from 'crypto';
 import type { ContactSummary, GenerateSummaryOptions, SummaryResult } from './types';
 
@@ -20,9 +21,9 @@ interface ContactContext {
     role: string | null;
     email: string | null;
     phone: string | null;
-    notes: string | null;
+    is_primary: boolean;
+    last_contacted_at: string | null;
     created_at: string;
-    updated_at: string;
   };
   company: {
     id: string;
@@ -52,6 +53,7 @@ interface ContactContext {
 // ============================================
 
 async function gatherContactContext(contactId: string, options: GenerateSummaryOptions = {}): Promise<ContactContext> {
+  console.log('[ContactSummary] Gathering context for contact:', contactId);
   const supabase = createAdminClient();
   const maxActivities = options.maxActivities || 30;
 
@@ -59,13 +61,17 @@ async function gatherContactContext(contactId: string, options: GenerateSummaryO
   const { data: contact, error: contactError } = await supabase
     .from('contacts')
     .select(`
-      id, name, title, role, email, phone, notes, created_at, updated_at,
+      id, name, title, role, email, phone, is_primary, last_contacted_at, created_at,
       company:companies(id, name, status, segment, industry)
     `)
     .eq('id', contactId)
     .single();
 
-  if (contactError || !contact) {
+  if (contactError) {
+    console.error('Supabase error fetching contact:', contactError);
+    throw new Error(`Failed to fetch contact ${contactId}: ${contactError.message}`);
+  }
+  if (!contact) {
     throw new Error(`Contact not found: ${contactId}`);
   }
 
@@ -106,9 +112,9 @@ async function gatherContactContext(contactId: string, options: GenerateSummaryO
       role: contact.role,
       email: contact.email,
       phone: contact.phone,
-      notes: contact.notes,
+      is_primary: contact.is_primary,
+      last_contacted_at: contact.last_contacted_at,
       created_at: contact.created_at,
-      updated_at: contact.updated_at,
     },
     company: companyData || null,
     activities,
@@ -124,10 +130,11 @@ function generateContextHash(context: ContactContext): string {
   const hashInput = JSON.stringify({
     contactId: context.contact.id,
     role: context.contact.role,
+    isPrimary: context.contact.is_primary,
     activityCount: context.activities.length,
     lastActivityDate: context.activities[0]?.occurred_at || null,
+    lastContactedAt: context.contact.last_contacted_at,
     dealCount: context.deals.length,
-    updatedAt: context.contact.updated_at,
   });
 
   return createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
@@ -137,7 +144,10 @@ function generateContextHash(context: ContactContext): string {
 // PROMPT BUILDING
 // ============================================
 
-function buildContactSummaryPrompt(context: ContactContext): string {
+/**
+ * Format contact context into template variables for the prompt
+ */
+function formatContactContextVariables(context: ContactContext): Record<string, string> {
   const { contact, company, activities, deals } = context;
 
   // Calculate engagement metrics
@@ -169,92 +179,77 @@ function buildContactSummaryPrompt(context: ContactContext): string {
     sentiment: a.sentiment,
   }));
 
-  return `Generate a comprehensive summary for this contact person.
-
-## Contact Information
+  const contactInfo = `## Contact Information
 - Name: ${contact.name}
 - Title: ${contact.title || 'Not specified'}
 - Role: ${contact.role || 'Not specified'}
 - Email: ${contact.email || 'Not specified'}
 - Phone: ${contact.phone || 'Not specified'}
-${contact.notes ? `- Notes: ${contact.notes}` : ''}
-- In CRM Since: ${new Date(contact.created_at).toLocaleDateString()}
+- Primary Contact: ${contact.is_primary ? 'Yes' : 'No'}
+${contact.last_contacted_at ? `- Last Contacted: ${new Date(contact.last_contacted_at).toLocaleDateString()}` : ''}
+- In CRM Since: ${new Date(contact.created_at).toLocaleDateString()}`;
 
-## Company
-${company ? `
-- Company: ${company.name}
+  const companyInfo = `## Company
+${company ? `- Company: ${company.name}
 - Status: ${company.status}
 - Segment: ${company.segment}
-- Industry: ${company.industry}
-` : 'No company linked'}
+- Industry: ${company.industry}` : 'No company linked'}`;
 
-## Active Deals (${deals.length})
+  const dealsInfo = `## Active Deals (${deals.length})
 ${deals.length > 0 ? deals.map(d =>
     `- ${d.name} (${d.stage}) - ${d.estimated_value ? `$${d.estimated_value.toLocaleString()}` : 'Value TBD'}`
-  ).join('\n') : 'No active deals'}
+  ).join('\n') : 'No active deals'}`;
 
-## Engagement History
+  const engagementInfo = `## Engagement History
 - Total Interactions: ${activities.length}
 - Days Since Last Contact: ${daysSinceContact}
 - Sentiment Breakdown: ${sentimentCounts.positive} positive, ${sentimentCounts.neutral} neutral, ${sentimentCounts.negative} negative
-${Object.keys(activityTypes).length > 0 ? `\nActivity Types:\n${Object.entries(activityTypes).map(([type, count]) => `  - ${type}: ${count}`).join('\n')}` : ''}
+${Object.keys(activityTypes).length > 0 ? `\nActivity Types:\n${Object.entries(activityTypes).map(([type, count]) => `  - ${type}: ${count}`).join('\n')}` : ''}`;
 
-## Recent Communications
+  const communicationsInfo = `## Recent Communications
 ${recentComms.length > 0 ? recentComms.map(c =>
     `- ${c.date} [${c.type}] ${c.subject}${c.sentiment ? ` (${c.sentiment})` : ''}\n  ${c.preview}...`
-  ).join('\n\n') : 'No recent communications'}
+  ).join('\n\n') : 'No recent communications'}`;
+
+  return {
+    contactInfo,
+    companyInfo,
+    dealsInfo,
+    engagementInfo,
+    communicationsInfo,
+  };
+}
+
+/**
+ * Get the contact summary prompt from the database or use fallback
+ */
+async function getContactSummaryPrompt(context: ContactContext): Promise<string> {
+  const variables = formatContactContextVariables(context);
+
+  // Try to get prompt from database
+  const result = await getPromptWithVariables('contact_summary', variables);
+
+  if (result?.prompt) {
+    return result.prompt;
+  }
+
+  // Fallback to inline prompt if database prompt not available
+  console.warn('[ContactSummary] Using fallback prompt - database prompt not found');
+  return `${variables.contactInfo}
+
+${variables.companyInfo}
+
+${variables.dealsInfo}
+
+${variables.engagementInfo}
+
+${variables.communicationsInfo}
 
 ---
 
-Analyze this contact and provide a comprehensive JSON summary:
+Analyze this contact and provide a comprehensive JSON summary. Be specific. Infer from the communication patterns and content. Focus on actionable insights for sales.
 
-{
-  "headline": "One sentence capturing this person's role and relationship status",
-  "overview": "2-3 paragraphs about this contact, their role, engagement history, and relationship",
-
-  "profile": {
-    "name": "${contact.name}",
-    "title": ${contact.title ? `"${contact.title}"` : 'null'},
-    "role": ${contact.role ? `"${contact.role}"` : 'null'},
-    "company": "${company?.name || 'Unknown'}",
-    "email": ${contact.email ? `"${contact.email}"` : 'null'},
-    "phone": ${contact.phone ? `"${contact.phone}"` : 'null'}
-  },
-
-  "influence": {
-    "decisionMakingRole": "decision_maker|influencer|champion|end_user|blocker|unknown",
-    "buyingInfluence": "high|medium|low",
-    "sentiment": "positive|neutral|negative|unknown",
-    "engagementLevel": "highly_engaged|engaged|passive|disengaged"
-  },
-
-  "communication": {
-    "preferredChannel": "email|phone|meeting|unknown",
-    "responsePattern": "Description of how they typically respond",
-    "bestTimeToReach": "Inferred best time or null"
-  },
-
-  "engagement": {
-    "totalInteractions": ${activities.length},
-    "lastContactDate": "${lastActivity?.occurred_at || null}",
-    "daysSinceContact": ${daysSinceContact},
-    "interactionTypes": ${JSON.stringify(activityTypes)}
-  },
-
-  "keyInsights": [
-    {"insight": "Important observation about this contact", "source": "Where this was learned"}
-  ],
-
-  "painPoints": ["Pain points this person has mentioned or shown"],
-
-  "interests": ["Topics or areas they've shown interest in"],
-
-  "relationshipTips": ["Tips for building relationship with this contact"],
-
-  "confidence": 0.85
-}
-
-Be specific. Infer from the communication patterns and content. Focus on actionable insights for sales.`;
+Respond with a JSON object containing: headline, overview, profile, influence, communication, engagement, keyInsights, painPoints, interests, relationshipTips, and confidence (0-1).`;
 }
 
 // ============================================
@@ -294,7 +289,7 @@ export async function generateContactSummary(
   }
 
   // Generate new summary
-  const prompt = buildContactSummaryPrompt(context);
+  const prompt = await getContactSummaryPrompt(context);
 
   const { data: summary, usage, latencyMs } = await callAIJson<ContactSummary>({
     prompt,

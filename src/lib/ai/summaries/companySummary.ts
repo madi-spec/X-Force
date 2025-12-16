@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '../core/aiClient';
+import { getPromptWithVariables } from '../promptManager';
 import { createHash } from 'crypto';
 import type { CompanySummary, GenerateSummaryOptions, SummaryResult } from './types';
 
@@ -61,7 +62,9 @@ interface CompanyContext {
 // ============================================
 
 async function gatherCompanyContext(companyId: string, options: GenerateSummaryOptions = {}): Promise<CompanyContext> {
+  console.log('[CompanySummary] Gathering context for company:', companyId);
   const supabase = createAdminClient();
+  console.log('[CompanySummary] Admin client created');
   const maxActivities = options.maxActivities || 50;
 
   // Fetch company
@@ -71,7 +74,11 @@ async function gatherCompanyContext(companyId: string, options: GenerateSummaryO
     .eq('id', companyId)
     .single();
 
-  if (companyError || !company) {
+  if (companyError) {
+    console.error('Supabase error fetching company:', companyError);
+    throw new Error(`Failed to fetch company ${companyId}: ${companyError.message}`);
+  }
+  if (!company) {
     throw new Error(`Company not found: ${companyId}`);
   }
 
@@ -162,7 +169,10 @@ function generateContextHash(context: CompanyContext): string {
 // PROMPT BUILDING
 // ============================================
 
-function buildCompanySummaryPrompt(context: CompanyContext): string {
+/**
+ * Format company context into template variables for the prompt
+ */
+function formatCompanyContextVariables(context: CompanyContext): Record<string, string> {
   const { company, contacts, deals, activities, products } = context;
 
   // Calculate metrics
@@ -190,7 +200,7 @@ function buildCompanySummaryPrompt(context: CompanyContext): string {
   });
 
   // Calculate tenure if customer
-  let tenure = null;
+  let tenure: string | null = null;
   if (company.voice_customer && company.voice_customer_since) {
     const months = Math.floor(
       (Date.now() - new Date(company.voice_customer_since).getTime()) / (1000 * 60 * 60 * 24 * 30)
@@ -201,9 +211,7 @@ function buildCompanySummaryPrompt(context: CompanyContext): string {
   // Total MRR
   const totalMRR = products.reduce((sum, p) => sum + (p.mrr || 0), 0);
 
-  return `Generate a comprehensive summary for this company.
-
-## Company Information
+  const companyInfo = `## Company Information
 - Name: ${company.name}
 - Status: ${company.status}
 - Segment: ${company.segment}
@@ -213,100 +221,79 @@ function buildCompanySummaryPrompt(context: CompanyContext): string {
 - Voice Customer: ${company.voice_customer ? 'Yes' : 'No'}
 ${company.voice_customer_since ? `- Customer Since: ${new Date(company.voice_customer_since).toLocaleDateString()}` : ''}
 ${tenure ? `- Customer Tenure: ${tenure}` : ''}
-- In CRM Since: ${new Date(company.created_at).toLocaleDateString()}
+- In CRM Since: ${new Date(company.created_at).toLocaleDateString()}`;
 
-## Current Products (${products.length})
+  const productsInfo = `## Current Products (${products.length})
 ${products.length > 0 ? products.map(p =>
     `- ${p.name} (${p.status})${p.mrr ? ` - $${p.mrr}/mo` : ''}`
   ).join('\n') : 'No active products'}
-${totalMRR > 0 ? `\nTotal MRR: $${totalMRR.toLocaleString()}` : ''}
+${totalMRR > 0 ? `\nTotal MRR: $${totalMRR.toLocaleString()}` : ''}`;
 
-## Contacts (${contacts.length})
+  const contactsInfo = `## Contacts (${contacts.length})
 ${contacts.length > 0 ? contacts.slice(0, 10).map(c =>
     `- ${c.name}${c.title ? ` - ${c.title}` : ''}${c.role ? ` (${c.role})` : ''}`
-  ).join('\n') : 'No contacts'}
+  ).join('\n') : 'No contacts'}`;
 
-## Deals Summary
+  const dealsInfo = `## Deals Summary
 - Total Deals: ${deals.length}
 - Active Deals: ${activeDeals.length}
 - Closed Won: ${wonDeals.length}
 - Pipeline Value: $${totalPipelineValue.toLocaleString()}
 - Closed Won Value: $${closedWonValue.toLocaleString()}
-${Object.keys(dealStages).length > 0 ? `\nDeal Stages:\n${Object.entries(dealStages).map(([stage, count]) => `  - ${stage}: ${count}`).join('\n')}` : ''}
+${Object.keys(dealStages).length > 0 ? `\nDeal Stages:\n${Object.entries(dealStages).map(([stage, count]) => `  - ${stage}: ${count}`).join('\n')}` : ''}`;
 
-## Engagement History
+  const engagementInfo = `## Engagement History
 - Total Activities: ${activities.length}
 - Days Since Last Activity: ${daysSinceActivity}
-${Object.keys(activityTypes).length > 0 ? `\nActivity Types:\n${Object.entries(activityTypes).map(([type, count]) => `  - ${type}: ${count}`).join('\n')}` : ''}
+${Object.keys(activityTypes).length > 0 ? `\nActivity Types:\n${Object.entries(activityTypes).map(([type, count]) => `  - ${type}: ${count}`).join('\n')}` : ''}`;
 
-## Recent Activities (last 10)
+  const activitiesInfo = `## Recent Activities (last 10)
 ${activities.slice(0, 10).map(a =>
     `- ${new Date(a.occurred_at).toLocaleDateString()}: ${a.type} - ${a.subject || 'No subject'}`
-  ).join('\n') || 'No activities'}
+  ).join('\n') || 'No activities'}`;
+
+  return {
+    companyInfo,
+    productsInfo,
+    contactsInfo,
+    dealsInfo,
+    engagementInfo,
+    activitiesInfo,
+  };
+}
+
+/**
+ * Get the company summary prompt from the database or use fallback
+ */
+async function getCompanySummaryPrompt(context: CompanyContext): Promise<string> {
+  const variables = formatCompanyContextVariables(context);
+
+  // Try to get prompt from database
+  const result = await getPromptWithVariables('company_summary', variables);
+
+  if (result?.prompt) {
+    return result.prompt;
+  }
+
+  // Fallback to inline prompt if database prompt not available
+  console.warn('[CompanySummary] Using fallback prompt - database prompt not found');
+  return `${variables.companyInfo}
+
+${variables.productsInfo}
+
+${variables.contactsInfo}
+
+${variables.dealsInfo}
+
+${variables.engagementInfo}
+
+${variables.activitiesInfo}
 
 ---
 
-Analyze this company and provide a comprehensive JSON summary:
+Analyze this company and provide a comprehensive JSON summary. Be specific. Reference actual data. Focus on actionable insights.
 
-{
-  "headline": "One compelling sentence summarizing the company relationship",
-  "overview": "2-3 paragraphs about the company, relationship history, and current state",
-
-  "profile": {
-    "status": "${company.status}",
-    "segment": "${company.segment}",
-    "industry": "${company.industry}",
-    "size": "${company.agent_count} agents",
-    "crmPlatform": ${company.crm_platform ? `"${company.crm_platform}"` : 'null'},
-    "isVoiceCustomer": ${company.voice_customer}
-  },
-
-  "relationship": {
-    "tenure": ${tenure ? `"${tenure}"` : 'null'},
-    "currentProducts": ${JSON.stringify(products.map(p => p.name))},
-    "totalRevenue": ${totalMRR > 0 ? totalMRR * 12 : 'null'},
-    "healthStatus": "healthy|at_risk|churned|prospect"
-  },
-
-  "keyContacts": [
-    {
-      "name": "Contact name",
-      "title": "Title or null",
-      "role": "Role or null",
-      "isPrimary": true|false
-    }
-  ],
-
-  "dealsSummary": {
-    "activeDeals": ${activeDeals.length},
-    "totalPipelineValue": ${totalPipelineValue},
-    "closedWonValue": ${closedWonValue},
-    "dealStages": ${JSON.stringify(dealStages)}
-  },
-
-  "engagement": {
-    "totalActivities": ${activities.length},
-    "lastActivityDate": "${lastActivity?.occurred_at || null}",
-    "activityTrend": "increasing|stable|decreasing",
-    "primaryChannels": ["email", "meeting", "call"]
-  },
-
-  "opportunities": ["List expansion or upsell opportunities"],
-
-  "risks": ["List any concerns or churn risks"],
-
-  "recommendedActions": [
-    {
-      "action": "Specific next step",
-      "priority": "high|medium|low",
-      "reasoning": "Why this action"
-    }
-  ],
-
-  "confidence": 0.85
-}
-
-Be specific. Reference actual data. Focus on actionable insights.`;
+Respond with a JSON object containing: headline, overview, profile, relationship, keyContacts, dealsSummary, engagement, opportunities, risks, recommendedActions, and confidence (0-1).`;
 }
 
 // ============================================
@@ -346,7 +333,7 @@ export async function generateCompanySummary(
   }
 
   // Generate new summary
-  const prompt = buildCompanySummaryPrompt(context);
+  const prompt = await getCompanySummaryPrompt(context);
 
   const { data: summary, usage, latencyMs } = await callAIJson<CompanySummary>({
     prompt,

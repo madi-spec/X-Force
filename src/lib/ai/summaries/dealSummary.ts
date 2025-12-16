@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '../core/aiClient';
+import { getPromptWithVariables } from '../promptManager';
 import { createHash } from 'crypto';
 import type { DealSummary, GenerateSummaryOptions, SummaryResult } from './types';
 
@@ -21,7 +22,7 @@ interface DealContext {
     health_score: number | null;
     health_trend: string | null;
     stage_entered_at: string | null;
-    close_date: string | null;
+    closed_at: string | null;
     deal_type: string | null;
     sales_team: string | null;
     created_at: string;
@@ -67,7 +68,9 @@ interface DealContext {
 // ============================================
 
 async function gatherDealContext(dealId: string, options: GenerateSummaryOptions = {}): Promise<DealContext> {
+  console.log('[DealSummary] Gathering context for deal:', dealId);
   const supabase = createAdminClient();
+  console.log('[DealSummary] Admin client created');
   const maxActivities = options.maxActivities || 50;
 
   // Fetch deal with company
@@ -75,7 +78,7 @@ async function gatherDealContext(dealId: string, options: GenerateSummaryOptions
     .from('deals')
     .select(`
       id, name, stage, estimated_value, health_score, health_trend,
-      stage_entered_at, close_date, deal_type, sales_team,
+      stage_entered_at, closed_at, deal_type, sales_team,
       created_at, updated_at,
       company:companies(
         id, name, status, segment, industry, agent_count,
@@ -85,7 +88,11 @@ async function gatherDealContext(dealId: string, options: GenerateSummaryOptions
     .eq('id', dealId)
     .single();
 
-  if (dealError || !deal) {
+  if (dealError) {
+    console.error('Supabase error fetching deal:', dealError);
+    throw new Error(`Failed to fetch deal ${dealId}: ${dealError.message}`);
+  }
+  if (!deal) {
     throw new Error(`Deal not found: ${dealId}`);
   }
 
@@ -129,7 +136,7 @@ async function gatherDealContext(dealId: string, options: GenerateSummaryOptions
       health_score: deal.health_score,
       health_trend: deal.health_trend,
       stage_entered_at: deal.stage_entered_at,
-      close_date: deal.close_date,
+      closed_at: deal.closed_at,
       deal_type: deal.deal_type,
       sales_team: deal.sales_team,
       created_at: deal.created_at,
@@ -166,7 +173,10 @@ function generateContextHash(context: DealContext): string {
 // PROMPT BUILDING
 // ============================================
 
-function buildDealSummaryPrompt(context: DealContext): string {
+/**
+ * Format deal context into template variables for the prompt
+ */
+function formatDealContextVariables(context: DealContext): Record<string, string> {
   const { deal, company, contacts, activities, tasks } = context;
 
   // Calculate days in stage
@@ -188,9 +198,7 @@ function buildDealSummaryPrompt(context: DealContext): string {
     sentiment: a.sentiment || 'unknown',
   }));
 
-  return `Generate a comprehensive summary for this sales deal.
-
-## Deal Information
+  const dealInfo = `## Deal Information
 - Name: ${deal.name}
 - Stage: ${deal.stage}
 - Days in Stage: ${daysInStage}
@@ -199,91 +207,85 @@ function buildDealSummaryPrompt(context: DealContext): string {
 - Health Trend: ${deal.health_trend || 'unknown'}
 - Deal Type: ${deal.deal_type || 'new_business'}
 - Sales Team: ${deal.sales_team || 'Not assigned'}
-- Close Date: ${deal.close_date || 'Not set'}
-- Created: ${new Date(deal.created_at).toLocaleDateString()}
+- Close Date: ${deal.closed_at || 'Not set'}
+- Created: ${new Date(deal.created_at).toLocaleDateString()}`;
 
-## Company
-${company ? `
-- Name: ${company.name}
+  const companyInfo = `## Company
+${company ? `- Name: ${company.name}
 - Status: ${company.status}
 - Segment: ${company.segment}
 - Industry: ${company.industry}
 - Agent Count: ${company.agent_count}
 - CRM Platform: ${company.crm_platform || 'Unknown'}
-- Voice Customer: ${company.voice_customer ? 'Yes' : 'No'}
-` : 'No company linked'}
+- Voice Customer: ${company.voice_customer ? 'Yes' : 'No'}` : 'No company linked'}`;
 
-## Contacts (${contacts.length})
+  const contactsInfo = `## Contacts (${contacts.length})
 ${contacts.length > 0 ? contacts.map(c =>
     `- ${c.name}${c.title ? ` (${c.title})` : ''}${c.role ? ` - ${c.role}` : ''}`
-  ).join('\n') : 'No contacts linked'}
+  ).join('\n') : 'No contacts linked'}`;
 
-## Recent Activities (${activities.length} total)
+  const activitiesInfo = `## Recent Activities (${activities.length} total)
 ${recentActivities.length > 0 ? recentActivities.map(a =>
     `- ${a.date}: ${a.type} - ${a.subject} [${a.sentiment}]`
-  ).join('\n') : 'No activities recorded'}
+  ).join('\n') : 'No activities recorded'}`;
 
-## Open Tasks
+  const tasksInfo = `## Open Tasks
 ${tasks.length > 0 ? tasks.map(t =>
     `- [${t.priority}] ${t.title} - Due: ${t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No date'}`
-  ).join('\n') : 'No open tasks'}
+  ).join('\n') : 'No open tasks'}`;
 
-## Key Metrics
+  const recentActivityCount = activities.filter(a =>
+    new Date(a.occurred_at) > new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+  ).length;
+
+  const metricsInfo = `## Key Metrics
 - Days Since Last Contact: ${daysSinceContact}
 - Total Activities: ${activities.length}
 - Contact Count: ${contacts.length}
+- Recent Activity Count (14 days): ${recentActivityCount}`;
+
+  return {
+    dealInfo,
+    companyInfo,
+    contactsInfo,
+    activitiesInfo,
+    tasksInfo,
+    metricsInfo,
+  };
+}
+
+/**
+ * Get the deal summary prompt from the database or use fallback
+ */
+async function getDealSummaryPrompt(context: DealContext): Promise<string> {
+  const variables = formatDealContextVariables(context);
+
+  // Try to get prompt from database
+  const result = await getPromptWithVariables('deal_summary', variables);
+
+  if (result?.prompt) {
+    return result.prompt;
+  }
+
+  // Fallback to inline prompt if database prompt not available
+  console.warn('[DealSummary] Using fallback prompt - database prompt not found');
+  return `${variables.dealInfo}
+
+${variables.companyInfo}
+
+${variables.contactsInfo}
+
+${variables.activitiesInfo}
+
+${variables.tasksInfo}
+
+${variables.metricsInfo}
 
 ---
 
-Analyze this deal and provide a comprehensive JSON summary:
+Analyze this deal and provide a comprehensive JSON summary. Be specific and actionable. Reference actual data from the context. Don't be generic.
 
-{
-  "headline": "One compelling sentence summarizing the deal's current state",
-  "overview": "2-3 paragraphs providing context on the deal, its history, current status, and what's needed to close it",
-
-  "currentStatus": {
-    "stage": "${deal.stage}",
-    "daysInStage": ${daysInStage},
-    "healthScore": ${deal.health_score || 50},
-    "trend": "${deal.health_trend || 'stable'}"
-  },
-
-  "keyPoints": [
-    {"point": "Important observation about the deal", "importance": "high|medium|low"}
-  ],
-
-  "stakeholderStatus": {
-    "totalContacts": ${contacts.length},
-    "hasDecisionMaker": true|false,
-    "hasChampion": true|false,
-    "keyPlayers": [
-      {"name": "Contact name", "role": "Their role", "sentiment": "positive|neutral|negative|unknown"}
-    ]
-  },
-
-  "engagement": {
-    "lastContactDate": "${lastActivity?.occurred_at || null}",
-    "daysSinceContact": ${daysSinceContact},
-    "recentActivityCount": ${activities.filter(a => new Date(a.occurred_at) > new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)).length},
-    "communicationPattern": "Description of how communication has been going"
-  },
-
-  "risks": ["List of risks or concerns about this deal"],
-
-  "opportunities": ["List of opportunities or positive indicators"],
-
-  "recommendedActions": [
-    {
-      "action": "Specific action to take",
-      "priority": "high|medium|low",
-      "reasoning": "Why this action is recommended"
-    }
-  ],
-
-  "confidence": 0.85
-}
-
-Be specific and actionable. Reference actual data from the context. Don't be generic.`;
+Respond with a JSON object containing: headline, overview, currentStatus, keyPoints, stakeholderStatus, engagement, risks, opportunities, recommendedActions, and confidence (0-1).`;
 }
 
 // ============================================
@@ -324,7 +326,7 @@ export async function generateDealSummary(
   }
 
   // Generate new summary
-  const prompt = buildDealSummaryPrompt(context);
+  const prompt = await getDealSummaryPrompt(context);
 
   const { data: summary, usage, latencyMs } = await callAIJson<DealSummary>({
     prompt,
