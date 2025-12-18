@@ -210,6 +210,12 @@ export function ComposeModal({
     setError(null);
 
     try {
+      // Convert plain text to HTML (preserve line breaks and paragraphs)
+      const htmlContent = content
+        .split('\n\n')
+        .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
+        .join('');
+
       const res = await fetch('/api/microsoft/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -217,7 +223,7 @@ export function ComposeModal({
           to: recipients.map(r => r.email),
           cc: ccRecipients.length > 0 ? ccRecipients.map(r => r.email) : undefined,
           subject,
-          content,
+          content: htmlContent,
           contactId,
           dealId,
         }),
