@@ -119,46 +119,59 @@ export function ContextualComposeModal({
     phone?: string;
   } | null>(null);
 
-  // Process recipients by confidence when context changes
+  // Process recipients when context changes - deduplicate and add all to To for simplicity
   useEffect(() => {
-    if (!isOpen || !context.recipients) return;
+    if (!isOpen) return;
+    if (!context.recipients || context.recipients.length === 0) {
+      setToRecipients([]);
+      setCcRecipients([]);
+      setSuggestedRecipients([]);
+      return;
+    }
 
-    const to: Recipient[] = [];
-    const cc: Recipient[] = [];
-    const suggested: Recipient[] = [];
     const seenEmails = new Set<string>();
+    const uniqueRecipients: Recipient[] = [];
 
     context.recipients.forEach((r) => {
-      // Deduplicate by email
       const emailLower = r.email.toLowerCase();
       if (seenEmails.has(emailLower)) return;
       seenEmails.add(emailLower);
 
-      const recipient = {
+      uniqueRecipients.push({
         email: r.email,
         name: r.name,
         confidence: r.confidence,
         role: r.role,
-      };
-
-      // 90%+ confidence OR primary/organizer role -> To
-      if (r.confidence >= 90 || r.role === 'organizer' || r.role === 'primary_contact') {
-        to.push(recipient);
-      }
-      // 75-89% confidence -> Cc
-      else if (r.confidence >= 75) {
-        cc.push(recipient);
-      }
-      // Under 75% -> Suggested
-      else {
-        suggested.push(recipient);
-      }
+      });
     });
 
-    setToRecipients(to);
-    setCcRecipients(cc);
-    setSuggestedRecipients(suggested);
-  }, [isOpen, context.recipients]);
+    // For meeting follow-ups, put all attendees in To
+    // For other contexts, only high-confidence goes to To
+    if (context.type === 'transcript_followup' || context.type === 'transcript_summary') {
+      setToRecipients(uniqueRecipients);
+      setCcRecipients([]);
+      setSuggestedRecipients([]);
+    } else {
+      const to: Recipient[] = [];
+      const cc: Recipient[] = [];
+      const suggested: Recipient[] = [];
+
+      uniqueRecipients.forEach((r) => {
+        const confidence = r.confidence ?? 0;
+        if (confidence >= 90 || r.role === 'organizer' || r.role === 'primary_contact') {
+          to.push(r);
+        } else if (confidence >= 75) {
+          cc.push(r);
+        } else {
+          suggested.push(r);
+        }
+      });
+
+      setToRecipients(to);
+      setCcRecipients(cc);
+      setSuggestedRecipients(suggested);
+    }
+  }, [isOpen, context.recipients, context.type]);
 
   // Initialize form with context data
   useEffect(() => {
