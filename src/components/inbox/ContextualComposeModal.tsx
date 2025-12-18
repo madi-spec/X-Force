@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   ChevronDown,
 } from 'lucide-react';
+import { marked } from 'marked';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
@@ -271,8 +272,8 @@ export function ContextualComposeModal({
     setError(null);
 
     try {
-      // Send as plain text - most reliable for native look
-      // Build signature
+      // Convert markdown to HTML for email
+      // Build signature in markdown
       let signature = '';
       if (userInfo) {
         const sigParts = [
@@ -281,10 +282,29 @@ export function ContextualComposeModal({
           userInfo.phone,
           userInfo.email,
         ].filter(Boolean);
-        signature = '\n\n' + sigParts.join('\n');
+        signature = '\n\n' + sigParts.join('  \n'); // Two spaces + newline = <br> in markdown
       }
 
-      const plainTextContent = content + signature;
+      const fullContent = content + signature;
+
+      // Configure marked for email-friendly output
+      marked.setOptions({
+        breaks: true, // Convert \n to <br>
+        gfm: true,    // GitHub Flavored Markdown
+      });
+
+      const htmlBody = await marked.parse(fullContent);
+
+      // Wrap in minimal email-safe HTML
+      const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body style="font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #000;">
+${htmlBody}
+</body>
+</html>`;
 
       const res = await fetch('/api/microsoft/send', {
         method: 'POST',
@@ -293,8 +313,8 @@ export function ContextualComposeModal({
           to: toRecipients.map(r => r.email),
           cc: ccRecipients.length > 0 ? ccRecipients.map(r => r.email) : undefined,
           subject,
-          content: plainTextContent,
-          isHtml: false,
+          content: htmlContent,
+          isHtml: true,
           dealId,
           // Track context for analytics
           metadata: {
