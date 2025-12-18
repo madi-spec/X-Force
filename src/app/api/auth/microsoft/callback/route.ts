@@ -31,6 +31,18 @@ export async function GET(request: Request) {
     );
   }
 
+  // Decode state to get user ID and expected email
+  let stateData: { userId: string; expectedEmail?: string };
+  try {
+    const decoded = Buffer.from(state, 'base64').toString('utf-8');
+    stateData = JSON.parse(decoded);
+  } catch {
+    // Fallback for old-style state (just user ID)
+    stateData = { userId: state };
+  }
+
+  const { userId, expectedEmail } = stateData;
+
   try {
     // Exchange code for tokens
     const redirectUri = process.env.MICROSOFT_REDIRECT_URI || 'http://localhost:3000/api/auth/microsoft/callback';
@@ -74,15 +86,32 @@ export async function GET(request: Request) {
       );
     }
 
+    const microsoftEmail = (profile.mail || profile.userPrincipalName || '').toLowerCase();
+
+    // Validate that the signed-in Microsoft account matches the expected user
+    if (expectedEmail) {
+      const expectedLower = expectedEmail.toLowerCase();
+      if (microsoftEmail !== expectedLower) {
+        console.log(
+          `Admin consent flow detected: expected ${expectedEmail}, got ${microsoftEmail}`
+        );
+        // Admin granted consent - redirect user to try again
+        // The consent should now be cached at the tenant level
+        return NextResponse.redirect(
+          `${baseUrl}/settings/integrations?admin_consent_granted=true&message=${encodeURIComponent('Admin consent granted! Please click Connect again to link your account.')}`
+        );
+      }
+    }
+
     // Store connection in database (use admin client to bypass RLS)
     const supabase = createAdminClient();
 
     const { error: upsertError } = await supabase
       .from('microsoft_connections')
       .upsert({
-        user_id: state,
+        user_id: userId,
         microsoft_user_id: profile.id,
-        email: profile.mail || profile.userPrincipalName,
+        email: microsoftEmail,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
@@ -95,11 +124,11 @@ export async function GET(request: Request) {
 
     if (upsertError) {
       console.error('Failed to save connection:', JSON.stringify(upsertError, null, 2));
-      console.error('User ID:', state);
+      console.error('User ID:', userId);
       console.error('Data being saved:', {
-        user_id: state,
+        user_id: userId,
         microsoft_user_id: profile.id,
-        email: profile.mail || profile.userPrincipalName,
+        email: microsoftEmail,
       });
       return NextResponse.redirect(
         `${baseUrl}/settings/integrations?error=save_failed&details=${encodeURIComponent(upsertError.message || 'unknown')}`
