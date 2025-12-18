@@ -108,6 +108,8 @@ export function ContextualComposeModal({
   const [loading, setLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingToIndex, setEditingToIndex] = useState<number | null>(null);
+  const [editingToValue, setEditingToValue] = useState('');
 
   // User info for signature
   const [userInfo, setUserInfo] = useState<{
@@ -124,8 +126,14 @@ export function ContextualComposeModal({
     const to: Recipient[] = [];
     const cc: Recipient[] = [];
     const suggested: Recipient[] = [];
+    const seenEmails = new Set<string>();
 
     context.recipients.forEach((r) => {
+      // Deduplicate by email
+      const emailLower = r.email.toLowerCase();
+      if (seenEmails.has(emailLower)) return;
+      seenEmails.add(emailLower);
+
       const recipient = {
         email: r.email,
         name: r.name,
@@ -239,6 +247,29 @@ export function ContextualComposeModal({
 
   const removeCcRecipient = (email: string) => {
     setCcRecipients(ccRecipients.filter(r => r.email !== email));
+  };
+
+  const startEditingTo = (index: number) => {
+    setEditingToIndex(index);
+    setEditingToValue(toRecipients[index].email);
+  };
+
+  const saveEditingTo = () => {
+    if (editingToIndex === null) return;
+    if (!editingToValue.includes('@')) {
+      setEditingToIndex(null);
+      return;
+    }
+    const updated = [...toRecipients];
+    updated[editingToIndex] = { ...updated[editingToIndex], email: editingToValue.trim() };
+    setToRecipients(updated);
+    setEditingToIndex(null);
+    setEditingToValue('');
+  };
+
+  const cancelEditingTo = () => {
+    setEditingToIndex(null);
+    setEditingToValue('');
   };
 
   const addManualRecipient = () => {
@@ -410,22 +441,49 @@ ${htmlBody}
               <span className="text-sm text-gray-500 py-1.5 w-12">To:</span>
               <div className="flex-1">
                 <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {toRecipients.map((r) => (
-                    <span
-                      key={r.email}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-sm"
-                    >
-                      {r.name || r.email}
-                      {r.role && (
-                        <span className="text-[10px] text-blue-500">({r.role})</span>
-                      )}
-                      <button
-                        onClick={() => removeToRecipient(r.email)}
-                        className="text-blue-500 hover:text-blue-700"
+                  {toRecipients.map((r, index) => (
+                    editingToIndex === index ? (
+                      <div key={r.email} className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={editingToValue}
+                          onChange={(e) => setEditingToValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              saveEditingTo();
+                            } else if (e.key === 'Escape') {
+                              cancelEditingTo();
+                            }
+                          }}
+                          onBlur={saveEditingTo}
+                          autoFocus
+                          className="px-2 py-0.5 text-sm border border-blue-400 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none w-48"
+                        />
+                      </div>
+                    ) : (
+                      <span
+                        key={r.email}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-sm group"
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
+                        <button
+                          onClick={() => startEditingTo(index)}
+                          className="hover:underline"
+                          title="Click to edit"
+                        >
+                          {r.name || r.email}
+                        </button>
+                        {r.role && (
+                          <span className="text-[10px] text-blue-500">({r.role})</span>
+                        )}
+                        <button
+                          onClick={() => removeToRecipient(r.email)}
+                          className="text-blue-500 hover:text-blue-700"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
