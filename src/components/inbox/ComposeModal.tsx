@@ -210,11 +210,26 @@ export function ComposeModal({
     setError(null);
 
     try {
-      // Convert plain text to HTML (preserve line breaks and paragraphs)
-      const htmlContent = content
+      // Convert plain text to HTML with professional email styling
+      const bodyHtml = content
         .split('\n\n')
-        .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
+        .map(paragraph => `<p style="margin: 0 0 12px 0;">${paragraph.replace(/\n/g, '<br>')}</p>`)
         .join('');
+
+      // Wrap in a professional email template
+      const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: Calibri, Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;">
+  <div style="max-width: 600px;">
+    ${bodyHtml}
+  </div>
+</body>
+</html>`.trim();
 
       const res = await fetch('/api/microsoft/send', {
         method: 'POST',
