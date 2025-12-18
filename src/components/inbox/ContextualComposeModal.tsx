@@ -271,36 +271,24 @@ export function ContextualComposeModal({
     setError(null);
 
     try {
-      // Convert plain text to HTML with professional email styling
-      const bodyHtml = content
-        .split('\n\n')
-        .map(paragraph => `<p style="margin: 0 0 12px 0;">${paragraph.replace(/\n/g, '<br>')}</p>`)
-        .join('');
+      // Convert plain text to simple HTML - minimal formatting like native email clients
+      // Just convert line breaks, no fancy styling - let the email client handle it
+      const bodyHtml = content.replace(/\n/g, '<br>');
 
-      // Build signature
-      const signatureHtml = userInfo ? `
-    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e5e5;">
-      <p style="margin: 0; font-weight: 600; color: #000000;">${userInfo.name}</p>
-      ${userInfo.title ? `<p style="margin: 2px 0 0 0; color: #666666;">${userInfo.title}</p>` : ''}
-      ${userInfo.phone ? `<p style="margin: 2px 0 0 0; color: #666666;">${userInfo.phone}</p>` : ''}
-      <p style="margin: 2px 0 0 0; color: #0066cc;">${userInfo.email}</p>
-    </div>` : '';
+      // Build simple signature like Outlook/Gmail default
+      const signatureParts: string[] = [];
+      if (userInfo) {
+        signatureParts.push(userInfo.name);
+        if (userInfo.title) signatureParts.push(userInfo.title);
+        if (userInfo.phone) signatureParts.push(userInfo.phone);
+        signatureParts.push(userInfo.email);
+      }
+      const signatureHtml = signatureParts.length > 0
+        ? '<br><br>--<br>' + signatureParts.join('<br>')
+        : '';
 
-      // Wrap in a professional email template
-      const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; font-family: Calibri, Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;">
-  <div style="max-width: 600px;">
-    ${bodyHtml}
-    ${signatureHtml}
-  </div>
-</body>
-</html>`.trim();
+      // Minimal HTML - looks like native Outlook/Gmail compose
+      const htmlContent = bodyHtml + signatureHtml;
 
       const res = await fetch('/api/microsoft/send', {
         method: 'POST',
