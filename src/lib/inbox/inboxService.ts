@@ -134,7 +134,7 @@ const SYNC_CONFIG = {
 
 const LINK_THRESHOLDS = {
   AUTO_HIGH: 85,
-  AUTO_SUGGESTED: 60,
+  AUTO_SUGGESTED: 30, // Lowered to allow domain-only matches
 };
 
 // ============================================================================
@@ -544,7 +544,7 @@ async function calculateLinkConfidence(
 
       if (company) {
         companyId = company.id;
-        confidence += 15;
+        confidence += 35; // Domain matching is reliable for B2B emails
         reasoning.push(`Domain matches company: ${company.name}`);
       }
     }

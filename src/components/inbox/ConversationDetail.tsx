@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { getInitials, getAvatarColor } from '@/components/email/types';
 import type { Conversation, EmailMessage, EmailDraft, SnoozeOption } from './types';
 import { getSnoozeOptions, formatConversationTime, getPriorityColor } from './types';
+import { LinkingModal } from './LinkingModal';
 
 interface ConversationDetailProps {
   conversation: Conversation;
@@ -568,6 +569,17 @@ export function ConversationDetail({
           </div>
         </div>
       )}
+
+      {/* Linking Modal */}
+      <LinkingModal
+        isOpen={showLinkMenu}
+        onClose={() => setShowLinkMenu(false)}
+        onLink={(dealId, companyId, contactId) => {
+          onLink(dealId, companyId, contactId);
+          setShowLinkMenu(false);
+        }}
+        conversation={conversation}
+      />
     </div>
   );
 }
