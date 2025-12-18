@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Mail, RefreshCw, Settings, AlertTriangle, CheckSquare } from 'lucide-react';
+import { Mail, RefreshCw, Settings, AlertTriangle, CheckSquare, PenSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ActionQueueTabs } from './ActionQueueTabs';
 import { ConversationList } from './ConversationList';
 import { ConversationDetail } from './ConversationDetail';
 import { TasksPane } from './TasksPane';
+import { ComposeModal } from './ComposeModal';
 import type { Conversation, EmailMessage, EmailDraft, ActionQueue, ActionQueueCounts } from './types';
 
 interface InboxViewProps {
@@ -37,6 +38,7 @@ export function InboxView({
   } | null>(null);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
+  const [showComposeModal, setShowComposeModal] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
 
   // Fetch conversations
@@ -389,7 +391,14 @@ export function InboxView({
             onQueueChange={setActiveQueue}
           />
         </div>
-        <div className="px-4">
+        <div className="px-4 flex items-center gap-2">
+          <button
+            onClick={() => setShowComposeModal(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            <PenSquare className="h-4 w-4" />
+            <span className="hidden sm:inline">Compose</span>
+          </button>
           <button
             onClick={() => setShowTasks(!showTasks)}
             className={cn(
@@ -463,6 +472,16 @@ export function InboxView({
           <TasksPane onClose={() => setShowTasks(false)} />
         )}
       </div>
+
+      {/* Compose Modal */}
+      <ComposeModal
+        isOpen={showComposeModal}
+        onClose={() => setShowComposeModal(false)}
+        onSent={() => {
+          setShowComposeModal(false);
+          fetchConversations();
+        }}
+      />
     </div>
   );
 }
