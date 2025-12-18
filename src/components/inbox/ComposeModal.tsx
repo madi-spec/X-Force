@@ -245,25 +245,50 @@ export function ComposeModal({
     setError(null);
 
     try {
-      // Convert plain text to simple HTML - minimal formatting like native email clients
-      // Just convert line breaks, no fancy styling - let the email client handle it
-      const bodyHtml = content.replace(/\n/g, '<br>');
+      // Convert plain text to Outlook-compatible HTML
+      // Outlook uses specific Microsoft Office HTML conventions
+      const paragraphs = content.split(/\n\n+/);
+      const bodyHtml = paragraphs
+        .map(p => {
+          const lines = p.split('\n').join('<br>');
+          return `<p class="MsoNormal">${lines}</p>`;
+        })
+        .join('');
 
-      // Build simple signature like Outlook/Gmail default
-      const signatureParts: string[] = [];
+      // Build signature in Outlook style
+      let signatureHtml = '';
       if (userInfo) {
-        signatureParts.push(''); // blank line before signature
-        signatureParts.push(userInfo.name);
-        if (userInfo.title) signatureParts.push(userInfo.title);
-        if (userInfo.phone) signatureParts.push(userInfo.phone);
-        signatureParts.push(userInfo.email);
-      }
-      const signatureHtml = signatureParts.length > 0
-        ? '<br><br>--<br>' + signatureParts.slice(1).join('<br>')
-        : '';
+        const sigParts = [
+          userInfo.name,
+          userInfo.title,
+          userInfo.phone,
+          userInfo.email,
+        ].filter(Boolean);
 
-      // Minimal HTML - looks like native Outlook/Gmail compose
-      const htmlContent = bodyHtml + signatureHtml;
+        signatureHtml = `
+<p class="MsoNormal"><br></p>
+<p class="MsoNormal">${sigParts.join('<br>')}</p>`;
+      }
+
+      // Outlook-compatible HTML template
+      const htmlContent = `<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style>
+p.MsoNormal, li.MsoNormal, div.MsoNormal {
+  margin: 0in;
+  font-size: 11.0pt;
+  font-family: "Calibri", sans-serif;
+}
+</style>
+</head>
+<body lang="EN-US" style="word-wrap:break-word">
+<div class="WordSection1">
+${bodyHtml}
+${signatureHtml}
+</div>
+</body>
+</html>`;
 
       const res = await fetch('/api/microsoft/send', {
         method: 'POST',
