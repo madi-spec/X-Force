@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { to, subject, content, cc, contactId, dealId } = body;
+  const { to, subject, content, cc, contactId, dealId, isHtml } = body;
 
   // Validate required fields
   if (!to || !Array.isArray(to) || to.length === 0) {
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   }
 
   // Send the email
-  const result = await sendEmail(profile.id, to, subject, content, cc);
+  const result = await sendEmail(profile.id, to, subject, content, cc, isHtml);
 
   if (!result.success) {
     return NextResponse.json(

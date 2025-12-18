@@ -195,7 +195,8 @@ export async function sendEmail(
   to: string[],
   subject: string,
   body: string,
-  cc?: string[]
+  cc?: string[],
+  isHtml: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
   const token = await getValidToken(userId);
   if (!token) {
@@ -207,7 +208,7 @@ export async function sendEmail(
   try {
     await client.sendMessage({
       subject,
-      body: { contentType: 'HTML', content: body },
+      body: { contentType: isHtml ? 'HTML' : 'Text', content: body },
       toRecipients: to.map(email => ({ emailAddress: { address: email } })),
       ccRecipients: cc?.map(email => ({ emailAddress: { address: email } })),
     });

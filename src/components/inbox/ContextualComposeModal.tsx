@@ -271,18 +271,9 @@ export function ContextualComposeModal({
     setError(null);
 
     try {
-      // Convert plain text to Outlook-compatible HTML
-      // Outlook uses specific Microsoft Office HTML conventions
-      const paragraphs = content.split(/\n\n+/);
-      const bodyHtml = paragraphs
-        .map(p => {
-          const lines = p.split('\n').join('<br>');
-          return `<p class="MsoNormal">${lines}</p>`;
-        })
-        .join('');
-
-      // Build signature in Outlook style
-      let signatureHtml = '';
+      // Send as plain text - most reliable for native look
+      // Build signature
+      let signature = '';
       if (userInfo) {
         const sigParts = [
           userInfo.name,
@@ -290,31 +281,10 @@ export function ContextualComposeModal({
           userInfo.phone,
           userInfo.email,
         ].filter(Boolean);
-
-        signatureHtml = `
-<p class="MsoNormal"><br></p>
-<p class="MsoNormal">${sigParts.join('<br>')}</p>`;
+        signature = '\n\n' + sigParts.join('\n');
       }
 
-      // Outlook-compatible HTML template
-      const htmlContent = `<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<style>
-p.MsoNormal, li.MsoNormal, div.MsoNormal {
-  margin: 0in;
-  font-size: 11.0pt;
-  font-family: "Calibri", sans-serif;
-}
-</style>
-</head>
-<body lang="EN-US" style="word-wrap:break-word">
-<div class="WordSection1">
-${bodyHtml}
-${signatureHtml}
-</div>
-</body>
-</html>`;
+      const plainTextContent = content + signature;
 
       const res = await fetch('/api/microsoft/send', {
         method: 'POST',
@@ -323,7 +293,8 @@ ${signatureHtml}
           to: toRecipients.map(r => r.email),
           cc: ccRecipients.length > 0 ? ccRecipients.map(r => r.email) : undefined,
           subject,
-          content: htmlContent,
+          content: plainTextContent,
+          isHtml: false,
           dealId,
           // Track context for analytics
           metadata: {
