@@ -414,7 +414,7 @@ export function InboxView({
             conversations={filteredConversations}
             selectedId={selectedConversation?.id}
             onSelect={setSelectedConversation}
-            isLoading={isLoading}
+            isLoading={isLoading || isSyncing}
             onRefresh={handleSync}
           />
         </div>
