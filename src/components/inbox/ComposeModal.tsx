@@ -88,6 +88,41 @@ export function ComposeModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // User info for signature
+  const [userInfo, setUserInfo] = useState<{
+    name: string;
+    email: string;
+    title?: string;
+    phone?: string;
+  } | null>(null);
+
+  // Fetch user info for signature
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchUserInfo = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('users')
+        .select('name, email, title, phone')
+        .eq('auth_id', user.id)
+        .single();
+
+      if (profile) {
+        setUserInfo({
+          name: profile.name || user.email?.split('@')[0] || 'User',
+          email: profile.email || user.email || '',
+          title: profile.title,
+          phone: profile.phone,
+        });
+      }
+    };
+
+    fetchUserInfo();
+  }, [isOpen, supabase]);
+
   // Initialize with pre-filled data
   useEffect(() => {
     if (isOpen) {
@@ -216,6 +251,15 @@ export function ComposeModal({
         .map(paragraph => `<p style="margin: 0 0 12px 0;">${paragraph.replace(/\n/g, '<br>')}</p>`)
         .join('');
 
+      // Build signature
+      const signatureHtml = userInfo ? `
+    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e5e5;">
+      <p style="margin: 0; font-weight: 600; color: #000000;">${userInfo.name}</p>
+      ${userInfo.title ? `<p style="margin: 2px 0 0 0; color: #666666;">${userInfo.title}</p>` : ''}
+      ${userInfo.phone ? `<p style="margin: 2px 0 0 0; color: #666666;">${userInfo.phone}</p>` : ''}
+      <p style="margin: 2px 0 0 0; color: #0066cc;">${userInfo.email}</p>
+    </div>` : '';
+
       // Wrap in a professional email template
       const htmlContent = `
 <!DOCTYPE html>
@@ -227,6 +271,7 @@ export function ComposeModal({
 <body style="margin: 0; padding: 0; font-family: Calibri, Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;">
   <div style="max-width: 600px;">
     ${bodyHtml}
+    ${signatureHtml}
   </div>
 </body>
 </html>`.trim();
