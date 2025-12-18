@@ -3,20 +3,45 @@
 import { useState, useCallback } from 'react';
 import { Mail, Copy, Check, Edit2, Send, X } from 'lucide-react';
 import type { MeetingFollowUpEmail } from '@/types';
+import {
+  ContextualComposeModal,
+  createTranscriptFollowupContext,
+  type ComposeContextData,
+} from '@/components/inbox/ContextualComposeModal';
 
 interface FollowUpEmailPreviewProps {
   email: MeetingFollowUpEmail;
   transcriptionId: string;
+  meetingTitle?: string;
+  attendees?: Array<{ email: string; name?: string; role?: string }>;
 }
 
 export function FollowUpEmailPreview({
   email,
   transcriptionId,
+  meetingTitle,
+  attendees,
 }: FollowUpEmailPreviewProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedSubject, setEditedSubject] = useState(email.subject);
   const [editedBody, setEditedBody] = useState(email.body);
   const [copied, setCopied] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
+
+  // Build compose context from transcript data
+  const composeContext: ComposeContextData = {
+    type: 'transcript_followup',
+    transcriptId: transcriptionId,
+    suggestedSubject: isEditing ? editedSubject : email.subject,
+    suggestedBody: isEditing ? editedBody : email.body,
+    recipients: attendees?.map((a) => ({
+      email: a.email,
+      name: a.name,
+      role: a.role,
+      confidence: a.role === 'organizer' ? 95 : 80,
+    })) || [],
+    sourceLabel: meetingTitle || 'Meeting Follow-up',
+  };
 
   const handleCopy = useCallback(async () => {
     const fullEmail = `Subject: ${isEditing ? editedSubject : email.subject}\n\n${isEditing ? editedBody : email.body}`;
@@ -86,6 +111,13 @@ export function FollowUpEmailPreview({
               </button>
             </>
           )}
+          <button
+            onClick={() => setShowCompose(true)}
+            className="flex items-center gap-1 text-sm text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg ml-2"
+          >
+            <Send className="h-4 w-4" />
+            <span>Send</span>
+          </button>
         </div>
       </div>
 
@@ -145,6 +177,13 @@ export function FollowUpEmailPreview({
           </div>
         )}
       </div>
+
+      {/* Compose Modal */}
+      <ContextualComposeModal
+        isOpen={showCompose}
+        onClose={() => setShowCompose(false)}
+        context={composeContext}
+      />
     </div>
   );
 }

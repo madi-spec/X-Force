@@ -137,36 +137,48 @@ export function MeetingAnalysisView({
         {/* Left Column - Main Analysis */}
         <div className="lg:col-span-2 space-y-6">
           {/* Summary */}
-          <AnalysisSummaryCard
-            summary={currentAnalysis.summary}
-            headline={currentAnalysis.headline}
-          />
+          {(currentAnalysis.summary || currentAnalysis.headline) && (
+            <AnalysisSummaryCard
+              summary={currentAnalysis.summary || 'No summary available'}
+              headline={currentAnalysis.headline || 'Meeting Analysis'}
+            />
+          )}
 
           {/* Key Points and Buying Signals */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <KeyPointsList keyPoints={currentAnalysis.keyPoints} />
-            <BuyingSignalsCard signals={currentAnalysis.buyingSignals} />
+            <KeyPointsList keyPoints={currentAnalysis.keyPoints || []} />
+            <BuyingSignalsCard signals={currentAnalysis.buyingSignals || []} />
           </div>
 
           {/* Objections and Sentiment */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ObjectionsCard objections={currentAnalysis.objections} />
-            <SentimentCard sentiment={currentAnalysis.sentiment} />
+            <ObjectionsCard objections={currentAnalysis.objections || []} />
+            {currentAnalysis.sentiment && (
+              <SentimentCard sentiment={currentAnalysis.sentiment} />
+            )}
           </div>
 
           {/* Action Items */}
           <ActionItemsList
-            actionItems={currentAnalysis.actionItems}
-            theirCommitments={currentAnalysis.theirCommitments}
-            ourCommitments={currentAnalysis.ourCommitments}
+            actionItems={currentAnalysis.actionItems || []}
+            theirCommitments={currentAnalysis.theirCommitments || []}
+            ourCommitments={currentAnalysis.ourCommitments || []}
             transcriptionId={transcription.id}
           />
 
           {/* Follow-up Email */}
-          <FollowUpEmailPreview
-            email={currentAnalysis.followUpEmail}
-            transcriptionId={transcription.id}
-          />
+          {currentAnalysis.followUpEmail && (
+            <FollowUpEmailPreview
+              email={currentAnalysis.followUpEmail}
+              transcriptionId={transcription.id}
+              meetingTitle={transcription.title}
+              attendees={transcription.attendees?.map((attendee, i) => ({
+                email: attendee.includes('@') ? attendee : `${attendee.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+                name: attendee.includes('@') ? undefined : attendee,
+                role: i === 0 ? 'organizer' : undefined,
+              }))}
+            />
+          )}
 
           {/* Transcript */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -197,7 +209,7 @@ export function MeetingAnalysisView({
         <div className="space-y-6">
           {/* Recommendations */}
           <RecommendationsPanel
-            recommendations={currentAnalysis.recommendations}
+            recommendations={currentAnalysis.recommendations || []}
             transcriptionId={transcription.id}
             dealId={transcription.deal_id || undefined}
           />

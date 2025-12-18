@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Building2,
@@ -13,16 +14,11 @@ import {
   Plus,
   Users,
   Activity,
-  Package,
   Target,
   CheckCircle,
   XCircle,
   Clock,
-  DollarSign,
-  Zap,
-  Bot,
   User,
-  Eye,
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
@@ -32,8 +28,9 @@ import {
   type Contact,
   type Deal,
 } from '@/types';
-import { CompanySummaryCard } from '@/components/ai/summaries';
-import { IntelligenceTab } from '@/components/intelligence';
+import { CompanyResearchTab, IntelligenceOverviewPanel } from '@/components/intelligence';
+import { AccountMemoryPanel } from '@/components/companies/AccountMemoryPanel';
+import { ContactCardWithFacts } from '@/components/contacts';
 
 interface CompanyDetailProps {
   company: Company;
@@ -69,7 +66,8 @@ const tabs = [
   { id: 'activities', label: 'Activities' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'products', label: 'Products' },
-  { id: 'intelligence', label: 'Intelligence' },
+  { id: 'memory', label: 'What We\'ve Learned' },
+  { id: 'research', label: 'Company Research' },
 ];
 
 export function CompanyDetail({
@@ -84,7 +82,23 @@ export function CompanyDetail({
   signals,
   collaborators,
 }: CompanyDetailProps) {
-  const [activeTab, setActiveTab] = useState('overview');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(tabFromUrl || 'overview');
+
+  // Sync tab with URL
+  useEffect(() => {
+    if (tabFromUrl && tabs.some(t => t.id === tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
+  // Update URL when tab changes
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    router.push(`/companies/${company.id}?tab=${tabId}`, { scroll: false });
+  };
 
   const status = statusConfig[company.status] || statusConfig.cold_lead;
   const primaryContact = contacts.find(c => c.is_primary) || contacts[0];
@@ -180,7 +194,7 @@ export function CompanyDetail({
                       <span>•</span>
                     </>
                   )}
-                  <span>{company.agent_count} agents</span>
+                  <span>{company.employee_range || company.agent_count} employees</span>
                   <span>•</span>
                   <span>{segmentLabels[company.segment]}</span>
                   {company.crm_platform && (
@@ -225,7 +239,7 @@ export function CompanyDetail({
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={cn(
                 'pb-3 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab.id
@@ -242,10 +256,9 @@ export function CompanyDetail({
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* AI Summary */}
-          <CompanySummaryCard companyId={company.id} />
-
           <div className="grid grid-cols-2 gap-6">
+          {/* Intelligence Overview Panel */}
+          <IntelligenceOverviewPanel companyId={company.id} companyName={company.name} />
           {/* Panel 1: Current Stack */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -579,51 +592,11 @@ export function CompanyDetail({
           {contacts.length > 0 ? (
             <div className="space-y-3">
               {contacts.map(contact => (
-                <div
+                <ContactCardWithFacts
                   key={contact.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <Users className="h-5 w-5 text-gray-500" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {contact.name}
-                        {contact.is_primary && (
-                          <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                            Primary
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-sm text-gray-500">{contact.title || 'No title'}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {contact.email && (
-                      <a
-                        href={`mailto:${contact.email}`}
-                        className="p-2 text-gray-400 hover:text-gray-600"
-                      >
-                        <Mail className="h-4 w-4" />
-                      </a>
-                    )}
-                    {contact.phone && (
-                      <a
-                        href={`tel:${contact.phone}`}
-                        className="p-2 text-gray-400 hover:text-gray-600"
-                      >
-                        <Phone className="h-4 w-4" />
-                      </a>
-                    )}
-                    <Link
-                      href={`/contacts/${contact.id}/edit`}
-                      className="p-2 text-gray-400 hover:text-gray-600"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                  </div>
-                </div>
+                  contact={contact}
+                  companyName={company.name}
+                />
               ))}
             </div>
           ) : (
@@ -705,8 +678,12 @@ export function CompanyDetail({
         </div>
       )}
 
-      {activeTab === 'intelligence' && (
-        <IntelligenceTab companyId={company.id} companyName={company.name} />
+      {activeTab === 'memory' && (
+        <AccountMemoryPanel companyId={company.id} companyName={company.name} />
+      )}
+
+      {activeTab === 'research' && (
+        <CompanyResearchTab companyId={company.id} companyName={company.name} />
       )}
     </div>
   );

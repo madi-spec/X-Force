@@ -28,6 +28,10 @@ import {
   FileText,
 } from 'lucide-react';
 import { TeamSection } from '@/components/deals/TeamSection';
+import { DealRoomSection } from '@/components/deals/DealRoomSection';
+import { DealRoomAnalytics } from '@/components/deals/DealRoomAnalytics';
+import { DealIntelligenceCard } from '@/components/deals/DealIntelligenceCard';
+import { ContactCardWithFacts } from '@/components/contacts';
 import { ActivityLogger } from '@/components/deals/ActivityLogger';
 import { MeetingActivityCard } from '@/components/meetings';
 import { HealthScoreBreakdown } from '@/components/ai/health';
@@ -353,6 +357,9 @@ export default async function DealPage({ params }: DealPageProps) {
             </div>
           )}
 
+          {/* Deal Room */}
+          <DealRoomSection dealId={id} />
+
           {/* Team Section */}
           <TeamSection
             dealId={id}
@@ -411,69 +418,14 @@ export default async function DealPage({ params }: DealPageProps) {
             </div>
             {contacts && contacts.length > 0 ? (
               <div className="space-y-3">
-                {contacts.map((contact) => {
-                  const role = contact.role ? roleConfig[contact.role] : null;
-                  const RoleIcon = role?.icon || User;
-                  return (
-                    <div
-                      key={contact.id}
-                      className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-                          <Users className="h-5 w-5 text-gray-500" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-gray-900">{contact.name}</p>
-                            {contact.is_primary && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                                Primary
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-500">{contact.title || 'No title'}</p>
-                          {role && (
-                            <span className={cn(
-                              'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full mt-1',
-                              role.color
-                            )}>
-                              <RoleIcon className="h-3 w-3" />
-                              {role.label}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {contact.email && (
-                          <a
-                            href={`mailto:${contact.email}`}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-                            title={contact.email}
-                          >
-                            <Mail className="h-4 w-4" />
-                          </a>
-                        )}
-                        {contact.phone && (
-                          <a
-                            href={`tel:${contact.phone}`}
-                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors"
-                            title={contact.phone}
-                          >
-                            <Phone className="h-4 w-4" />
-                          </a>
-                        )}
-                        <Link
-                          href={`/contacts/${contact.id}/edit`}
-                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
-                          title="Edit contact"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
+                {contacts.map((contact) => (
+                  <ContactCardWithFacts
+                    key={contact.id}
+                    contact={contact}
+                    dealId={id}
+                    companyName={deal.company?.name}
+                  />
+                ))}
               </div>
             ) : (
               <p className="text-sm text-gray-500">No contacts added yet</p>
@@ -501,6 +453,12 @@ export default async function DealPage({ params }: DealPageProps) {
 
           {/* AI Deal Summary */}
           <DealSummaryCard dealId={id} />
+
+          {/* Deal Intelligence */}
+          <DealIntelligenceCard dealId={id} />
+
+          {/* Deal Room Analytics */}
+          <DealRoomAnalytics dealId={id} />
 
           {/* Deal Info */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
