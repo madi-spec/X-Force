@@ -266,7 +266,7 @@ export function ComposeModal({
           <div className="px-4 py-2 border-b border-gray-100">
             <div className="flex items-start gap-2">
               <span className="text-sm text-gray-500 py-1.5 w-12">To:</span>
-              <div className="flex-1">
+              <div className="flex-1 relative">
                 <div className="flex flex-wrap gap-1.5 mb-1.5">
                   {recipients.map((r) => (
                     <span
@@ -283,7 +283,7 @@ export function ComposeModal({
                     </span>
                   ))}
                 </div>
-                <div className="relative">
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={contactSearch}
@@ -292,33 +292,48 @@ export function ComposeModal({
                       setShowContactSearch(true);
                     }}
                     onFocus={() => setShowContactSearch(true)}
-                    placeholder="Search contacts or enter email..."
-                    className="w-full px-2 py-1.5 text-sm border-0 focus:ring-0 focus:outline-none"
+                    onBlur={() => {
+                      setTimeout(() => setShowContactSearch(false), 200);
+                    }}
+                    placeholder="Enter email address..."
+                    className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && contactSearch.includes('@')) {
                         e.preventDefault();
-                        addRecipient(contactSearch);
+                        addRecipient(contactSearch.trim());
                       }
                     }}
                   />
-                  {showContactSearch && contacts.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                      {contacts.map((contact) => (
-                        <button
-                          key={contact.id}
-                          onClick={() => selectContact(contact)}
-                          className="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm"
-                        >
-                          <div className="font-medium text-gray-900">{contact.name}</div>
-                          <div className="text-xs text-gray-500">
-                            {contact.email}
-                            {contact.company && ` - ${contact.company.name}`}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (contactSearch.includes('@')) {
+                        addRecipient(contactSearch.trim());
+                      }
+                    }}
+                    disabled={!contactSearch.includes('@')}
+                    className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
                 </div>
+                {showContactSearch && contacts.length > 0 && (
+                  <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
+                    {contacts.map((contact) => (
+                      <button
+                        key={contact.id}
+                        onClick={() => selectContact(contact)}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm"
+                      >
+                        <div className="font-medium text-gray-900">{contact.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {contact.email}
+                          {contact.company && ` - ${contact.company.name}`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               {!showCc && (
                 <button
