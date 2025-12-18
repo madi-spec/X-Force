@@ -29,12 +29,22 @@ export function FollowUpEmailPreview({
   const [showCompose, setShowCompose] = useState(false);
 
   // Build compose context from transcript data
+  // Deduplicate attendees by email
+  const uniqueAttendees = attendees?.reduce((acc, a) => {
+    const emailLower = a.email.toLowerCase();
+    if (!acc.seen.has(emailLower)) {
+      acc.seen.add(emailLower);
+      acc.list.push(a);
+    }
+    return acc;
+  }, { seen: new Set<string>(), list: [] as typeof attendees }).list;
+
   const composeContext: ComposeContextData = {
     type: 'transcript_followup',
     transcriptId: transcriptionId,
     suggestedSubject: isEditing ? editedSubject : email.subject,
     suggestedBody: isEditing ? editedBody : email.body,
-    recipients: attendees?.map((a) => ({
+    recipients: uniqueAttendees?.map((a) => ({
       email: a.email,
       name: a.name,
       role: a.role,

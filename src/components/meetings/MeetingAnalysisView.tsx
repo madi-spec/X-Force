@@ -172,11 +172,22 @@ export function MeetingAnalysisView({
               email={currentAnalysis.followUpEmail}
               transcriptionId={transcription.id}
               meetingTitle={transcription.title}
-              attendees={transcription.attendees?.map((attendee, i) => ({
-                email: attendee.includes('@') ? attendee : `${attendee.toLowerCase().replace(/\s+/g, '.')}@example.com`,
-                name: attendee.includes('@') ? undefined : attendee,
-                role: i === 0 ? 'organizer' : undefined,
-              }))}
+              attendees={(() => {
+                // Deduplicate attendees by generated email
+                const seen = new Set<string>();
+                return transcription.attendees?.filter((attendee) => {
+                  const email = attendee.includes('@')
+                    ? attendee.toLowerCase()
+                    : `${attendee.toLowerCase().replace(/\s+/g, '.')}@example.com`;
+                  if (seen.has(email)) return false;
+                  seen.add(email);
+                  return true;
+                }).map((attendee, i) => ({
+                  email: attendee.includes('@') ? attendee : `${attendee.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+                  name: attendee.includes('@') ? undefined : attendee,
+                  role: i === 0 ? 'organizer' : undefined,
+                }));
+              })()}
             />
           )}
 
