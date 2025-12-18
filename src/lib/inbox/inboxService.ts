@@ -133,8 +133,8 @@ const SYNC_CONFIG = {
 };
 
 const LINK_THRESHOLDS = {
-  AUTO_HIGH: 85,
-  AUTO_SUGGESTED: 30, // Lowered to allow domain-only matches
+  AUTO_HIGH: 65, // Lowered - contact with one deal (40) + thread linked (30) = 70 should qualify
+  AUTO_SUGGESTED: 30, // Lowered to allow domain-only matches (35 points)
 };
 
 // ============================================================================
@@ -523,14 +523,15 @@ async function calculateLinkConfidence(
       .not('deals.stage', 'in', '("closed_won","closed_lost")');
 
     if (dealContacts && dealContacts.length === 1) {
-      confidence += 40;
+      confidence += 45; // High confidence - known contact on single deal
       dealId = dealContacts[0].deal_id;
       reasoning.push(`Contact on one active deal`);
     } else if (dealContacts && dealContacts.length > 1) {
-      confidence += 20;
+      confidence += 30; // Medium - we know the contact but need deal disambiguation
       reasoning.push(`Contact on ${dealContacts.length} deals - needs disambiguation`);
     } else {
-      confidence += 25;
+      confidence += 35; // Good confidence - known contact, just no active deal
+      reasoning.push(`Known contact, no active deals`);
     }
   } else {
     // Try domain match
