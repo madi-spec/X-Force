@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Upload, FileText, Sparkles, Loader2 } from 'lucide-react';
+import { X, Upload, FileText, Sparkles, Loader2, Building2, Briefcase, Search, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 import type { Deal, Company } from '@/types';
 
 interface TranscriptionUploadModalProps {
@@ -16,17 +17,32 @@ interface TranscriptionUploadModalProps {
   onSuccess?: (transcriptionId: string) => void;
 }
 
+interface DealOption {
+  id: string;
+  name: string;
+  stage: string;
+  company_id: string;
+  company_name?: string;
+}
+
+interface CompanyOption {
+  id: string;
+  name: string;
+}
+
 export function TranscriptionUploadModal({
   isOpen,
   onClose,
-  dealId,
-  companyId,
-  deal,
-  company,
+  dealId: initialDealId,
+  companyId: initialCompanyId,
+  deal: initialDeal,
+  company: initialCompany,
   onSuccess,
 }: TranscriptionUploadModalProps) {
   const router = useRouter();
-  const [title, setTitle] = useState(deal ? `Meeting - ${deal.name}` : '');
+  const supabase = createClient();
+
+  const [title, setTitle] = useState(initialDeal ? `Meeting - ${initialDeal.name}` : '');
   const [meetingDate, setMeetingDate] = useState(
     new Date().toISOString().split('T')[0]
   );
@@ -36,6 +52,85 @@ export function TranscriptionUploadModal({
   const [inputMode, setInputMode] = useState<'paste' | 'upload'>('paste');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
+
+  // Deal/Company selection state
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(initialDealId || null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(initialCompanyId || null);
+  const [selectedDealName, setSelectedDealName] = useState<string | null>(initialDeal?.name || null);
+  const [selectedCompanyName, setSelectedCompanyName] = useState<string | null>(initialCompany?.name || null);
+  const [showDealSelector, setShowDealSelector] = useState(false);
+  const [dealSearch, setDealSearch] = useState('');
+  const [deals, setDeals] = useState<DealOption[]>([]);
+  const [loadingDeals, setLoadingDeals] = useState(false);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedDealId(initialDealId || null);
+      setSelectedCompanyId(initialCompanyId || null);
+      setSelectedDealName(initialDeal?.name || null);
+      setSelectedCompanyName(initialCompany?.name || null);
+      setTitle(initialDeal ? `Meeting - ${initialDeal.name}` : '');
+    }
+  }, [isOpen, initialDealId, initialCompanyId, initialDeal, initialCompany]);
+
+  // Search deals
+  useEffect(() => {
+    if (!showDealSelector) return;
+
+    const searchDeals = async () => {
+      setLoadingDeals(true);
+      try {
+        let query = supabase
+          .from('deals')
+          .select('id, name, stage, company_id, companies(name)')
+          .not('stage', 'in', '("closed_won","closed_lost")')
+          .order('updated_at', { ascending: false })
+          .limit(20);
+
+        if (dealSearch) {
+          query = query.or(`name.ilike.%${dealSearch}%,companies.name.ilike.%${dealSearch}%`);
+        }
+
+        const { data } = await query;
+        if (data) {
+          setDeals(data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            stage: d.stage,
+            company_id: d.company_id,
+            company_name: d.companies?.name,
+          })));
+        }
+      } catch (err) {
+        console.error('Error searching deals:', err);
+      } finally {
+        setLoadingDeals(false);
+      }
+    };
+
+    const debounce = setTimeout(searchDeals, 200);
+    return () => clearTimeout(debounce);
+  }, [showDealSelector, dealSearch, supabase]);
+
+  const handleSelectDeal = (deal: DealOption) => {
+    setSelectedDealId(deal.id);
+    setSelectedDealName(deal.name);
+    setSelectedCompanyId(deal.company_id);
+    setSelectedCompanyName(deal.company_name || null);
+    setShowDealSelector(false);
+    setDealSearch('');
+    if (!title || title.startsWith('Meeting - ')) {
+      setTitle(`Meeting - ${deal.name}`);
+    }
+  };
+
+  const handleClearDeal = () => {
+    setSelectedDealId(null);
+    setSelectedDealName(null);
+    setSelectedCompanyId(null);
+    setSelectedCompanyName(null);
+  };
 
   const handleAnalyze = useCallback(async () => {
     if (!title.trim() || !transcription.trim()) {
@@ -58,8 +153,8 @@ export function TranscriptionUploadModal({
             .split(',')
             .map((a) => a.trim())
             .filter(Boolean),
-          dealId: dealId || null,
-          companyId: companyId || null,
+          dealId: selectedDealId || null,
+          companyId: selectedCompanyId || null,
           transcriptionText: transcription,
         }),
       });
@@ -89,8 +184,8 @@ export function TranscriptionUploadModal({
     meetingDate,
     duration,
     attendees,
-    dealId,
-    companyId,
+    selectedDealId,
+    selectedCompanyId,
     onSuccess,
     router,
     onClose,
@@ -167,18 +262,101 @@ export function TranscriptionUploadModal({
 
         {/* Content */}
         <div className="p-4 space-y-4">
-          {/* Context info */}
-          {(deal || company) && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
-              <span className="text-blue-700">
-                {deal
-                  ? `Linked to deal: ${deal.name}`
-                  : company
-                    ? `Linked to company: ${company.name}`
-                    : ''}
-              </span>
+          {/* Deal/Company Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Link to Deal
+            </label>
+            <div className="relative">
+              {selectedDealId ? (
+                <div className="flex items-center justify-between p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="h-4 w-4 text-blue-600" />
+                    <div>
+                      <span className="text-sm font-medium text-blue-800">{selectedDealName}</span>
+                      {selectedCompanyName && (
+                        <span className="text-xs text-blue-600 ml-2">({selectedCompanyName})</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearDeal}
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDealSelector(!showDealSelector)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-500 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <span className="flex items-center gap-2">
+                    <Briefcase className="h-4 w-4" />
+                    Select a deal (optional)
+                  </span>
+                  <ChevronDown className={cn("h-4 w-4 transition-transform", showDealSelector && "rotate-180")} />
+                </button>
+              )}
+
+              {/* Deal dropdown */}
+              {showDealSelector && !selectedDealId && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+                  <div className="p-2 border-b border-gray-100">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={dealSearch}
+                        onChange={(e) => setDealSearch(e.target.value)}
+                        placeholder="Search deals..."
+                        className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {loadingDeals ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                      </div>
+                    ) : deals.length === 0 ? (
+                      <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                        No active deals found
+                      </div>
+                    ) : (
+                      deals.map((deal) => (
+                        <button
+                          key={deal.id}
+                          type="button"
+                          onClick={() => handleSelectDeal(deal)}
+                          className="w-full px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-50 last:border-0"
+                        >
+                          <div className="text-sm font-medium text-gray-900">{deal.name}</div>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            {deal.company_name && (
+                              <span className="flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {deal.company_name}
+                              </span>
+                            )}
+                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">
+                              {deal.stage.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+            <p className="text-xs text-gray-500 mt-1">
+              Link this meeting to a deal for tracking and follow-ups
+            </p>
+          </div>
 
           {/* Title */}
           <div>
