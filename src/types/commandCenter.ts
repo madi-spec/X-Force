@@ -11,6 +11,7 @@ export type TierTrigger =
   // Tier 1: RESPOND NOW
   | 'demo_request'
   | 'pricing_request'
+  | 'meeting_request'
   | 'direct_question'
   | 'email_reply'
   | 'form_submission'
@@ -19,13 +20,18 @@ export type TierTrigger =
   | 'deadline_critical'
   | 'deadline_approaching'
   | 'competitive_risk'
+  | 'buying_signal'
+  | 'budget_discussed'
   | 'proposal_hot'
   | 'champion_dark'
+  | 'going_stale'
   | 'urgency_keywords'
   // Tier 3: KEEP YOUR WORD
   | 'transcript_commitment'
   | 'meeting_follow_up'
   | 'action_item_due'
+  | 'promise_made'
+  | 'action_item'
   // Tier 4: MOVE BIG DEALS
   | 'high_value'
   | 'strategic_account'
