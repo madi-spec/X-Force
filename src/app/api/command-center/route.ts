@@ -17,6 +17,7 @@ import {
   getCurrentBlockIndex,
   findDealForCompany,
   generateWhyNow,
+  enrichItem,
 } from '@/lib/commandCenter';
 import {
   CommandCenterItem,
@@ -179,6 +180,8 @@ export async function GET(request: NextRequest) {
           due_at: item.due_at,
           deal_value: item.deal_value,
           deal_probability: item.deal_probability,
+          deal_id: item.deal_id,
+          company_id: item.company_id,
         });
 
         // Update the item in database
@@ -220,6 +223,37 @@ export async function GET(request: NextRequest) {
 
         return 0;
       });
+    }
+
+    // Enrich top items that are missing context (limit to top 5 for performance)
+    const itemsNeedingEnrichment = allItems
+      .slice(0, 5)
+      .filter(item => !item.context_brief);
+
+    if (itemsNeedingEnrichment.length > 0) {
+      console.log(`[CommandCenter] Enriching ${itemsNeedingEnrichment.length} items with AI context`);
+
+      // Enrich items in parallel for speed
+      const enrichmentPromises = itemsNeedingEnrichment.map(async (item) => {
+        try {
+          const enrichment = await enrichItem(userId, item as CommandCenterItem);
+
+          // Update the item in database
+          await supabase
+            .from('command_center_items')
+            .update({
+              context_brief: enrichment.context_summary,
+            })
+            .eq('id', item.id);
+
+          // Update local item
+          item.context_brief = enrichment.context_summary;
+        } catch (err) {
+          console.error(`[CommandCenter] Failed to enrich item ${item.id}:`, err);
+        }
+      });
+
+      await Promise.all(enrichmentPromises);
     }
 
     // Find current time block
@@ -389,6 +423,8 @@ export async function POST(request: NextRequest) {
       due_at: body.due_at || null,
       deal_value: dealValue,
       deal_probability: dealProbability,
+      deal_id: resolvedDealId,
+      company_id: companyId,
     });
 
     // Generate why_now text

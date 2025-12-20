@@ -204,50 +204,68 @@ interface AIEnrichmentOutput {
  * Generate AI-powered context enrichment
  */
 async function generateAIEnrichment(input: AIEnrichmentInput): Promise<AIEnrichmentOutput> {
-  const prompt = `Analyze this sales action and provide context:
+  // Calculate weighted value (deal value * probability)
+  const weightedValue = input.deal
+    ? (input.deal.estimated_value || 0) * (input.deal.probability || 0.5)
+    : 0;
 
-ACTION: ${input.title}
-TYPE: ${input.action_type}
-${input.target_name ? `CONTACT: ${input.target_name}` : ''}
-${input.company_name ? `COMPANY: ${input.company_name}` : ''}
-${input.why_now ? `WHY NOW: ${input.why_now}` : ''}
+  const prompt = `You are a sales coach helping a rep prioritize their day across 200+ deals. They cannot remember specifics about each deal. Your job is to CONVINCE them why THIS action on THIS deal deserves their attention RIGHT NOW.
 
+DEAL SNAPSHOT:
 ${input.deal ? `
-DEAL CONTEXT:
-- Name: ${input.deal.name}
+- Company: ${input.company_name || 'Unknown'}
+- Deal Value: $${input.deal.estimated_value?.toLocaleString() || '0'}
+- Probability: ${input.deal.probability ? Math.round(input.deal.probability * 100) : 50}%
+- Weighted Pipeline Value: $${Math.round(weightedValue).toLocaleString()}
 - Stage: ${input.deal.stage}
-- Value: $${input.deal.estimated_value?.toLocaleString()}
-- Probability: ${input.deal.probability ? input.deal.probability * 100 : 0}%
-- Health Score: ${input.deal.health_score || 'N/A'}
-- Days in Stage: ${input.deal.days_in_stage || 'N/A'}
-` : ''}
+- Health Score: ${input.deal.health_score || 'Unknown'}/100
+- Days in Current Stage: ${input.deal.days_in_stage || 'Unknown'}
+- Last Activity: ${input.deal.last_activity_at ? new Date(input.deal.last_activity_at).toLocaleDateString() : 'Unknown'}
+` : 'No deal linked - this is an orphan action'}
+
+CONTACT: ${input.target_name || 'Unknown'}
+ACTION REQUESTED: ${input.title}
 
 ${input.recent_emails?.length ? `
-RECENT EMAILS:
-${input.recent_emails.map(e => `- [${e.direction}] ${e.subject}: ${e.snippet}`).join('\n')}
-` : ''}
+RECENT EMAIL THREAD:
+${input.recent_emails.slice(0, 3).map(e => `- [${e.direction.toUpperCase()}] ${e.subject}: "${e.snippet}"`).join('\n')}
+` : 'No recent email history.'}
 
 ${input.recent_activities?.length ? `
-RECENT ACTIVITIES:
-${input.recent_activities.map(a => `- [${a.type}] ${a.subject}${a.description ? `: ${a.description}` : ''}`).join('\n')}
-` : ''}
+RECENT ACTIVITY:
+${input.recent_activities.slice(0, 3).map(a => `- ${a.type}: ${a.subject}`).join('\n')}
+` : 'No recent activity logged.'}
 
-Provide:
-1. context_summary: A 2-3 sentence summary explaining what this action is about and why it matters. Be specific to the situation.
-2. considerations: 2-4 bullet points of key things to keep in mind, risks, or tactical advice.
+Based on this context, provide:
+
+1. context_summary: In 2-3 sentences, tell the rep:
+   - What's the business case? (deal size, stage, momentum)
+   - What happened recently that makes this timely? (last meeting, email, signal)
+   - What's at stake if they DON'T act? (deal at risk, competitor, going dark)
+   DO NOT mention "overdue" - focus on OPPORTUNITY and RISK.
+
+2. considerations: 2-4 specific tactical points:
+   - Buying signals or red flags from the data
+   - What to reference from recent conversations
+   - Stakeholder dynamics if known
+   - Competitive intelligence if relevant
+
 ${['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].includes(input.action_type) ? `
-3. email_subject: A professional, specific subject line
-4. email_body: A brief, professional email body (2-3 short paragraphs)
+3. email_subject: A specific, compelling subject line (reference something from context)
+4. email_body: A brief email (2-3 paragraphs) that:
+   - References the last interaction specifically
+   - Proposes a clear next step
+   - Creates urgency without being pushy
 ` : ''}
 
-Be specific and actionable. Reference actual data from the context.`;
+Be SPECIFIC. Use actual names, dates, and numbers from the context. Generic advice is useless.`;
 
   const schema = `{
-  "context_summary": "string - 2-3 sentence summary",
-  "considerations": ["string array - 2-4 key points"],
+  "context_summary": "string - 2-3 sentence business case with deal value, recent activity, and stakes",
+  "considerations": ["string array - 2-4 specific tactical points from the data"],
   ${['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].includes(input.action_type) ? `
-  "email_subject": "string - email subject",
-  "email_body": "string - email body"
+  "email_subject": "string - specific subject referencing context",
+  "email_body": "string - personalized email body"
   ` : ''}
 }`;
 

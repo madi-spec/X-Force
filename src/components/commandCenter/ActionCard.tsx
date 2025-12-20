@@ -71,6 +71,8 @@ interface ActionCardProps {
   onSkip?: (id: string) => Promise<void>;
   onSchedule?: (id: string) => void;
   onEmail?: (id: string) => void;
+  onLinkDeal?: (id: string) => void;
+  onLinkCompany?: (id: string) => void;
   className?: string;
 }
 
@@ -207,6 +209,8 @@ export function ActionCard({
   onSkip,
   onSchedule,
   onEmail,
+  onLinkDeal,
+  onLinkCompany,
   className,
 }: ActionCardProps) {
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
@@ -216,8 +220,14 @@ export function ActionCard({
 
   // Determine available actions based on item data
   const availableActions = item.available_actions || ['complete'];
-  const canSchedule = availableActions.includes('schedule') || !!item.primary_contact?.email;
-  const canEmail = availableActions.includes('email') || !!item.primary_contact?.email;
+  // Check for contact email from joined data or primary_contact
+  const contactEmail = item.primary_contact?.email || (item as any).contact?.email;
+  const hasContact = !!contactEmail || !!item.contact_id;
+
+  // Always show action buttons - they're useful even without a pre-linked contact
+  // The popouts will handle the case where no contact is available
+  const canSchedule = true;
+  const canEmail = true;
 
   const config = ACTION_TYPE_CONFIGS[item.action_type];
   const Icon = iconMap[config?.icon || 'CheckSquare'] || CheckSquare;
@@ -309,48 +319,121 @@ export function ActionCard({
                 {/* Title */}
                 <h3 className="font-medium text-gray-900 truncate">{item.title}</h3>
 
-                {/* Target & Company */}
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
-                  {item.target_name && (
-                    <span className="flex items-center gap-1 truncate">
-                      <User className="h-3 w-3" />
-                      {item.target_name}
-                    </span>
+                {/* Data Quality Warnings */}
+                {!item.company_id && !item.deal_id && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-amber-800">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                      <span className="text-xs font-medium">
+                        Unknown origin - link to a company or deal, or dismiss
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {item.deal_id && (!item.deal_value || item.deal_value <= 0) && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-red-800">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                      <span className="text-xs font-medium">
+                        $0 deal - add value to this deal or close it
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {!item.deal_id && item.company_id && (
+                  <div className="mt-2 p-2 bg-gray-100 border border-gray-300 rounded-lg">
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                      <span className="text-xs font-medium">
+                        Not pipeline - link to a deal or move to prospecting
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Company & Contact Bar - Always prominent */}
+                <div className="flex items-center gap-3 mt-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                  {/* Company - Primary identifier */}
+                  {(item.company_name || item.company?.name) ? (
+                    <Link
+                      href={item.company_id ? `/companies/${item.company_id}` : '#'}
+                      className="flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-blue-700 hover:underline"
+                    >
+                      <Building2 className="h-4 w-4 text-blue-600" />
+                      {item.company_name || item.company?.name}
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => onLinkCompany?.(item.id)}
+                      className="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-700 hover:underline"
+                    >
+                      <Building2 className="h-4 w-4" />
+                      Link Company
+                    </button>
                   )}
-                  {item.company_name && (
-                    <span className="flex items-center gap-1 truncate">
-                      <Building2 className="h-3 w-3" />
-                      {item.company_name}
+
+                  {/* Contact */}
+                  {item.target_name && (
+                    <span className="flex items-center gap-1.5 text-sm text-gray-600 border-l border-gray-300 pl-3">
+                      <User className="h-3.5 w-3.5 text-gray-500" />
+                      {item.target_name}
                     </span>
                   )}
                 </div>
 
-                {/* Deal Context Row */}
-                {(item.deal || item.deal_stage) && (
-                  <div className="flex items-center gap-2 mt-1.5 text-xs">
+                {/* Deal Snapshot Bar - Prominent deal context */}
+                {(item.deal || item.deal_value) ? (
+                  <div className="flex items-center flex-wrap gap-3 mt-2 p-2 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-100">
+                    {/* Deal Name */}
                     {item.deal?.name && (
                       <Link
                         href={`/deals/${item.deal.id}`}
-                        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline truncate max-w-[200px]"
+                        className="flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-blue-700 hover:underline"
                       >
-                        <Briefcase className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate">{item.deal.name}</span>
+                        <Briefcase className="h-4 w-4 text-blue-600" />
+                        {item.deal.name}
                       </Link>
                     )}
+
+                    {/* Deal Value - Large and prominent */}
+                    {item.deal_value && item.deal_value > 0 && (
+                      <div className="flex items-center gap-1 border-l border-gray-300 pl-3">
+                        <DollarSign className="h-4 w-4 text-green-600" />
+                        <span className="text-lg font-semibold text-green-700">
+                          {formatValue(item.deal_value)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Weighted Value */}
+                    {item.deal_value && item.deal_probability && (
+                      <div className="text-xs text-gray-600 border-l border-gray-300 pl-3">
+                        <span className="font-medium text-green-600">
+                          {formatValue(item.deal_value * item.deal_probability)}
+                        </span>
+                        {' '}weighted ({Math.round((item.deal_probability || 0) * 100)}%)
+                      </div>
+                    )}
+
+                    {/* Stage Badge */}
                     {item.deal_stage && (
                       <span className={cn(
-                        'px-1.5 py-0.5 rounded text-[10px] font-medium capitalize',
+                        'px-2 py-1 rounded text-xs font-medium capitalize border-l border-gray-300 pl-3',
                         STAGE_COLORS[item.deal_stage] || 'bg-gray-100 text-gray-600'
                       )}>
                         {item.deal_stage.replace(/_/g, ' ')}
                       </span>
                     )}
-                    {item.deal_value && item.deal_probability && (
-                      <span className="text-green-600 font-medium">
-                        {formatValue(item.deal_value * item.deal_probability)} weighted
-                      </span>
-                    )}
                   </div>
+                ) : (
+                  /* No Deal - Show Link Deal button */
+                  <button
+                    onClick={() => onLinkDeal?.(item.id)}
+                    className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+                  >
+                    <Briefcase className="h-4 w-4" />
+                    Link to Deal
+                  </button>
                 )}
               </div>
 
@@ -374,20 +457,40 @@ export function ActionCard({
 
             {/* Meta Row */}
             <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-              {/* Source Badge */}
+              {/* Source Badge with link to origin */}
               {item.source && SOURCE_CONFIG[item.source] && (
-                <span
-                  className={cn(
-                    'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
-                    SOURCE_CONFIG[item.source].color
-                  )}
-                >
-                  {(() => {
-                    const SourceIcon = SOURCE_CONFIG[item.source].icon;
-                    return <SourceIcon className="h-2.5 w-2.5" />;
-                  })()}
-                  {SOURCE_CONFIG[item.source].label}
-                </span>
+                item.meeting_id || item.conversation_id ? (
+                  <Link
+                    href={item.meeting_id
+                      ? `/calendar?event=${item.meeting_id}`
+                      : `/inbox?id=${item.conversation_id}`
+                    }
+                    className={cn(
+                      'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium hover:underline',
+                      SOURCE_CONFIG[item.source].color
+                    )}
+                  >
+                    {(() => {
+                      const SourceIcon = SOURCE_CONFIG[item.source].icon;
+                      return <SourceIcon className="h-2.5 w-2.5" />;
+                    })()}
+                    View {SOURCE_CONFIG[item.source].label}
+                    <ExternalLink className="h-2 w-2" />
+                  </Link>
+                ) : (
+                  <span
+                    className={cn(
+                      'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                      SOURCE_CONFIG[item.source].color
+                    )}
+                  >
+                    {(() => {
+                      const SourceIcon = SOURCE_CONFIG[item.source].icon;
+                      return <SourceIcon className="h-2.5 w-2.5" />;
+                    })()}
+                    {SOURCE_CONFIG[item.source].label}
+                  </span>
+                )
               )}
 
               {/* Duration */}
@@ -395,14 +498,6 @@ export function ActionCard({
                 <Clock className="h-3 w-3" />
                 {item.estimated_minutes} min
               </span>
-
-              {/* Deal Value */}
-              {item.deal_value && item.deal_value > 0 && (
-                <span className="flex items-center gap-1 text-green-600">
-                  <DollarSign className="h-3 w-3" />
-                  {formatValue(item.deal_value)}
-                </span>
-              )}
 
               {/* Due indicator */}
               {item.due_at && (

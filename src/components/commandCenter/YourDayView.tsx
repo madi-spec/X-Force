@@ -23,6 +23,8 @@ import { ExtraCreditPanel, ExtraCreditBackdrop } from './ExtraCreditPanel';
 import { SchedulerPopout } from './SchedulerPopout';
 import { EmailComposerPopout } from './EmailComposerPopout';
 import { MeetingPrepPopout } from './MeetingPrepPopout';
+import { LinkDealPopout } from './LinkDealPopout';
+import { LinkCompanyPopout } from './LinkCompanyPopout';
 import {
   DailyPlan,
   CommandCenterItem,
@@ -109,6 +111,8 @@ export function YourDayView({ className }: YourDayViewProps) {
   const [schedulerItemId, setSchedulerItemId] = useState<string | null>(null);
   const [emailItemId, setEmailItemId] = useState<string | null>(null);
   const [meetingPrepId, setMeetingPrepId] = useState<string | null>(null);
+  const [linkDealItemId, setLinkDealItemId] = useState<string | null>(null);
+  const [linkCompanyItemId, setLinkCompanyItemId] = useState<string | null>(null);
 
   // Fetch data
   const fetchData = useCallback(async (showRefreshing = false) => {
@@ -254,17 +258,33 @@ export function YourDayView({ className }: YourDayViewProps) {
               {debug?.day_name}, {formatDate(plan.plan_date)}
             </p>
           </div>
-          <button
-            onClick={() => fetchData(true)}
-            disabled={refreshing}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50"
-          >
-            {refreshing ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-5 w-5" />
-            )}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowExtraCredit(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+            >
+              <Sparkles className="h-4 w-4" />
+              Extra Credit
+            </button>
+            <button
+              onClick={() => router.push('/command-center?preview=tomorrow')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              <Calendar className="h-4 w-4" />
+              Preview Next Day
+            </button>
+            <button
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+            >
+              {refreshing ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-5 w-5" />
+              )}
+            </button>
+          </div>
         </div>
         <DayCompleteView
           completedCount={completedItems.length + completedIds.size}
@@ -272,6 +292,20 @@ export function YourDayView({ className }: YourDayViewProps) {
           topWin={topWin}
           planDate={plan.plan_date}
         />
+
+        {/* Extra Credit Panel - available even after hours */}
+        {showExtraCredit && (
+          <>
+            <ExtraCreditBackdrop onClose={() => setShowExtraCredit(false)} />
+            <ExtraCreditPanel
+              overflowItems={items.filter(item => item.status === 'pending' && !completedIds.has(item.id))}
+              onClose={() => setShowExtraCredit(false)}
+              onAddItems={async () => {
+                await fetchData();
+              }}
+            />
+          </>
+        )}
       </div>
     );
   }
@@ -287,17 +321,33 @@ export function YourDayView({ className }: YourDayViewProps) {
               {debug?.day_name}, {formatDate(plan.plan_date)}
             </p>
           </div>
-          <button
-            onClick={() => fetchData(true)}
-            disabled={refreshing}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50"
-          >
-            {refreshing ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-5 w-5" />
-            )}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowExtraCredit(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+            >
+              <Sparkles className="h-4 w-4" />
+              Extra Credit
+            </button>
+            <button
+              onClick={() => router.push('/command-center?preview=tomorrow')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              <Calendar className="h-4 w-4" />
+              Preview Next Day
+            </button>
+            <button
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+            >
+              {refreshing ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-5 w-5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
           <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
@@ -311,6 +361,20 @@ export function YourDayView({ className }: YourDayViewProps) {
             </p>
           )}
         </div>
+
+        {/* Extra Credit Panel - available even on weekends */}
+        {showExtraCredit && (
+          <>
+            <ExtraCreditBackdrop onClose={() => setShowExtraCredit(false)} />
+            <ExtraCreditPanel
+              overflowItems={items.filter(item => item.status === 'pending' && !completedIds.has(item.id))}
+              onClose={() => setShowExtraCredit(false)}
+              onAddItems={async () => {
+                await fetchData();
+              }}
+            />
+          </>
+        )}
       </div>
     );
   }
@@ -345,13 +409,20 @@ export function YourDayView({ className }: YourDayViewProps) {
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {items.filter(i => i.status === 'completed').length + completedIds.size} done · {pendingItems.length} to go
           </span>
-          {overflow_count > 0 && (
+          <button
+            onClick={() => setShowExtraCredit(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+          >
+            <Sparkles className="h-4 w-4" />
+            Extra Credit
+          </button>
+          {!previewMode && (
             <button
-              onClick={() => setShowExtraCredit(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+              onClick={() => router.push('/command-center?preview=tomorrow')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
             >
-              <Sparkles className="h-4 w-4" />
-              Extra Credit
+              <Calendar className="h-4 w-4" />
+              Preview Next Day
             </button>
           )}
           <button
@@ -408,6 +479,8 @@ export function YourDayView({ className }: YourDayViewProps) {
                 onDismiss={handleDismiss}
                 onSchedule={(id) => setSchedulerItemId(id)}
                 onEmail={(id) => setEmailItemId(id)}
+                onLinkDeal={(id) => setLinkDealItemId(id)}
+                onLinkCompany={(id) => setLinkCompanyItemId(id)}
               />
             </div>
           ) : pendingItems.length === 0 ? (
@@ -448,6 +521,8 @@ export function YourDayView({ className }: YourDayViewProps) {
                       onDismiss={handleDismiss}
                       onSchedule={(id) => setSchedulerItemId(id)}
                       onEmail={(id) => setEmailItemId(id)}
+                      onLinkDeal={(id) => setLinkDealItemId(id)}
+                      onLinkCompany={(id) => setLinkCompanyItemId(id)}
                     />
                   ))}
               </div>
@@ -594,6 +669,38 @@ export function YourDayView({ className }: YourDayViewProps) {
           <MeetingPrepPopout
             meeting={meeting}
             onClose={() => setMeetingPrepId(null)}
+          />
+        );
+      })()}
+
+      {/* Link Deal Popout */}
+      {linkDealItemId && (() => {
+        const item = items.find(i => i.id === linkDealItemId);
+        if (!item) return null;
+        return (
+          <LinkDealPopout
+            item={item}
+            onClose={() => setLinkDealItemId(null)}
+            onLinked={() => {
+              setLinkDealItemId(null);
+              fetchData();
+            }}
+          />
+        );
+      })()}
+
+      {/* Link Company Popout */}
+      {linkCompanyItemId && (() => {
+        const item = items.find(i => i.id === linkCompanyItemId);
+        if (!item) return null;
+        return (
+          <LinkCompanyPopout
+            item={item}
+            onClose={() => setLinkCompanyItemId(null)}
+            onLinked={() => {
+              setLinkCompanyItemId(null);
+              fetchData();
+            }}
           />
         );
       })()}

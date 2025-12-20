@@ -12,3 +12,5 @@ export { DaySummary, DaySummaryCompact } from './DaySummary';
 export { SchedulerPopout } from './SchedulerPopout';
 export { EmailComposerPopout } from './EmailComposerPopout';
 export { MeetingPrepPopout } from './MeetingPrepPopout';
+export { LinkDealPopout } from './LinkDealPopout';
+export { LinkCompanyPopout } from './LinkCompanyPopout';

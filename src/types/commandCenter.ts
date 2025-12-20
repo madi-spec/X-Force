@@ -156,6 +156,10 @@ export interface ScoreFactors {
     explanation: string;
     signals?: string[];
   };
+  orphan?: {
+    value: number;
+    explanation: string;
+  };
   // Future: win_pattern, timing
 }
 
