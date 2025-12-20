@@ -43,6 +43,8 @@ import {
   SourceLink,
   PrimaryContact,
   AvailableAction,
+  TIER_CONFIGS,
+  PriorityTier,
 } from '@/types/commandCenter';
 
 // ============================================
@@ -384,17 +386,24 @@ export function ActionCard({
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            {/* Title Row with Score */}
+            {/* Title Row with Tier Badge */}
             <div className="flex items-start justify-between gap-2">
               <h3 className="font-medium text-gray-900">{item.title}</h3>
-              <button
-                onClick={() => setShowScoreBreakdown(!showScoreBreakdown)}
-                className="flex items-center gap-1 text-orange-500 font-semibold text-sm flex-shrink-0"
-                title="View score breakdown"
-              >
-                <Zap className="h-3.5 w-3.5" />
-                {item.momentum_score}
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Tier Badge */}
+                {item.tier && (
+                  <TierBadge tier={item.tier as PriorityTier} trigger={item.tier_trigger} />
+                )}
+                {/* Legacy momentum score - click to expand */}
+                <button
+                  onClick={() => setShowScoreBreakdown(!showScoreBreakdown)}
+                  className="flex items-center gap-1 text-gray-400 text-xs"
+                  title="View score breakdown"
+                >
+                  <Zap className="h-3 w-3" />
+                  {item.momentum_score}
+                </button>
+              </div>
             </div>
 
             {/* Company · Deal · Value · Stage (single line with clickable links) */}
@@ -707,12 +716,70 @@ export function ActionCardCompact({ item, onClick, className }: ActionCardCompac
         )}
       </div>
       <div className="flex items-center gap-2 text-xs flex-shrink-0">
+        {item.tier && (
+          <TierBadge tier={item.tier as PriorityTier} compact />
+        )}
         <span className="text-gray-400">{item.estimated_minutes}m</span>
-        <span className="text-orange-500 font-medium flex items-center gap-0.5">
-          <Zap className="h-3 w-3" />
-          {item.momentum_score}
-        </span>
       </div>
     </button>
+  );
+}
+
+// ============================================
+// TIER BADGE COMPONENT
+// ============================================
+
+interface TierBadgeProps {
+  tier: PriorityTier;
+  trigger?: string | null;
+  compact?: boolean;
+}
+
+function TierBadge({ tier, trigger, compact = false }: TierBadgeProps) {
+  const config = TIER_CONFIGS[tier];
+
+  // Tier-specific styling
+  const tierStyles: Record<PriorityTier, {
+    bg: string;
+    text: string;
+    border: string;
+  }> = {
+    1: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+    2: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200' },
+    3: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    4: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+    5: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+  };
+
+  const style = tierStyles[tier];
+
+  if (compact) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+          style.bg,
+          style.text
+        )}
+        title={config.name}
+      >
+        {config.icon}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border',
+        style.bg,
+        style.text,
+        style.border
+      )}
+      title={trigger ? `${config.name}: ${trigger.replace(/_/g, ' ')}` : config.name}
+    >
+      <span>{config.icon}</span>
+      <span className="uppercase tracking-wide text-[10px]">T{tier}</span>
+    </span>
   );
 }

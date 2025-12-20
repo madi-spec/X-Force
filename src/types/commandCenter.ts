@@ -1,4 +1,96 @@
 // AI Command Center v3.1 Types
+// Updated with Priority Tiers System
+
+// ============================================
+// PRIORITY TIERS
+// ============================================
+
+export type PriorityTier = 1 | 2 | 3 | 4 | 5;
+
+export type TierTrigger =
+  // Tier 1: RESPOND NOW
+  | 'demo_request'
+  | 'pricing_request'
+  | 'direct_question'
+  | 'email_reply'
+  | 'form_submission'
+  | 'calendly_booking'
+  // Tier 2: DON'T LOSE THIS
+  | 'deadline_critical'
+  | 'deadline_approaching'
+  | 'competitive_risk'
+  | 'proposal_hot'
+  | 'champion_dark'
+  | 'urgency_keywords'
+  // Tier 3: KEEP YOUR WORD
+  | 'transcript_commitment'
+  | 'meeting_follow_up'
+  | 'action_item_due'
+  // Tier 4: MOVE BIG DEALS
+  | 'high_value'
+  | 'strategic_account'
+  | 'csuite_contact'
+  | 'deal_stale';
+
+export type TierSlaStatus = 'on_track' | 'warning' | 'breached';
+
+export interface TierConfig {
+  tier: PriorityTier;
+  name: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  description: string;
+}
+
+export const TIER_CONFIGS: Record<PriorityTier, TierConfig> = {
+  1: {
+    tier: 1,
+    name: 'RESPOND NOW',
+    icon: '🔴',
+    color: 'text-red-700',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-500',
+    description: 'People are waiting. Response speed = close rate.',
+  },
+  2: {
+    tier: 2,
+    name: "DON'T LOSE THIS",
+    icon: '🟠',
+    color: 'text-orange-700',
+    bgColor: 'bg-orange-50',
+    borderColor: 'border-orange-500',
+    description: 'Deadlines, competition, or decisions in motion.',
+  },
+  3: {
+    tier: 3,
+    name: 'KEEP YOUR WORD',
+    icon: '🟡',
+    color: 'text-yellow-700',
+    bgColor: 'bg-yellow-50',
+    borderColor: 'border-yellow-500',
+    description: 'You promised these.',
+  },
+  4: {
+    tier: 4,
+    name: 'MOVE BIG DEALS',
+    icon: '🟢',
+    color: 'text-green-700',
+    bgColor: 'bg-green-50',
+    borderColor: 'border-green-500',
+    description: 'High-value opportunities worth your attention.',
+  },
+  5: {
+    tier: 5,
+    name: 'BUILD PIPELINE',
+    icon: '🔵',
+    color: 'text-blue-700',
+    bgColor: 'bg-blue-50',
+    borderColor: 'border-blue-500',
+    description: 'Important but not urgent.',
+  },
+};
 
 // ============================================
 // ACTION TYPES
@@ -30,7 +122,9 @@ export type ItemSource =
   | 'ai_recommendation'
   | 'transcription'
   | 'crm_sync'
-  | 'slack';
+  | 'slack'
+  | 'form_submission'
+  | 'calendly';
 
 export type TimeBlockType = 'available' | 'meeting' | 'prep' | 'buffer';
 
@@ -84,6 +178,16 @@ export interface CommandCenterItem {
   due_at?: string | null;
   optimal_hours?: number[] | null;
   optimal_days?: string[] | null;
+
+  // Priority Tier
+  tier: PriorityTier;
+  tier_trigger?: TierTrigger | null;
+  sla_minutes?: number | null;
+  sla_status?: TierSlaStatus | null;
+  urgency_score?: number | null;
+  promise_date?: string | null;
+  commitment_text?: string | null;
+  received_at?: string | null;
 
   // AI context
   why_now?: string | null;
@@ -294,10 +398,22 @@ export interface RepTimeProfile {
 export interface GetDailyPlanResponse {
   success: boolean;
   plan: DailyPlan;
+
+  // All items (for backward compatibility)
   items: CommandCenterItem[];
+
+  // Tier-grouped items (new)
+  tier1_items: CommandCenterItem[];  // RESPOND NOW
+  tier2_items: CommandCenterItem[];  // DON'T LOSE THIS
+  tier3_items: CommandCenterItem[];  // KEEP YOUR WORD
+  tier4_items: CommandCenterItem[];  // MOVE BIG DEALS
+  tier5_items: CommandCenterItem[];  // BUILD PIPELINE
+
+  // Legacy (deprecated, use tier groups)
   current_item?: CommandCenterItem | null;
   next_items: CommandCenterItem[];
   at_risk_items: CommandCenterItem[];
+
   overflow_count: number;
   is_work_day?: boolean;
   debug?: {
@@ -307,6 +423,13 @@ export interface GetDailyPlanResponse {
     is_work_day?: boolean;
     user_timezone?: string;
     calendar_events_count: number;
+    tier_counts?: {
+      tier1: number;
+      tier2: number;
+      tier3: number;
+      tier4: number;
+      tier5: number;
+    };
   };
 }
 
@@ -519,7 +642,7 @@ export interface MeetingPrepContent {
 }
 
 export interface PrepMaterial {
-  type: 'meeting_notes' | 'email' | 'deal' | 'document' | 'research';
+  type: 'meeting_notes' | 'email' | 'deal' | 'document' | 'research' | 'meeting' | 'transcript';
   label: string;
   url: string;
 }

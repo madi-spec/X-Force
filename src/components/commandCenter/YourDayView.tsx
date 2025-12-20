@@ -31,6 +31,8 @@ import {
   GetDailyPlanResponse,
   TimeBlock,
   EnrichedCommandCenterItem,
+  TIER_CONFIGS,
+  PriorityTier,
 } from '@/types/commandCenter';
 
 // ============================================
@@ -226,11 +228,37 @@ export function YourDayView({ className }: YourDayViewProps) {
     );
   }
 
-  const { plan, items, current_item, next_items, at_risk_items, overflow_count, debug, is_work_day } = data;
+  const {
+    plan,
+    items,
+    // New tier-grouped items
+    tier1_items = [],
+    tier2_items = [],
+    tier3_items = [],
+    tier4_items = [],
+    tier5_items = [],
+    // Legacy fields for backward compatibility
+    current_item,
+    next_items,
+    at_risk_items,
+    overflow_count,
+    debug,
+    is_work_day
+  } = data;
 
   // Filter out completed items for display
   const pendingItems = items.filter((i) => !completedIds.has(i.id));
   const laterItems = pendingItems.slice(6); // Items after top 6
+
+  // Filter completed from tier items
+  const tier1Pending = tier1_items.filter(i => !completedIds.has(i.id));
+  const tier2Pending = tier2_items.filter(i => !completedIds.has(i.id));
+  const tier3Pending = tier3_items.filter(i => !completedIds.has(i.id));
+  const tier4Pending = tier4_items.filter(i => !completedIds.has(i.id));
+  const tier5Pending = tier5_items.filter(i => !completedIds.has(i.id));
+
+  // Determine if we have urgent items (Tier 1)
+  const hasTier1Items = tier1Pending.length > 0;
 
   // Check if after work hours - show Day Complete view
   const workEndTime = debug?.user_timezone ? '17:00' : '17:00'; // Default 5 PM
@@ -489,38 +517,43 @@ export function YourDayView({ className }: YourDayViewProps) {
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
-        {/* Left Column - Actions */}
+        {/* Left Column - Priority Tier Sections */}
         <div className="space-y-6">
-          {/* At Risk Items */}
-          {at_risk_items.length > 0 && (
-            <div className="bg-red-50 rounded-xl border border-red-200 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <h3 className="text-sm font-medium text-red-800">
-                  At Risk ({at_risk_items.length})
-                </h3>
-                <span className="text-xs text-red-600">Due within 4 hours</span>
-              </div>
-              <div className="space-y-2">
-                {at_risk_items.slice(0, 3).map((item) => (
-                  <ActionCardCompact key={item.id} item={item} />
-                ))}
-              </div>
+          {/* All Caught Up state */}
+          {pendingItems.length === 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+              <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">All Caught Up!</h3>
+              <p className="text-gray-500">
+                No pending actions. Great job staying on top of things.
+              </p>
             </div>
           )}
 
-          {/* Current Item - Do Now */}
-          {current_item && !completedIds.has(current_item.id) ? (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="h-4 w-4 text-amber-500" />
-                <h2 className="text-sm font-medium text-gray-700 uppercase tracking-wider">
-                  Do Now
-                </h2>
-              </div>
-              <ActionCard
-                item={current_item}
-                isCurrentItem
+          {/* TIER 1: RESPOND NOW - Red, dominates when present */}
+          {tier1Pending.length > 0 && (
+            <TierSection
+              tier={1}
+              items={tier1Pending}
+              isHighlighted={true}
+              onStart={handleStart}
+              onComplete={handleComplete}
+              onSnooze={handleSnooze}
+              onDismiss={handleDismiss}
+              onSchedule={(id) => setSchedulerItemId(id)}
+              onEmail={(id) => setEmailItemId(id)}
+              onLinkDeal={(id) => setLinkDealItemId(id)}
+              onLinkCompany={(id) => setLinkCompanyItemId(id)}
+            />
+          )}
+
+          {/* TIER 2: DON'T LOSE THIS - Orange */}
+          {tier2Pending.length > 0 && (
+            <div className={cn(hasTier1Items && 'opacity-50')}>
+              <TierSection
+                tier={2}
+                items={tier2Pending}
+                collapsed={hasTier1Items}
                 onStart={handleStart}
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
@@ -531,81 +564,62 @@ export function YourDayView({ className }: YourDayViewProps) {
                 onLinkCompany={(id) => setLinkCompanyItemId(id)}
               />
             </div>
-          ) : pendingItems.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-              <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
-              <h3 className="text-lg font-medium text-gray-900 mb-1">All Caught Up!</h3>
-              <p className="text-gray-500">
-                No pending actions. Great job staying on top of things.
-              </p>
-            </div>
-          ) : null}
+          )}
 
-          {/* Up Next */}
-          {next_items.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-blue-500" />
-                  <h2 className="text-sm font-medium text-gray-700 uppercase tracking-wider">
-                    Up Next
-                  </h2>
-                </div>
-                <span className="text-xs text-gray-400">
-                  {next_items.length} items
-                </span>
-              </div>
-              <div className="space-y-3">
-                {next_items
-                  .filter((item) => !completedIds.has(item.id))
-                  .slice(0, 5)
-                  .map((item) => (
-                    <ActionCard
-                      key={item.id}
-                      item={item}
-                      onStart={handleStart}
-                      onComplete={handleComplete}
-                      onSnooze={handleSnooze}
-                      onDismiss={handleDismiss}
-                      onSchedule={(id) => setSchedulerItemId(id)}
-                      onEmail={(id) => setEmailItemId(id)}
-                      onLinkDeal={(id) => setLinkDealItemId(id)}
-                      onLinkCompany={(id) => setLinkCompanyItemId(id)}
-                    />
-                  ))}
-              </div>
+          {/* TIER 3: KEEP YOUR WORD - Yellow */}
+          {tier3Pending.length > 0 && (
+            <div className={cn(hasTier1Items && 'opacity-50')}>
+              <TierSection
+                tier={3}
+                items={tier3Pending}
+                collapsed={hasTier1Items}
+                onStart={handleStart}
+                onComplete={handleComplete}
+                onSnooze={handleSnooze}
+                onDismiss={handleDismiss}
+                onSchedule={(id) => setSchedulerItemId(id)}
+                onEmail={(id) => setEmailItemId(id)}
+                onLinkDeal={(id) => setLinkDealItemId(id)}
+                onLinkCompany={(id) => setLinkCompanyItemId(id)}
+              />
             </div>
           )}
 
-          {/* Later Today (collapsed by default) */}
-          {laterItems.length > 0 && (
-            <div>
-              <button
-                onClick={() => setShowLater(!showLater)}
-                className="flex items-center justify-between w-full py-3 text-sm text-gray-600 hover:text-gray-900"
-              >
-                <div className="flex items-center gap-2">
-                  {showLater ? (
-                    <ChevronUp className="h-4 w-4" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4" />
-                  )}
-                  <span>Later Today ({laterItems.length})</span>
-                </div>
-                {overflow_count > 0 && (
-                  <span className="text-xs text-amber-600">
-                    +{overflow_count} may not fit today
-                  </span>
-                )}
-              </button>
+          {/* TIER 4: MOVE BIG DEALS - Green */}
+          {tier4Pending.length > 0 && (
+            <div className={cn(hasTier1Items && 'opacity-50')}>
+              <TierSection
+                tier={4}
+                items={tier4Pending}
+                collapsed={hasTier1Items}
+                onStart={handleStart}
+                onComplete={handleComplete}
+                onSnooze={handleSnooze}
+                onDismiss={handleDismiss}
+                onSchedule={(id) => setSchedulerItemId(id)}
+                onEmail={(id) => setEmailItemId(id)}
+                onLinkDeal={(id) => setLinkDealItemId(id)}
+                onLinkCompany={(id) => setLinkCompanyItemId(id)}
+              />
+            </div>
+          )}
 
-              {showLater && (
-                <div className="space-y-2 mt-2">
-                  {laterItems.map((item) => (
-                    <ActionCardCompact key={item.id} item={item} />
-                  ))}
-                </div>
-              )}
+          {/* TIER 5: BUILD PIPELINE - Blue, collapsed by default */}
+          {tier5Pending.length > 0 && (
+            <div className={cn(hasTier1Items && 'opacity-50')}>
+              <TierSection
+                tier={5}
+                items={tier5Pending}
+                collapsed={true}
+                onStart={handleStart}
+                onComplete={handleComplete}
+                onSnooze={handleSnooze}
+                onDismiss={handleDismiss}
+                onSchedule={(id) => setSchedulerItemId(id)}
+                onEmail={(id) => setEmailItemId(id)}
+                onLinkDeal={(id) => setLinkDealItemId(id)}
+                onLinkCompany={(id) => setLinkCompanyItemId(id)}
+              />
             </div>
           )}
         </div>
@@ -831,4 +845,209 @@ function formatTimeRange(start: string, end: string): string {
   };
 
   return `${formatHour(startDate)} - ${formatHour(endDate)}`;
+}
+
+// ============================================
+// TIER SECTION COMPONENT
+// ============================================
+
+interface TierSectionProps {
+  tier: PriorityTier;
+  items: CommandCenterItem[];
+  isHighlighted?: boolean;
+  collapsed?: boolean;
+  onStart: (id: string) => Promise<void>;
+  onComplete: (id: string) => Promise<void>;
+  onSnooze: (id: string, until: string) => Promise<void>;
+  onDismiss: (id: string, reason?: string) => Promise<void>;
+  onSchedule: (id: string) => void;
+  onEmail: (id: string) => void;
+  onLinkDeal: (id: string) => void;
+  onLinkCompany: (id: string) => void;
+}
+
+function TierSection({
+  tier,
+  items,
+  isHighlighted = false,
+  collapsed: initialCollapsed = false,
+  onStart,
+  onComplete,
+  onSnooze,
+  onDismiss,
+  onSchedule,
+  onEmail,
+  onLinkDeal,
+  onLinkCompany,
+}: TierSectionProps) {
+  const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
+  const config = TIER_CONFIGS[tier];
+
+  // Tier-specific styling
+  const tierStyles: Record<PriorityTier, {
+    bg: string;
+    border: string;
+    headerBg: string;
+    text: string;
+    icon: string;
+  }> = {
+    1: {
+      bg: 'bg-red-50',
+      border: 'border-red-200',
+      headerBg: 'bg-red-100',
+      text: 'text-red-800',
+      icon: '🔴',
+    },
+    2: {
+      bg: 'bg-orange-50',
+      border: 'border-orange-200',
+      headerBg: 'bg-orange-100',
+      text: 'text-orange-800',
+      icon: '🟠',
+    },
+    3: {
+      bg: 'bg-amber-50',
+      border: 'border-amber-200',
+      headerBg: 'bg-amber-100',
+      text: 'text-amber-800',
+      icon: '🟡',
+    },
+    4: {
+      bg: 'bg-emerald-50',
+      border: 'border-emerald-200',
+      headerBg: 'bg-emerald-100',
+      text: 'text-emerald-800',
+      icon: '🟢',
+    },
+    5: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      headerBg: 'bg-blue-100',
+      text: 'text-blue-800',
+      icon: '🔵',
+    },
+  };
+
+  const style = tierStyles[tier];
+
+  // For Tier 1, show a banner when people are waiting
+  if (tier === 1 && items.length > 0) {
+    return (
+      <div className={cn('rounded-xl border-l-4', style.bg, 'border-l-red-500 p-4')}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{style.icon}</span>
+            <h3 className={cn('font-semibold', style.text)}>
+              {items.length} {items.length === 1 ? 'person is' : 'people are'} waiting
+            </h3>
+          </div>
+          <span className="text-xs text-red-600 font-medium">
+            Response speed = close rate
+          </span>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => (
+            <ActionCard
+              key={item.id}
+              item={item}
+              isCurrentItem={index === 0}
+              onStart={onStart}
+              onComplete={onComplete}
+              onSnooze={onSnooze}
+              onDismiss={onDismiss}
+              onSchedule={onSchedule}
+              onEmail={onEmail}
+              onLinkDeal={onLinkDeal}
+              onLinkCompany={onLinkCompany}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('rounded-xl border', style.bg, style.border)}>
+      {/* Header - clickable to expand/collapse */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className={cn(
+          'w-full flex items-center justify-between p-3 rounded-t-xl transition-colors',
+          style.headerBg
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{style.icon}</span>
+          <h3 className={cn('text-sm font-semibold uppercase tracking-wider', style.text)}>
+            {config.name}
+          </h3>
+          <span className={cn('text-xs', style.text, 'opacity-70')}>
+            ({items.length})
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cn('text-xs', style.text, 'opacity-60')}>
+            {config.description}
+          </span>
+          {isCollapsed ? (
+            <ChevronDown className={cn('h-4 w-4', style.text)} />
+          ) : (
+            <ChevronUp className={cn('h-4 w-4', style.text)} />
+          )}
+        </div>
+      </button>
+
+      {/* Items */}
+      {!isCollapsed && (
+        <div className="p-3 space-y-3">
+          {items.slice(0, 5).map((item, index) => (
+            <ActionCard
+              key={item.id}
+              item={item}
+              isCurrentItem={index === 0 && isHighlighted}
+              onStart={onStart}
+              onComplete={onComplete}
+              onSnooze={onSnooze}
+              onDismiss={onDismiss}
+              onSchedule={onSchedule}
+              onEmail={onEmail}
+              onLinkDeal={onLinkDeal}
+              onLinkCompany={onLinkCompany}
+            />
+          ))}
+          {items.length > 5 && (
+            <div className="text-center py-2">
+              <span className={cn('text-xs', style.text)}>
+                +{items.length - 5} more items
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Collapsed preview */}
+      {isCollapsed && items.length > 0 && (
+        <div className="px-3 pb-3">
+          <div className="flex flex-wrap gap-2">
+            {items.slice(0, 3).map((item) => (
+              <span
+                key={item.id}
+                className={cn(
+                  'text-xs px-2 py-1 rounded-full bg-white/50',
+                  style.text
+                )}
+              >
+                {item.company_name || item.target_name || item.title.slice(0, 20)}
+              </span>
+            ))}
+            {items.length > 3 && (
+              <span className={cn('text-xs px-2 py-1', style.text, 'opacity-60')}>
+                +{items.length - 3} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

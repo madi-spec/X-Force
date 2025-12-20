@@ -60,6 +60,20 @@ export {
   regenerateEmailDraft,
 } from './contextEnrichment';
 
+// Tier Detection (Priority Tiers System)
+export {
+  classifyItem,
+  classifyAllItems,
+  sortTier1,
+  sortTier2,
+  sortTier3,
+  sortTier4,
+  detectTier1,
+  detectTier2,
+  detectTier3,
+  detectTier4,
+} from './tierDetection';
+
 // Re-export types for convenience
 export type {
   ActionType,
@@ -90,4 +104,12 @@ export type {
   PrepMaterial,
   MeetingWithPrep,
   EnrichedCommandCenterItem,
+  // Priority Tiers types
+  PriorityTier,
+  TierTrigger,
+  TierSlaStatus,
+  TierConfig,
 } from '@/types/commandCenter';
+
+// Re-export tier configs
+export { TIER_CONFIGS } from '@/types/commandCenter';

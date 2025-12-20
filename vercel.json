@@ -7,6 +7,22 @@
     {
       "path": "/api/cron/sync-fireflies",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/generate-daily-plans",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/calculate-momentum",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-command-center",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/classify-tiers",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

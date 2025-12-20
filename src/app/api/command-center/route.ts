@@ -1,7 +1,7 @@
 /**
  * Command Center API
  *
- * GET - Get today's plan with items sorted by momentum
+ * GET - Get today's plan with items grouped by priority tier
  * POST - Manually create a new item
  */
 
@@ -20,9 +20,17 @@ import {
   enrichItem,
 } from '@/lib/commandCenter';
 import {
+  classifyItem,
+  sortTier1,
+  sortTier2,
+  sortTier3,
+  sortTier4,
+} from '@/lib/commandCenter/tierDetection';
+import {
   CommandCenterItem,
   CreateItemRequest,
   GetDailyPlanResponse,
+  PriorityTier,
 } from '@/types/commandCenter';
 
 // ============================================
@@ -169,10 +177,56 @@ export async function GET(request: NextRequest) {
 
     let allItems = (items || []) as CommandCenterItem[];
 
-    // Recalculate scores for items with 0 momentum (on-demand scoring)
+    // ============================================
+    // TIER CLASSIFICATION
+    // ============================================
+    // Classify all items into tiers (1-5 priority system)
+    console.log(`[CommandCenter] Classifying ${allItems.length} items into tiers`);
+
+    for (const item of allItems) {
+      const classification = await classifyItem(item, userId);
+
+      // Update item with tier classification (provide defaults for optional fields)
+      // Note: value_score is a legacy score component, we don't overwrite it
+      item.tier = classification.tier;
+      item.tier_trigger = classification.trigger;
+      item.urgency_score = classification.urgency_score ?? 0;
+      item.sla_minutes = classification.sla_minutes ?? null;
+      item.sla_status = classification.sla_status ?? null;
+
+      // Update why_now if classification provided one
+      if (classification.why_now) {
+        item.why_now = classification.why_now;
+      }
+
+      // Persist tier classification to database
+      await supabase
+        .from('command_center_items')
+        .update({
+          tier: classification.tier,
+          tier_trigger: classification.trigger,
+          urgency_score: classification.urgency_score ?? 0,
+          sla_minutes: classification.sla_minutes ?? null,
+          sla_status: classification.sla_status ?? null,
+          why_now: classification.why_now || item.why_now,
+        })
+        .eq('id', item.id);
+    }
+
+    // Group items by tier
+    const tier1Items = allItems.filter(i => i.tier === 1).sort(sortTier1);
+    const tier2Items = allItems.filter(i => i.tier === 2).sort(sortTier2);
+    const tier3Items = allItems.filter(i => i.tier === 3).sort(sortTier3);
+    const tier4Items = allItems.filter(i => i.tier === 4).sort(sortTier4);
+    const tier5Items = allItems.filter(i => i.tier === 5);
+
+    console.log(`[CommandCenter] Tier distribution: T1=${tier1Items.length}, T2=${tier2Items.length}, T3=${tier3Items.length}, T4=${tier4Items.length}, T5=${tier5Items.length}`);
+
+    // Legacy: Recalculate momentum scores for items that still need them
+    // (keeping for backward compatibility during transition)
     const itemsNeedingScores = allItems.filter(item => item.momentum_score === 0);
     if (itemsNeedingScores.length > 0) {
-      console.log(`[CommandCenter] Recalculating scores for ${itemsNeedingScores.length} items`);
+      console.log(`[CommandCenter] Recalculating momentum scores for ${itemsNeedingScores.length} items`);
 
       for (const item of itemsNeedingScores) {
         const scoreResult = calculateMomentumScore({
@@ -203,26 +257,6 @@ export async function GET(request: NextRequest) {
         item.score_factors = scoreResult.factors;
         item.score_explanation = scoreResult.explanation;
       }
-
-      // Re-sort items by momentum score with secondary criteria
-      allItems = allItems.sort((a, b) => {
-        // Primary: momentum score (descending)
-        const scoreDiff = (b.momentum_score || 0) - (a.momentum_score || 0);
-        if (scoreDiff !== 0) return scoreDiff;
-
-        // Secondary: deal value (descending) - higher value items first
-        const valueDiff = (b.deal_value || 0) - (a.deal_value || 0);
-        if (valueDiff !== 0) return valueDiff;
-
-        // Tertiary: due date (ascending) - items due sooner first
-        if (a.due_at && b.due_at) {
-          return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
-        }
-        if (a.due_at) return -1; // Items with due dates come first
-        if (b.due_at) return 1;
-
-        return 0;
-      });
     }
 
     // Enrich top items that are missing context (limit to top 5 for performance)
@@ -293,6 +327,13 @@ export async function GET(request: NextRequest) {
       success: true,
       plan: plan!,
       items: allItems,
+      // Tier-grouped items (new priority system)
+      tier1_items: tier1Items,
+      tier2_items: tier2Items,
+      tier3_items: tier3Items,
+      tier4_items: tier4Items,
+      tier5_items: tier5Items,
+      // Legacy fields for backward compatibility
       current_item: currentItem,
       next_items: nextItems,
       at_risk_items: atRiskItems,
@@ -305,6 +346,13 @@ export async function GET(request: NextRequest) {
         is_work_day: isWorkDay,
         user_timezone: timezone,
         calendar_events_count: calendarEventsCount,
+        tier_counts: {
+          tier1: tier1Items.length,
+          tier2: tier2Items.length,
+          tier3: tier3Items.length,
+          tier4: tier4Items.length,
+          tier5: tier5Items.length,
+        },
       },
     };
 
