@@ -77,7 +77,7 @@ WHERE tier = 1 AND status = 'pending';
 -- Index for deal activity tracking
 CREATE INDEX IF NOT EXISTS idx_deals_activity
 ON deals(days_since_activity DESC)
-WHERE status = 'active';
+WHERE stage NOT IN ('closed_won', 'closed_lost');
 
 -- ============================================
 -- FUNCTION: Update deal days_since_activity
@@ -88,7 +88,7 @@ RETURNS void AS $$
 BEGIN
   UPDATE deals
   SET days_since_activity = EXTRACT(DAY FROM NOW() - COALESCE(last_activity_at, created_at))::INTEGER
-  WHERE status = 'active';
+  WHERE stage NOT IN ('closed_won', 'closed_lost');
 END;
 $$ LANGUAGE plpgsql;
 
@@ -104,7 +104,7 @@ BEGIN
       id,
       PERCENT_RANK() OVER (ORDER BY COALESCE(estimated_value, 0)) * 100 as percentile
     FROM deals
-    WHERE status = 'active'
+    WHERE stage NOT IN ('closed_won', 'closed_lost')
   )
   UPDATE deals d
   SET value_percentile = ROUND(r.percentile)::INTEGER
