@@ -397,7 +397,7 @@ export function YourDayView({ className }: YourDayViewProps) {
             </button>
           )}
           <div>
-            <h1 className="text-xl font-normal text-gray-900 dark:text-gray-100">
+            <h1 className="text-xl font-normal text-gray-900">
               {previewMode ? 'Next Work Day' : 'Your Day'}
             </h1>
             <div className="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
@@ -424,7 +424,7 @@ export function YourDayView({ className }: YourDayViewProps) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span className="text-sm font-medium text-gray-700">
             {items.filter(i => i.status === 'completed').length + completedIds.size} done · {pendingItems.length} to go
           </span>
           <button
@@ -633,23 +633,23 @@ export function YourDayView({ className }: YourDayViewProps) {
               ))}
             </div>
           ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center">
+            <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
               <Calendar className="h-8 w-8 text-gray-300 mx-auto mb-2" />
               <p className="text-sm text-gray-500">No meetings today</p>
             </div>
           )}
 
           {/* Time Summary */}
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+          <div className="bg-gray-50 rounded-lg p-4">
             <div className="grid grid-cols-2 gap-4 text-center">
               <div>
-                <p className="text-2xl font-light text-gray-900 dark:text-gray-100">
+                <p className="text-2xl font-light text-gray-900">
                   {formatTime(plan.available_minutes)}
                 </p>
                 <p className="text-xs text-gray-500">Available</p>
               </div>
               <div>
-                <p className="text-2xl font-light text-gray-900 dark:text-gray-100">
+                <p className="text-2xl font-light text-gray-900">
                   {formatTime(plan.meeting_minutes)}
                 </p>
                 <p className="text-xs text-gray-500">In Meetings</p>
