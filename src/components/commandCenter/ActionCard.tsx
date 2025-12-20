@@ -531,7 +531,32 @@ export function ActionCard({
           </div>
         )}
 
-        {/* Context Summary (AI Generated - Always Visible) */}
+        {/* Why Now - THE KEY ELEMENT (Always Visible) */}
+        {item.why_now && (
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+            <p className="text-sm">
+              <span className="font-medium text-blue-700">Why now: </span>
+              <span className="text-blue-900">{item.why_now}</span>
+            </p>
+          </div>
+        )}
+
+        {/* Human Review Alert (Negative Sentiment) */}
+        {item.requires_human_review && (
+          <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-center gap-2 text-purple-700">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="font-medium text-sm">Needs your judgment</span>
+            </div>
+            <p className="text-sm text-purple-600 mt-1">
+              {item.sentiment_routing === 'human_leverage_brief'
+                ? 'Negative sentiment detected — review approach before acting'
+                : 'This situation needs human decision-making'}
+            </p>
+          </div>
+        )}
+
+        {/* Context Summary (AI Generated) */}
         {(item.context_summary || item.context_brief) && (
           <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
             <p className="text-sm text-gray-700">{item.context_summary || item.context_brief}</p>
@@ -543,11 +568,33 @@ export function ActionCard({
           <div className="mt-3 p-3 bg-green-50 border border-green-100 rounded-lg">
             <div className="flex items-start gap-2">
               <Lightbulb className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-green-800 font-medium uppercase tracking-wider">
+                    Tip
+                  </p>
+                  {item.win_pattern_sample_size && (
+                    <span className="text-xs text-green-600">
+                      n={item.win_pattern_sample_size}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-green-900 mt-1">{item.win_tip}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Landmine Warnings */}
+        {item.landmine_warnings && item.landmine_warnings.length > 0 && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs text-green-800 font-medium uppercase tracking-wider mb-1">
-                  Tip
+                <p className="text-xs text-red-800 font-medium uppercase tracking-wider mb-1">
+                  Avoid
                 </p>
-                <p className="text-sm text-green-900">{item.win_tip}</p>
+                <p className="text-sm text-red-700">{item.landmine_warnings.join(', ')}</p>
               </div>
             </div>
           </div>
@@ -588,16 +635,6 @@ export function ActionCard({
         {/* Expanded Section */}
         {showMore && (
           <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-            {/* Why Now */}
-            {item.why_now && (
-              <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg">
-                <p className="text-xs text-amber-800 font-medium uppercase tracking-wider mb-1">
-                  Why Now
-                </p>
-                <p className="text-sm text-amber-900">{item.why_now}</p>
-              </div>
-            )}
-
             {/* Considerations */}
             {item.considerations && item.considerations.length > 0 && (
               <div className="text-sm">

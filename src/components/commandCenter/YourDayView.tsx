@@ -385,7 +385,7 @@ export function YourDayView({ className }: YourDayViewProps) {
   return (
     <div className={cn('', className)}>
       {/* Header with Summary */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           {previewMode && (
             <button
@@ -400,9 +400,27 @@ export function YourDayView({ className }: YourDayViewProps) {
             <h1 className="text-xl font-normal text-gray-900 dark:text-gray-100">
               {previewMode ? 'Next Work Day' : 'Your Day'}
             </h1>
-            <p className="text-sm text-gray-500">
-              {formatDate(plan.plan_date)} · {formatTime(plan.available_minutes)} available · {getMeetingCount(plan)} meetings ({formatTime(plan.meeting_minutes)})
-            </p>
+            <div className="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
+              <span>{formatDate(plan.plan_date)}</span>
+              <span className="text-gray-300">|</span>
+              <span className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {formatTime(plan.available_minutes)} available
+              </span>
+              <span className="text-gray-300">|</span>
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                {getMeetingCount(plan)} meetings
+              </span>
+              {plan.total_potential_value > 0 && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span className="font-medium text-green-600">
+                    ${formatCompactValue(plan.total_potential_value)} potential
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -438,6 +456,36 @@ export function YourDayView({ className }: YourDayViewProps) {
           </button>
         </div>
       </div>
+
+      {/* Current Time Block Indicator */}
+      {!previewMode && (() => {
+        const currentBlock = getCurrentTimeBlock(plan.time_blocks || []);
+        if (!currentBlock) return null;
+        return (
+          <div className="mb-4 flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-700">
+              <Clock className="h-4 w-4" />
+              <span className="text-sm font-medium">
+                Currently: {formatTimeRange(currentBlock.start, currentBlock.end)}
+              </span>
+            </div>
+            <div className="flex-1 h-1 bg-blue-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, Math.max(0,
+                    ((Date.now() - new Date(currentBlock.start).getTime()) /
+                     (new Date(currentBlock.end).getTime() - new Date(currentBlock.start).getTime())) * 100
+                  ))}%`
+                }}
+              />
+            </div>
+            <span className="text-xs text-blue-600">
+              {currentBlock.duration_minutes - Math.floor((Date.now() - new Date(currentBlock.start).getTime()) / 60000)}m left
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
@@ -752,4 +800,35 @@ function getMeetingCount(plan: DailyPlan): number {
   return (plan.time_blocks || []).filter(
     (block) => block.type === 'meeting'
   ).length;
+}
+
+function formatCompactValue(value: number): string {
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `${Math.round(value / 1000)}K`;
+  return value.toLocaleString();
+}
+
+function getCurrentTimeBlock(timeBlocks: TimeBlock[]): TimeBlock | null {
+  const now = new Date();
+  return timeBlocks.find(block => {
+    if (block.type === 'meeting') return false; // Skip meeting blocks
+    const start = new Date(block.start);
+    const end = new Date(block.end);
+    return now >= start && now < end;
+  }) || null;
+}
+
+function formatTimeRange(start: string, end: string): string {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+
+  const formatHour = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  return `${formatHour(startDate)} - ${formatHour(endDate)}`;
 }

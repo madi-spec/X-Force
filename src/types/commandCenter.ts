@@ -89,6 +89,19 @@ export interface CommandCenterItem {
   why_now?: string | null;
   context_brief?: string | null;
   win_tip?: string | null;
+  landmine_warnings?: string[] | null;
+
+  // Win patterns
+  win_pattern_id?: string | null;
+  win_pattern_match_score?: number | null;
+  win_pattern_sample_size?: number | null;
+
+  // Sentiment & Human Review
+  sentiment_score?: number | null;
+  sentiment_trend?: 'improving' | 'stable' | 'declining' | null;
+  sentiment_routing?: string | null;
+  requires_human_review?: boolean | null;
+  human_leverage_brief?: Record<string, unknown> | null;
 
   // Status
   status: ItemStatus;
