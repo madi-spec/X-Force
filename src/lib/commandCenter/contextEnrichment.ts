@@ -526,9 +526,10 @@ export async function regenerateEmailDraft(
   }
 
   // Gather context and regenerate
+  // Force action_type to email_compose so AI always generates email fields
   const context = await gatherContext(item as CommandCenterItem);
   const aiResult = await generateAIEnrichment({
-    action_type: item.action_type,
+    action_type: 'email_compose', // Force email generation regardless of actual action type
     title: item.title,
     target_name: item.target_name || undefined,
     company_name: item.company_name || undefined,
@@ -539,8 +540,17 @@ export async function regenerateEmailDraft(
     why_now: item.why_now || undefined,
   });
 
+  // If AI fails to generate email fields, create a fallback draft
   if (!aiResult.email_subject || !aiResult.email_body) {
-    throw new Error('Failed to generate email draft');
+    const contactName = context.contact?.name || item.target_name || 'there';
+    const companyName = item.company_name || context.company?.name || '';
+
+    return {
+      subject: item.title,
+      body: `Hi ${contactName},\n\nI wanted to follow up regarding ${item.title.toLowerCase()}${companyName ? ` for ${companyName}` : ''}.\n\nPlease let me know if you have any questions or if there's anything I can help with.\n\nBest regards`,
+      confidence: 50,
+      generated_at: new Date().toISOString(),
+    };
   }
 
   const draft: EmailDraft = {
