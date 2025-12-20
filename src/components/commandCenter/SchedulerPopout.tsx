@@ -11,12 +11,20 @@ import {
   Loader2,
   Check,
   MapPin,
+  ChevronDown,
 } from 'lucide-react';
 import { CommandCenterItem, ScheduleSuggestions, PrimaryContact } from '@/types/commandCenter';
 
 // ============================================
 // TYPES
 // ============================================
+
+interface ContactOption {
+  id: string;
+  name: string;
+  email: string;
+  title?: string;
+}
 
 interface SchedulerPopoutProps {
   item: CommandCenterItem & {
@@ -93,6 +101,18 @@ export function SchedulerPopout({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Contact selection state
+  const [availableContacts, setAvailableContacts] = useState<ContactOption[]>([]);
+  const [selectedContact, setSelectedContact] = useState<ContactOption | null>(null);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
+
+  // Get contact from primary_contact or joined contact data
+  const existingContact = item.primary_contact || (item as any).contact as PrimaryContact | undefined;
+
+  // Use selected contact or existing contact
+  const contact = selectedContact || existingContact;
+
   // Initialize title from suggestions or item
   useEffect(() => {
     const defaultTitle = item.schedule_suggestions?.meeting_title ||
@@ -105,12 +125,45 @@ export function SchedulerPopout({
     }
   }, [item]);
 
+  // Fetch available contacts from company if no contact is linked
+  useEffect(() => {
+    async function fetchContacts() {
+      // If we already have a contact, no need to fetch
+      if (existingContact) return;
+
+      // Get company_id from item or deal
+      const companyId = item.company_id || (item as any).deal?.company_id;
+      if (!companyId) return;
+
+      setLoadingContacts(true);
+      try {
+        const response = await fetch(`/api/companies/${companyId}/contacts`);
+        if (response.ok) {
+          const data = await response.json();
+          const contacts: ContactOption[] = (data.contacts || []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            title: c.title,
+          }));
+          setAvailableContacts(contacts);
+        }
+      } catch (err) {
+        console.error('[SchedulerPopout] Error fetching contacts:', err);
+      } finally {
+        setLoadingContacts(false);
+      }
+    }
+
+    fetchContacts();
+  }, [item.company_id, existingContact]);
+
   // Get suggested times
   const suggestedTimes = item.schedule_suggestions?.suggested_times || generateDefaultTimes();
 
   // Handle send invite
   const handleSendInvite = async () => {
-    if (!selectedTime || !item.primary_contact?.email) return;
+    if (!selectedTime || !contact?.email) return;
 
     setSending(true);
     setError(null);
@@ -129,8 +182,8 @@ export function SchedulerPopout({
           end: endDate.toISOString(),
           attendees: [
             {
-              email: item.primary_contact.email,
-              name: item.primary_contact.name,
+              email: contact.email,
+              name: contact.name,
             },
           ],
           isOnlineMeeting: true,
@@ -150,8 +203,6 @@ export function SchedulerPopout({
       setSending(false);
     }
   };
-
-  const contact = item.primary_contact;
 
   return (
     <>
@@ -197,18 +248,75 @@ export function SchedulerPopout({
           </div>
 
           {/* Attendee */}
-          {contact && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                With
-              </label>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">
+              With
+            </label>
+            {contact ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
                 <User className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-700">{contact.name}</span>
                 <span className="text-sm text-gray-400">({contact.email})</span>
+                {selectedContact && (
+                  <button
+                    onClick={() => setSelectedContact(null)}
+                    className="ml-auto text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Change
+                  </button>
+                )}
               </div>
-            </div>
-          )}
+            ) : loadingContacts ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
+                <span className="text-sm text-gray-500">Loading contacts...</span>
+              </div>
+            ) : availableContacts.length > 0 ? (
+              <div className="relative">
+                <button
+                  onClick={() => setContactDropdownOpen(!contactDropdownOpen)}
+                  className="w-full flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm text-gray-500">Select an attendee...</span>
+                  </div>
+                  <ChevronDown className={cn(
+                    "h-4 w-4 text-gray-400 transition-transform",
+                    contactDropdownOpen && "rotate-180"
+                  )} />
+                </button>
+
+                {contactDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-gray-200 shadow-lg z-10 max-h-48 overflow-y-auto">
+                    {availableContacts.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedContact(c);
+                          setContactDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 text-left"
+                      >
+                        <User className="h-4 w-4 text-gray-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-gray-700 truncate">{c.name}</div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {c.title ? `${c.title} · ` : ''}{c.email}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+                <User className="h-4 w-4 text-amber-500" />
+                <span className="text-sm text-amber-700">No contacts found for this company</span>
+              </div>
+            )}
+          </div>
 
           {/* Suggested Times */}
           <div>

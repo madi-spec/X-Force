@@ -10,8 +10,17 @@ import {
   RefreshCw,
   Sparkles,
   User,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { CommandCenterItem, EmailDraft, PrimaryContact } from '@/types/commandCenter';
+
+interface ContactOption {
+  id: string;
+  name: string;
+  email: string;
+  title?: string;
+}
 
 // ============================================
 // TYPES
@@ -44,6 +53,18 @@ export function EmailComposerPopout({
   const [error, setError] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
 
+  // Contact selection state
+  const [availableContacts, setAvailableContacts] = useState<ContactOption[]>([]);
+  const [selectedContact, setSelectedContact] = useState<ContactOption | null>(null);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
+
+  // Get contact from primary_contact or joined contact data
+  const existingContact = item.primary_contact || (item as any).contact as PrimaryContact | undefined;
+
+  // Use selected contact or existing contact
+  const contact = selectedContact || existingContact;
+
   // Initialize from email_draft
   useEffect(() => {
     if (item.email_draft) {
@@ -55,6 +76,39 @@ export function EmailComposerPopout({
       setSubject(item.title);
     }
   }, [item]);
+
+  // Fetch available contacts from company if no contact is linked
+  useEffect(() => {
+    async function fetchContacts() {
+      // If we already have a contact, no need to fetch
+      if (existingContact) return;
+
+      // Get company_id from item or deal
+      const companyId = item.company_id || (item as any).deal?.company_id;
+      if (!companyId) return;
+
+      setLoadingContacts(true);
+      try {
+        const response = await fetch(`/api/companies/${companyId}/contacts`);
+        if (response.ok) {
+          const data = await response.json();
+          const contacts: ContactOption[] = (data.contacts || []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            title: c.title,
+          }));
+          setAvailableContacts(contacts);
+        }
+      } catch (err) {
+        console.error('[EmailComposer] Error fetching contacts:', err);
+      } finally {
+        setLoadingContacts(false);
+      }
+    }
+
+    fetchContacts();
+  }, [item.company_id, existingContact]);
 
   // Handle regenerate
   const handleRegenerate = async () => {
@@ -85,7 +139,7 @@ export function EmailComposerPopout({
 
   // Handle send
   const handleSend = async () => {
-    if (!item.primary_contact?.email || !subject || !body) return;
+    if (!contact?.email || !subject || !body) return;
 
     setSending(true);
     setError(null);
@@ -95,7 +149,7 @@ export function EmailComposerPopout({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: [item.primary_contact.email],
+          to: [contact!.email],
           subject,
           content: body,
           contactId: item.contact_id,
@@ -124,8 +178,6 @@ export function EmailComposerPopout({
       setSending(false);
     }
   };
-
-  const contact = item.primary_contact;
 
   return (
     <>
@@ -157,18 +209,75 @@ export function EmailComposerPopout({
         {/* Content */}
         <div className="px-6 py-4 space-y-4">
           {/* To */}
-          {contact && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                To
-              </label>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">
+              To
+            </label>
+            {contact ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
                 <User className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-700">{contact.name}</span>
                 <span className="text-sm text-gray-400">&lt;{contact.email}&gt;</span>
+                {selectedContact && (
+                  <button
+                    onClick={() => setSelectedContact(null)}
+                    className="ml-auto text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Change
+                  </button>
+                )}
               </div>
-            </div>
-          )}
+            ) : loadingContacts ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
+                <span className="text-sm text-gray-500">Loading contacts...</span>
+              </div>
+            ) : availableContacts.length > 0 ? (
+              <div className="relative">
+                <button
+                  onClick={() => setContactDropdownOpen(!contactDropdownOpen)}
+                  className="w-full flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm text-gray-500">Select a contact...</span>
+                  </div>
+                  <ChevronDown className={cn(
+                    "h-4 w-4 text-gray-400 transition-transform",
+                    contactDropdownOpen && "rotate-180"
+                  )} />
+                </button>
+
+                {contactDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-gray-200 shadow-lg z-10 max-h-48 overflow-y-auto">
+                    {availableContacts.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedContact(c);
+                          setContactDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 text-left"
+                      >
+                        <User className="h-4 w-4 text-gray-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-gray-700 truncate">{c.name}</div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {c.title ? `${c.title} · ` : ''}{c.email}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+                <User className="h-4 w-4 text-amber-500" />
+                <span className="text-sm text-amber-700">No contacts found for this company</span>
+              </div>
+            )}
+          </div>
 
           {/* Subject */}
           <div>
