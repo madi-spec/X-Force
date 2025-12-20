@@ -65,7 +65,34 @@ export function EmailComposerPopout({
   // Use selected contact or existing contact
   const contact = selectedContact || existingContact;
 
-  // Initialize from email_draft
+  // Generate email draft from API
+  const generateDraft = async () => {
+    setRegenerating(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/command-center/items/${item.id}/generate-email`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to generate draft');
+      }
+
+      const result = await response.json();
+      setSubject(result.subject);
+      setBody(result.body);
+      setConfidence(result.confidence);
+    } catch (err) {
+      console.error('[EmailComposer] Generate error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate draft');
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  // Initialize from email_draft or auto-generate
   useEffect(() => {
     if (item.email_draft) {
       setSubject(item.email_draft.subject);
@@ -74,8 +101,11 @@ export function EmailComposerPopout({
     } else {
       // Default subject based on action type
       setSubject(item.title);
+      // Auto-generate draft if we don't have one
+      generateDraft();
     }
-  }, [item]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   // Fetch available contacts from company if no contact is linked
   useEffect(() => {
@@ -110,31 +140,9 @@ export function EmailComposerPopout({
     fetchContacts();
   }, [item.company_id, existingContact]);
 
-  // Handle regenerate
-  const handleRegenerate = async () => {
-    setRegenerating(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/command-center/items/${item.id}/generate-email`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || 'Failed to generate draft');
-      }
-
-      const result = await response.json();
-      setSubject(result.subject);
-      setBody(result.body);
-      setConfidence(result.confidence);
-    } catch (err) {
-      console.error('[EmailComposer] Regenerate error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to regenerate');
-    } finally {
-      setRegenerating(false);
-    }
+  // Handle regenerate button click
+  const handleRegenerate = () => {
+    generateDraft();
   };
 
   // Handle send
@@ -308,7 +316,12 @@ export function EmailComposerPopout({
           </div>
 
           {/* AI Draft Info */}
-          {confidence !== null && (
+          {regenerating && confidence === null ? (
+            <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <span className="text-sm text-blue-700">Generating AI draft...</span>
+            </div>
+          ) : confidence !== null ? (
             <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-lg">
               <div className="flex items-center gap-2 text-sm text-blue-700">
                 <Sparkles className="h-4 w-4" />
@@ -327,7 +340,7 @@ export function EmailComposerPopout({
                 Regenerate
               </button>
             </div>
-          )}
+          ) : null}
 
           {/* Error Message */}
           {error && (
