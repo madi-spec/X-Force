@@ -208,7 +208,11 @@ export async function GET(
     }
 
     // Look up meeting in activities table
-    const { data: meeting } = await supabase
+    // meetingId could be either our internal UUID or a Microsoft Graph event ID
+    let meeting = null;
+
+    // First try by internal ID
+    const { data: meetingById } = await supabase
       .from('activities')
       .select(`
         id,
@@ -226,8 +230,38 @@ export async function GET(
       .eq('type', 'meeting')
       .single();
 
+    if (meetingById) {
+      meeting = meetingById;
+    } else {
+      // Try by Microsoft Graph event ID in metadata
+      const { data: meetingByExternalId } = await supabase
+        .from('activities')
+        .select(`
+          id,
+          subject,
+          start_at,
+          end_at,
+          deal_id,
+          company_id,
+          contact_id,
+          metadata,
+          deal:deals(id, name, stage, estimated_value, health_score),
+          company:companies(id, name)
+        `)
+        .eq('type', 'meeting')
+        .contains('metadata', { external_id: meetingId })
+        .single();
+
+      meeting = meetingByExternalId;
+    }
+
     if (!meeting) {
-      return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+      // If still not found, the meeting might be from calendar sync but not yet in activities
+      // Return a minimal response with just the meeting ID
+      return NextResponse.json({
+        error: 'Meeting not found in activities. It may not be synced yet.',
+        meeting_id: meetingId,
+      }, { status: 404 });
     }
 
     // Get attendees from metadata
