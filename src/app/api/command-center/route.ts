@@ -158,13 +158,14 @@ export async function GET(request: NextRequest) {
       .from('command_center_items')
       .select(`
         *,
-        deal:deals(id, name, stage, estimated_value),
+        deal:deals(id, name, stage, estimated_value, expected_close_date, competitors, days_since_activity, value_percentile),
         company:companies(id, name),
-        contact:contacts(id, name, email)
+        contact:contacts(id, name, email, title, role)
       `)
       .eq('user_id', userId)
       .eq('status', 'pending')
-      .order('momentum_score', { ascending: false });
+      .order('tier', { ascending: true })
+      .order('urgency_score', { ascending: false });
 
     if (itemsError) {
       console.error('[CommandCenter] Error fetching items:', itemsError);
@@ -180,11 +181,30 @@ export async function GET(request: NextRequest) {
     // ============================================
     // TIER CLASSIFICATION
     // ============================================
-    // Classify all items into tiers (1-5 priority system)
-    console.log(`[CommandCenter] Classifying ${allItems.length} items into tiers`);
+    // Items created by pipelines already have their tier set.
+    // Only re-classify items that are still at the default tier 5
+    // and don't have a proper tier_trigger set (meaning they haven't been classified yet).
+    const itemsNeedingClassification = allItems.filter(
+      item => !item.tier || item.tier === 5 && !item.tier_trigger
+    );
 
-    for (const item of allItems) {
-      const classification = await classifyItem(item, userId);
+    console.log(`[CommandCenter] ${allItems.length} total items, ${itemsNeedingClassification.length} need classification`);
+
+    for (const item of itemsNeedingClassification) {
+      // Build context from joined data for proper classification
+      const deal = item.deal
+        ? {
+            id: item.deal.id,
+            expected_close_date: (item.deal as Record<string, unknown>).expected_close_date as string | undefined,
+            competitors: (item.deal as Record<string, unknown>).competitors as string[] | undefined,
+            days_since_activity: (item.deal as Record<string, unknown>).days_since_activity as number | undefined,
+            value: item.deal.estimated_value,
+            value_percentile: (item.deal as Record<string, unknown>).value_percentile as number | undefined,
+            stage: item.deal.stage,
+          }
+        : undefined;
+
+      const classification = await classifyItem(item, { deal });
 
       // Update item with tier classification (provide defaults for optional fields)
       // Note: value_score is a legacy score component, we don't overwrite it
