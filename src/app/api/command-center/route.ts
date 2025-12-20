@@ -238,16 +238,27 @@ export async function GET(request: NextRequest) {
         try {
           const enrichment = await enrichItem(userId, item as CommandCenterItem);
 
+          // Build update object - only update why_now if AI generated a specific one
+          const updateData: Record<string, unknown> = {
+            context_brief: enrichment.context_summary,
+          };
+
+          // Only update why_now if we got a specific one from AI (not null)
+          if (enrichment.why_now) {
+            updateData.why_now = enrichment.why_now;
+          }
+
           // Update the item in database
           await supabase
             .from('command_center_items')
-            .update({
-              context_brief: enrichment.context_summary,
-            })
+            .update(updateData)
             .eq('id', item.id);
 
           // Update local item
           item.context_brief = enrichment.context_summary;
+          if (enrichment.why_now) {
+            item.why_now = enrichment.why_now;
+          }
         } catch (err) {
           console.error(`[CommandCenter] Failed to enrich item ${item.id}:`, err);
         }

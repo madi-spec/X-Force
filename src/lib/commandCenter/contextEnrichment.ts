@@ -38,6 +38,7 @@ interface ContextData {
     health_score?: number;
     days_in_stage?: number;
     last_activity_at?: string;
+    expected_close_date?: string;
   };
   company?: {
     id: string;
@@ -71,9 +72,32 @@ interface ContextData {
     description?: string;
     created_at: string;
   }>;
+
+  // Meeting transcriptions with analysis
+  recentTranscripts?: Array<{
+    id: string;
+    title: string;
+    meeting_date: string;
+    summary?: string;
+    analysis?: {
+      nextSteps?: Array<{ action: string; owner: string; dueDate?: string }>;
+      commitments?: Array<{ commitment: string; by: string }>;
+      buyingSignals?: Array<{ signal: string; strength: string }>;
+      objections?: Array<{ objection: string; resolved: boolean }>;
+    };
+  }>;
+
+  // Engagement tracking
+  engagementSignals?: Array<{
+    type: string;
+    description: string;
+    occurred_at: string;
+    count?: number;
+  }>;
 }
 
 interface EnrichmentResult {
+  why_now: string | null;  // Specific, contextual reason - null if no specific data
   context_summary: string;
   considerations: string[];
   source_links: SourceLink[];
@@ -98,7 +122,7 @@ export async function gatherContext(item: CommandCenterItem): Promise<ContextDat
   if (item.deal_id) {
     const { data: deal } = await supabase
       .from('deals')
-      .select('id, name, stage, estimated_value, probability, health_score, stage_changed_at, last_activity_at')
+      .select('id, name, stage, estimated_value, probability, health_score, stage_changed_at, last_activity_at, expected_close_date')
       .eq('id', item.deal_id)
       .single();
 
@@ -174,6 +198,61 @@ export async function gatherContext(item: CommandCenterItem): Promise<ContextDat
     }
   }
 
+  // Fetch recent meeting transcriptions with analysis (last 3)
+  if (item.company_id || item.deal_id) {
+    const transcriptQuery = supabase
+      .from('meeting_transcriptions')
+      .select('id, title, meeting_date, summary, analysis')
+      .order('meeting_date', { ascending: false })
+      .limit(3);
+
+    if (item.deal_id) {
+      transcriptQuery.eq('deal_id', item.deal_id);
+    } else if (item.company_id) {
+      transcriptQuery.eq('company_id', item.company_id);
+    }
+
+    const { data: transcripts } = await transcriptQuery;
+
+    if (transcripts && transcripts.length > 0) {
+      context.recentTranscripts = transcripts.map(t => ({
+        id: t.id,
+        title: t.title,
+        meeting_date: t.meeting_date,
+        summary: t.summary || undefined,
+        analysis: t.analysis as {
+          nextSteps?: Array<{ action: string; owner: string; dueDate?: string }>;
+          commitments?: Array<{ commitment: string; by: string }>;
+          buyingSignals?: Array<{ signal: string; strength: string }>;
+          objections?: Array<{ objection: string; resolved: boolean }>;
+        },
+      }));
+    }
+  }
+
+  // Fetch engagement signals (document views, link clicks, etc.)
+  if (item.deal_id || item.company_id) {
+    const { data: signals } = await supabase
+      .from('engagement_events')
+      .select('event_type, description, occurred_at, metadata')
+      .or(
+        item.deal_id
+          ? `deal_id.eq.${item.deal_id}`
+          : `company_id.eq.${item.company_id}`
+      )
+      .order('occurred_at', { ascending: false })
+      .limit(10);
+
+    if (signals && signals.length > 0) {
+      context.engagementSignals = signals.map(s => ({
+        type: s.event_type,
+        description: s.description || s.event_type,
+        occurred_at: s.occurred_at,
+        count: (s.metadata as { count?: number })?.count,
+      }));
+    }
+  }
+
   return context;
 }
 
@@ -190,10 +269,13 @@ interface AIEnrichmentInput {
   contact?: ContextData['contact'];
   recent_emails?: ContextData['recentEmails'];
   recent_activities?: ContextData['recentActivities'];
-  why_now?: string;
+  recent_transcripts?: ContextData['recentTranscripts'];
+  engagement_signals?: ContextData['engagementSignals'];
+  existing_why_now?: string;
 }
 
 interface AIEnrichmentOutput {
+  why_now: string | null;  // MUST be specific or null
   context_summary: string;
   considerations: string[];
   email_subject?: string;
@@ -209,7 +291,53 @@ async function generateAIEnrichment(input: AIEnrichmentInput): Promise<AIEnrichm
     ? (input.deal.estimated_value || 0) * (input.deal.probability || 0.5)
     : 0;
 
-  const prompt = `You are a sales coach helping a rep prioritize their day across 200+ deals. They cannot remember specifics about each deal. Your job is to CONVINCE them why THIS action on THIS deal deserves their attention RIGHT NOW.
+  // Calculate days since last email response
+  const lastInboundEmail = input.recent_emails?.find(e => e.direction === 'inbound');
+  const lastOutboundEmail = input.recent_emails?.find(e => e.direction === 'outbound');
+  const daysSinceResponse = lastOutboundEmail && !lastInboundEmail
+    ? Math.floor((Date.now() - new Date(lastOutboundEmail.created_at).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  // Format transcript commitments
+  const transcriptContext = input.recent_transcripts?.map(t => {
+    const meetingDate = new Date(t.meeting_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const commitments = t.analysis?.commitments || [];
+    const nextSteps = t.analysis?.nextSteps || [];
+    const signals = t.analysis?.buyingSignals || [];
+
+    return `
+Meeting: "${t.title}" on ${meetingDate}
+${t.summary ? `Summary: ${t.summary}` : ''}
+${commitments.length ? `Commitments made: ${commitments.map(c => `"${c.commitment}" (by ${c.by})`).join(', ')}` : ''}
+${nextSteps.length ? `Next steps agreed: ${nextSteps.map(n => `"${n.action}" (owner: ${n.owner}${n.dueDate ? `, due: ${n.dueDate}` : ''})`).join(', ')}` : ''}
+${signals.length ? `Buying signals: ${signals.map(s => s.signal).join(', ')}` : ''}`;
+  }).join('\n');
+
+  // Format engagement signals
+  const engagementContext = input.engagement_signals?.slice(0, 5).map(s => {
+    const date = new Date(s.occurred_at);
+    const timeAgo = formatTimeAgo(date);
+    return `- ${s.type}: ${s.description} (${timeAgo}${s.count ? `, ${s.count}x` : ''})`;
+  }).join('\n');
+
+  const prompt = `You are a sales coach helping a rep prioritize their day. They manage 200+ deals and cannot remember specifics. Your job is to provide SPECIFIC, DATA-DRIVEN context.
+
+CRITICAL INSTRUCTION FOR "why_now":
+The "why_now" field MUST contain a SPECIFIC reason with real data. It should be ONE sentence that references:
+- A specific date, promise, or commitment from a meeting
+- Engagement activity (e.g., "Sarah viewed your proposal 3x yesterday at 11pm")
+- Silence duration after a specific action (e.g., "They've been silent 8 days since your pricing email on Dec 12")
+- A deadline or promise made (e.g., "You promised trial access by EOW on your Dec 15 call")
+
+NEVER use generic phrases like:
+- "Voice builds trust faster than email"
+- "Maintain momentum"
+- "Strike while iron is hot"
+- "Proposals move deals forward"
+- "Important to follow up"
+- Just date-based urgency like "Due today"
+
+If you cannot find a SPECIFIC reason from the data, set why_now to null.
 
 DEAL SNAPSHOT:
 ${input.deal ? `
@@ -221,50 +349,68 @@ ${input.deal ? `
 - Health Score: ${input.deal.health_score || 'Unknown'}/100
 - Days in Current Stage: ${input.deal.days_in_stage || 'Unknown'}
 - Last Activity: ${input.deal.last_activity_at ? new Date(input.deal.last_activity_at).toLocaleDateString() : 'Unknown'}
+${input.deal.expected_close_date ? `- Expected Close: ${new Date(input.deal.expected_close_date).toLocaleDateString()}` : ''}
 ` : 'No deal linked - this is an orphan action'}
 
 CONTACT: ${input.target_name || 'Unknown'}
 ACTION REQUESTED: ${input.title}
 
 ${input.recent_emails?.length ? `
-RECENT EMAIL THREAD:
-${input.recent_emails.slice(0, 3).map(e => `- [${e.direction.toUpperCase()}] ${e.subject}: "${e.snippet}"`).join('\n')}
-` : 'No recent email history.'}
+EMAIL THREAD (last 3):
+${input.recent_emails.slice(0, 3).map(e => {
+  const date = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `- [${e.direction.toUpperCase()}] ${date}: "${e.subject}" - "${e.snippet}"`;
+}).join('\n')}
+${daysSinceResponse ? `\n⚠️ ${daysSinceResponse} days since your last outbound with no response` : ''}
+` : 'No email history.'}
+
+${transcriptContext ? `
+MEETING TRANSCRIPTS:
+${transcriptContext}
+` : ''}
+
+${engagementContext ? `
+ENGAGEMENT SIGNALS:
+${engagementContext}
+` : ''}
 
 ${input.recent_activities?.length ? `
 RECENT ACTIVITY:
-${input.recent_activities.slice(0, 3).map(a => `- ${a.type}: ${a.subject}`).join('\n')}
-` : 'No recent activity logged.'}
+${input.recent_activities.slice(0, 3).map(a => {
+  const date = new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `- ${date}: ${a.type} - ${a.subject}`;
+}).join('\n')}
+` : ''}
 
 Based on this context, provide:
 
-1. context_summary: In 2-3 sentences, tell the rep:
-   - What's the business case? (deal size, stage, momentum)
-   - What happened recently that makes this timely? (last meeting, email, signal)
-   - What's at stake if they DON'T act? (deal at risk, competitor, going dark)
-   DO NOT mention "overdue" - focus on OPPORTUNITY and RISK.
+1. why_now: ONE specific sentence with real data. Examples:
+   - "You promised to send the proposal by Friday on your Dec 15 call"
+   - "They viewed your pricing deck 4x yesterday, last at 11:47pm"
+   - "8 days silent since your pricing email - deal may be going cold"
+   - "John mentioned talking to a competitor in last week's call"
+   Set to null if no specific data point justifies urgency.
 
-2. considerations: 2-4 specific tactical points:
-   - Buying signals or red flags from the data
-   - What to reference from recent conversations
-   - Stakeholder dynamics if known
-   - Competitive intelligence if relevant
+2. context_summary: 2-3 sentences covering:
+   - Business case (deal size, stage)
+   - Recent context (what happened)
+   - Stakes (what happens if no action)
+
+3. considerations: 2-4 specific tactical points from the data
 
 ${['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].includes(input.action_type) ? `
-3. email_subject: A specific, compelling subject line (reference something from context)
-4. email_body: A brief email (2-3 paragraphs) that:
-   - References the last interaction specifically
-   - Proposes a clear next step
-   - Creates urgency without being pushy
+4. email_subject: Specific subject referencing context
+5. email_body: Brief email (2-3 paragraphs) referencing last interaction
 ` : ''}
 
-Be SPECIFIC. Use actual names, dates, and numbers from the context. Generic advice is useless.`;
+Be SPECIFIC. Use actual names, dates, and numbers. Generic advice is worthless.`;
 
   const schema = `{
-  "context_summary": "string - 2-3 sentence business case with deal value, recent activity, and stakes",
-  "considerations": ["string array - 2-4 specific tactical points from the data"],
+  "why_now": "string or null - ONE specific sentence with real data, or null if no specific reason",
+  "context_summary": "string - 2-3 sentence business case",
+  "considerations": ["string array - 2-4 specific tactical points"],
   ${['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].includes(input.action_type) ? `
-  "email_subject": "string - specific subject referencing context",
+  "email_subject": "string - specific subject",
   "email_body": "string - personalized email body"
   ` : ''}
 }`;
@@ -273,20 +419,35 @@ Be SPECIFIC. Use actual names, dates, and numbers from the context. Generic advi
     const result = await callAIJson<AIEnrichmentOutput>({
       prompt,
       schema,
-      maxTokens: 1000,
-      temperature: 0.7,
-      model: 'claude-3-haiku-20240307', // Use haiku for speed
+      maxTokens: 1200,
+      temperature: 0.5,  // Lower temperature for more factual output
+      model: 'claude-3-haiku-20240307',
     });
 
     return result.data;
   } catch (error) {
     console.error('[ContextEnrichment] AI enrichment failed:', error);
-    // Return fallback
+    // Return fallback with null why_now (no generic fluff)
     return {
-      context_summary: input.why_now || `${input.action_type} action for ${input.company_name || input.target_name || 'this contact'}`,
-      considerations: ['Review the context before taking action', 'Be prepared with relevant information'],
+      why_now: null,
+      context_summary: input.existing_why_now || `${input.action_type} action for ${input.company_name || input.target_name || 'this contact'}`,
+      considerations: ['Review the context before taking action'],
     };
   }
+}
+
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // ============================================
@@ -407,10 +568,10 @@ export async function enrichItem(
   userId: string,
   item: CommandCenterItem
 ): Promise<EnrichmentResult> {
-  // Gather context
+  // Gather context including transcripts and engagement signals
   const context = await gatherContext(item);
 
-  // Generate AI enrichment
+  // Generate AI enrichment with all available context
   const aiResult = await generateAIEnrichment({
     action_type: item.action_type,
     title: item.title,
@@ -420,11 +581,14 @@ export async function enrichItem(
     contact: context.contact,
     recent_emails: context.recentEmails,
     recent_activities: context.recentActivities,
-    why_now: item.why_now || undefined,
+    recent_transcripts: context.recentTranscripts,
+    engagement_signals: context.engagementSignals,
+    existing_why_now: item.why_now || undefined,
   });
 
-  // Build result
+  // Build result - including the AI-generated specific why_now
   const result: EnrichmentResult = {
+    why_now: aiResult.why_now,  // Will be null if no specific reason found
     context_summary: aiResult.context_summary,
     considerations: aiResult.considerations,
     source_links: buildSourceLinks(context),
@@ -483,10 +647,11 @@ export async function enrichAndSaveItem(
   // Enrich
   const enrichment = await enrichItem(userId, item as CommandCenterItem);
 
-  // Save to database
+  // Save to database - including the new specific why_now
   const { error: updateError } = await supabase
     .from('command_center_items')
     .update({
+      why_now: enrichment.why_now,  // AI-generated specific reason (or null)
       context_summary: enrichment.context_summary,
       considerations: enrichment.considerations,
       source_links: enrichment.source_links,
@@ -525,7 +690,7 @@ export async function regenerateEmailDraft(
     throw new Error(`Item not found: ${itemId}`);
   }
 
-  // Gather context and regenerate
+  // Gather full context and regenerate
   // Force action_type to email_compose so AI always generates email fields
   const context = await gatherContext(item as CommandCenterItem);
   const aiResult = await generateAIEnrichment({
@@ -537,7 +702,9 @@ export async function regenerateEmailDraft(
     contact: context.contact,
     recent_emails: context.recentEmails,
     recent_activities: context.recentActivities,
-    why_now: item.why_now || undefined,
+    recent_transcripts: context.recentTranscripts,
+    engagement_signals: context.engagementSignals,
+    existing_why_now: item.why_now || undefined,
   });
 
   // If AI fails to generate email fields, create a fallback draft
