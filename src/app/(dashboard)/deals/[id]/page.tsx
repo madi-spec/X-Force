@@ -10,7 +10,6 @@ import {
   Building2,
   Calendar,
   DollarSign,
-  Edit2,
   User,
   Activity,
   Clock,
@@ -31,6 +30,7 @@ import { TeamSection } from '@/components/deals/TeamSection';
 import { DealRoomSection } from '@/components/deals/DealRoomSection';
 import { DealRoomAnalytics } from '@/components/deals/DealRoomAnalytics';
 import { DealIntelligenceCard } from '@/components/deals/DealIntelligenceCard';
+import { DealHeaderActions } from '@/components/deals/DealHeaderActions';
 import { ContactCardWithFacts } from '@/components/contacts';
 import { ActivityLogger } from '@/components/deals/ActivityLogger';
 import { MeetingActivityCard } from '@/components/meetings';
@@ -212,15 +212,12 @@ export default async function DealPage({ params }: DealPageProps) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Link
-                href={`/deals/${id}/edit`}
-                className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                <Edit2 className="h-4 w-4" />
-                Edit
-              </Link>
-            </div>
+            <DealHeaderActions
+              dealId={id}
+              dealName={deal.name}
+              dealValue={deal.estimated_value}
+              currentStage={deal.stage}
+            />
           </div>
         </div>
       </div>

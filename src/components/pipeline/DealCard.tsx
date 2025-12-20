@@ -6,6 +6,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Building2, Calendar, DollarSign, Phone, Zap, Bot, User, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils';
 import { getHealthScoreColor, getHealthScoreLabel, type Deal, type SalesTeam, type HealthTrend } from '@/types';
+import { MarkAsWonButton } from '@/components/deals/MarkAsWonButton';
 
 interface DealCardProps {
   deal: Deal;
@@ -180,6 +181,20 @@ export function DealCard({ deal }: DealCardProps) {
               <AlertTriangle className="h-3 w-3" />
               At Risk
             </span>
+          )}
+
+          {/* Quick Win Button */}
+          {deal.stage !== 'closed_won' && deal.stage !== 'closed_lost' && (
+            <div className="ml-auto">
+              <MarkAsWonButton
+                dealId={deal.id}
+                dealName={deal.name}
+                dealValue={deal.estimated_value}
+                currentStage={deal.stage}
+                variant="icon"
+                onSuccess={() => router.refresh()}
+              />
+            </div>
           )}
         </div>
       </div>
