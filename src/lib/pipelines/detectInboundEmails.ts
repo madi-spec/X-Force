@@ -118,6 +118,20 @@ function calculateSlaDueAt(receivedAt: string, slaMinutes: number): string {
 }
 
 /**
+ * Get time ago string
+ */
+function getTimeAgo(receivedAt: string): string {
+  const received = new Date(receivedAt);
+  const now = new Date();
+  const minutesAgo = Math.floor((now.getTime() - received.getTime()) / (1000 * 60));
+
+  if (minutesAgo < 60) {
+    return `${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`;
+  }
+  return `${Math.floor(minutesAgo / 60)} hour${Math.floor(minutesAgo / 60) !== 1 ? 's' : ''} ago`;
+}
+
+/**
  * Generate "why now" text based on trigger and timing
  */
 function generateWhyNow(
@@ -170,6 +184,60 @@ async function itemExists(
 }
 
 /**
+ * Check if an email is from an internal team member
+ */
+function isInternalEmail(
+  fromEmail: string,
+  fromName: string | null,
+  teamEmails: Set<string>,
+  teamNames: Set<string>,
+  internalDomains: Set<string>
+): boolean {
+  const emailLower = fromEmail.toLowerCase();
+
+  // Check if sender is a known team member by email
+  if (teamEmails.has(emailLower)) {
+    return true;
+  }
+
+  // Check if sender's domain is an internal domain
+  const domain = emailLower.split('@')[1];
+  if (domain && internalDomains.has(domain)) {
+    return true;
+  }
+
+  // Check if sender's name matches a team member
+  if (fromName) {
+    const nameLower = fromName.toLowerCase().trim();
+
+    // Exact match
+    if (teamNames.has(nameLower)) {
+      return true;
+    }
+
+    // Partial match (first + last name)
+    const nameParts = nameLower.split(' ').filter(p => p.length > 1);
+    if (nameParts.length >= 2) {
+      const firstName = nameParts[0];
+      const lastName = nameParts[nameParts.length - 1];
+
+      for (const teamName of teamNames) {
+        const teamParts = teamName.split(' ').filter(p => p.length > 1);
+        if (teamParts.length >= 2) {
+          const teamFirst = teamParts[0];
+          const teamLast = teamParts[teamParts.length - 1];
+          if (firstName === teamFirst && lastName === teamLast) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Main pipeline function: Process new inbound emails
  */
 export async function detectInboundEmails(userId?: string): Promise<PipelineResult> {
@@ -180,6 +248,28 @@ export async function detectInboundEmails(userId?: string): Promise<PipelineResu
     byTrigger: {},
     errors: [],
   };
+
+  // Get all team member emails and names to filter out internal messages
+  const { data: teamMembers } = await supabase
+    .from('users')
+    .select('email, name');
+
+  const teamEmails = new Set<string>(
+    (teamMembers || []).map(u => (u.email as string)?.toLowerCase()).filter(Boolean)
+  );
+
+  const teamNames = new Set<string>(
+    (teamMembers || []).map(u => (u.name as string)?.toLowerCase().trim()).filter(Boolean)
+  );
+
+  // Build set of internal domains from team email addresses
+  const internalDomains = new Set<string>();
+  for (const email of teamEmails) {
+    const domain = email.split('@')[1];
+    if (domain) {
+      internalDomains.add(domain);
+    }
+  }
 
   // Query for unprocessed inbound messages
   let query = supabase
@@ -232,6 +322,9 @@ export async function detectInboundEmails(userId?: string): Promise<PipelineResu
     try {
       result.messagesProcessed++;
 
+      // Check if this is an internal team member
+      const isInternal = isInternalEmail(message.from_email, message.from_name, teamEmails, teamNames, internalDomains);
+
       // Detect trigger
       const trigger = detectTrigger(message.subject, message.body_text || message.body_preview);
 
@@ -244,6 +337,13 @@ export async function detectInboundEmails(userId?: string): Promise<PipelineResu
           const now = new Date().toISOString();
           const fromName = message.from_name || message.from_email.split('@')[0];
 
+          // Same tier logic for both internal and external
+          // Just label internal emails differently
+          const titlePrefix = isInternal ? `Team: ${fromName}` : `${trigger.titlePrefix} ${fromName}`;
+          const whyNow = isInternal
+            ? `${fromName} (team) ${trigger.trigger.replace('_', ' ')} ${getTimeAgo(message.received_at)}.`
+            : generateWhyNow(trigger, message.from_name, message.received_at);
+
           await supabase.from('command_center_items').insert({
             user_id: message.user_id,
             conversation_id: message.conversation_ref,
@@ -251,9 +351,9 @@ export async function detectInboundEmails(userId?: string): Promise<PipelineResu
             company_id: conv?.company_id || null,
             contact_id: conv?.contact_id || null,
             action_type: trigger.actionType,
-            title: `${trigger.titlePrefix} ${fromName}`,
+            title: titlePrefix,
             description: message.subject || 'Email response needed',
-            why_now: generateWhyNow(trigger, message.from_name, message.received_at),
+            why_now: whyNow,
             tier: 1 as PriorityTier,
             tier_trigger: trigger.trigger,
             sla_minutes: trigger.slaMinutes,
@@ -262,7 +362,7 @@ export async function detectInboundEmails(userId?: string): Promise<PipelineResu
             due_at: calculateSlaDueAt(message.received_at, trigger.slaMinutes),
             target_name: fromName,
             status: 'pending',
-            source: 'email_sync',
+            source: isInternal ? 'email_sync_internal' : 'email_sync',
             created_at: now,
             updated_at: now,
           });

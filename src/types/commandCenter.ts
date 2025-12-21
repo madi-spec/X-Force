@@ -36,7 +36,9 @@ export type TierTrigger =
   | 'high_value'
   | 'strategic_account'
   | 'csuite_contact'
-  | 'deal_stale';
+  | 'deal_stale'
+  // Tier 5: BUILD PIPELINE (internal/other)
+  | 'internal_request';
 
 export type TierSlaStatus = 'on_track' | 'warning' | 'breached';
 
