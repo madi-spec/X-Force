@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { syncEmails } from '@/lib/microsoft/emailSync';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
+import { processUnanalyzedEmails } from '@/lib/email';
 
 /**
  * Background cron job to sync Microsoft 365 data for all active connections
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     userId: string;
     emailsImported: number;
     eventsImported: number;
+    emailsAnalyzed: number;
     errors: string[];
   }> = [];
 
@@ -61,10 +63,22 @@ export async function GET(request: Request) {
         syncCalendarEvents(connection.user_id),
       ]);
 
+      // Run AI analysis on newly synced emails (limit to 5 per user to avoid timeout)
+      let emailsAnalyzed = 0;
+      if (emailResult.imported > 0) {
+        try {
+          const analysisResult = await processUnanalyzedEmails(connection.user_id, 5);
+          emailsAnalyzed = analysisResult.itemsCreated;
+        } catch (analysisErr) {
+          console.error(`Email analysis failed for user ${connection.user_id}:`, analysisErr);
+        }
+      }
+
       results.push({
         userId: connection.user_id,
         emailsImported: emailResult.imported,
         eventsImported: calendarResult.imported,
+        emailsAnalyzed,
         errors: [...emailResult.errors, ...calendarResult.errors],
       });
     } catch (err) {
@@ -73,6 +87,7 @@ export async function GET(request: Request) {
         userId: connection.user_id,
         emailsImported: 0,
         eventsImported: 0,
+        emailsAnalyzed: 0,
         errors: [`Sync failed: ${err}`],
       });
     }
@@ -80,15 +95,17 @@ export async function GET(request: Request) {
 
   const totalEmails = results.reduce((sum, r) => sum + r.emailsImported, 0);
   const totalEvents = results.reduce((sum, r) => sum + r.eventsImported, 0);
+  const totalAnalyzed = results.reduce((sum, r) => sum + r.emailsAnalyzed, 0);
   const totalErrors = results.reduce((sum, r) => sum + r.errors.length, 0);
 
-  console.log(`Microsoft sync completed: ${totalEmails} emails, ${totalEvents} events, ${totalErrors} errors`);
+  console.log(`Microsoft sync completed: ${totalEmails} emails, ${totalEvents} events, ${totalAnalyzed} analyzed, ${totalErrors} errors`);
 
   return NextResponse.json({
     success: true,
     synced: connections.length,
     totalEmailsImported: totalEmails,
     totalEventsImported: totalEvents,
+    totalEmailsAnalyzed: totalAnalyzed,
     totalErrors,
     details: results,
   });
