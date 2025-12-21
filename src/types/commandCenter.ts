@@ -14,6 +14,7 @@ export type TierTrigger =
   | 'meeting_request'
   | 'direct_question'
   | 'email_reply'
+  | 'email_needs_response'
   | 'form_submission'
   | 'calendly_booking'
   // Tier 2: DON'T LOSE THIS
@@ -37,8 +38,14 @@ export type TierTrigger =
   | 'strategic_account'
   | 'csuite_contact'
   | 'deal_stale'
-  // Tier 5: BUILD PIPELINE (internal/other)
-  | 'internal_request';
+  | 'big_deal_attention'
+  | 'concern_unresolved'
+  | 'their_commitment_overdue'
+  // Tier 5: BUILD PIPELINE
+  | 'internal_request'
+  | 'cold_lead_reengage'
+  | 'new_contact_no_outreach'
+  | 'research_needed';
 
 export type TierSlaStatus = 'on_track' | 'warning' | 'breached';
 
@@ -125,6 +132,7 @@ export type ItemSource =
   | 'system'
   | 'manual'
   | 'email_sync'
+  | 'email_ai_analysis'  // AI-analyzed inbound emails with buying signals/concerns
   | 'calendar_sync'
   | 'signal_detection'
   | 'ai_recommendation'
@@ -649,6 +657,49 @@ export interface MeetingPrepContent {
   questions_to_ask: string[];
 }
 
+// ============================================
+// CONTEXT-AWARE MEETING PREP (New Rich Format)
+// ============================================
+
+export interface RelationshipStatus {
+  deal_stage: string | null;
+  deal_value: number | null;
+  deal_name: string | null;
+  sentiment: string | null;
+  days_since_contact: number | null;
+  total_interactions: number;
+}
+
+export interface OpenItems {
+  our_commitments_due: string[];
+  their_commitments_pending: string[];
+  unresolved_concerns: string[];
+}
+
+export interface PersonalizationNotes {
+  key_facts_to_reference: string[];
+  communication_style: string | null;
+}
+
+export interface ContextAwareMeetingPrep {
+  quick_context: string;
+  relationship_status: RelationshipStatus;
+  open_items: OpenItems;
+  talking_points: string[];
+  watch_out: string[];
+  suggested_goals: string[];
+  personalization: PersonalizationNotes;
+}
+
+export interface AttendeeWithContext {
+  email: string;
+  name: string;
+  title?: string;
+  role?: 'decision_maker' | 'influencer' | 'champion' | 'blocker' | 'unknown';
+  companyName?: string;
+  hasRichContext: boolean;
+}
+
 export interface PrepMaterial {
   type: 'meeting_notes' | 'email' | 'deal' | 'document' | 'research' | 'meeting' | 'transcript';
   label: string;
@@ -678,8 +729,12 @@ export interface MeetingWithPrep {
   // Enriched attendees
   attendees: MeetingAttendee[];
 
-  // AI-generated prep
+  // AI-generated prep (basic format - kept for backward compatibility)
   prep: MeetingPrepContent;
+
+  // Context-aware prep (new rich format from Relationship Intelligence)
+  context_aware_prep?: ContextAwareMeetingPrep;
+  attendees_with_context?: AttendeeWithContext[];
 
   // Materials
   prep_materials: PrepMaterial[];
@@ -687,6 +742,7 @@ export interface MeetingWithPrep {
   // Metadata
   generated_at?: string;
   last_refreshed_at?: string;
+  has_rich_context?: boolean;
 }
 
 // ============================================
