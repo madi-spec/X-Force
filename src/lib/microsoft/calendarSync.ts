@@ -8,6 +8,12 @@ interface CalendarSyncResult {
   errors: string[];
 }
 
+interface CalendarSyncOptions {
+  sinceDate?: Date;
+  untilDate?: Date;
+  maxEvents?: number;
+}
+
 // Map Windows timezone names to IANA timezone offsets (common ones)
 // Microsoft Graph uses Windows timezone names
 const TIMEZONE_OFFSETS: Record<string, number> = {
@@ -57,8 +63,9 @@ function convertToUTC(dateTime: string, timeZone: string): string {
 /**
  * Sync calendar events from Microsoft 365 to activities
  */
-export async function syncCalendarEvents(userId: string): Promise<CalendarSyncResult> {
+export async function syncCalendarEvents(userId: string, options: CalendarSyncOptions = {}): Promise<CalendarSyncResult> {
   const result: CalendarSyncResult = { imported: 0, skipped: 0, errors: [] };
+  const { sinceDate, untilDate, maxEvents = 100 } = options;
 
   console.log('[CalendarSync] Starting sync for user:', userId);
 
@@ -126,17 +133,17 @@ export async function syncCalendarEvents(userId: string): Promise<CalendarSyncRe
       .eq('id', userId)
       .single();
 
-    // Get calendar events for the next 30 days and past 7 days
+    // Get calendar events - use provided dates or defaults
     const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 7);
-    const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + 30);
+    const startDate = sinceDate || new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // Default: 7 days ago
+    const endDate = untilDate || new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // Default: 30 days ahead
+
+    console.log('[CalendarSync] Date range:', startDate.toISOString(), 'to', endDate.toISOString());
 
     const events = await client.getCalendarEvents({
       startDateTime: startDate.toISOString(),
       endDateTime: endDate.toISOString(),
-      top: 100,
+      top: maxEvents,
     });
 
     console.log('[CalendarSync] Fetched events:', events.value.length);

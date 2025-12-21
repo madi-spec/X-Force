@@ -8,11 +8,17 @@ interface EmailSyncResult {
   errors: string[];
 }
 
+interface EmailSyncOptions {
+  sinceDate?: Date;
+  maxMessages?: number;
+}
+
 /**
  * Sync emails from Microsoft 365 to activities
  */
-export async function syncEmails(userId: string): Promise<EmailSyncResult> {
+export async function syncEmails(userId: string, options: EmailSyncOptions = {}): Promise<EmailSyncResult> {
   const result: EmailSyncResult = { imported: 0, skipped: 0, errors: [] };
+  const { sinceDate, maxMessages = 50 } = options;
 
   console.log('[EmailSync] Starting sync for user:', userId);
 
@@ -80,18 +86,30 @@ export async function syncEmails(userId: string): Promise<EmailSyncResult> {
       .eq('id', userId)
       .single();
 
-    // Fetch recent inbox messages
+    // Build filter for date range if specified
+    const dateFilter = sinceDate
+      ? `receivedDateTime ge ${sinceDate.toISOString()}`
+      : undefined;
+    const sentDateFilter = sinceDate
+      ? `sentDateTime ge ${sinceDate.toISOString()}`
+      : undefined;
+
+    console.log('[EmailSync] Date filter:', dateFilter || 'none', '| Max messages:', maxMessages);
+
+    // Fetch inbox messages
     const inboxMessages = await client.getMessages('inbox', {
-      top: 50,
+      top: maxMessages,
       select: ['id', 'subject', 'bodyPreview', 'from', 'receivedDateTime', 'conversationId'],
       orderby: 'receivedDateTime desc',
+      filter: dateFilter,
     });
 
-    // Fetch recent sent messages
+    // Fetch sent messages
     const sentMessages = await client.getMessages('sentitems', {
-      top: 50,
+      top: maxMessages,
       select: ['id', 'subject', 'bodyPreview', 'toRecipients', 'sentDateTime', 'conversationId'],
       orderby: 'sentDateTime desc',
+      filter: sentDateFilter,
     });
 
     const allMessages = [
