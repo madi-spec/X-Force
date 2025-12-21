@@ -46,33 +46,36 @@ WHERE buying_signals IS NOT NULL AND buying_signals != '[]'::jsonb;
 -- ============================================
 
 INSERT INTO ai_prompts (
+  key,
   name,
-  slug,
+  description,
   category,
   purpose,
   variables,
-  system_prompt,
-  user_prompt_template,
-  output_schema,
+  prompt_template,
+  schema_template,
+  default_prompt_template,
+  default_schema_template,
   model,
   max_tokens,
-  temperature,
   is_active
 ) VALUES (
-  'Email Deep Analysis',
   'email_deep_analysis',
-  'email_analysis',
+  'Email Deep Analysis',
   'Performs deep AI analysis on inbound emails to extract buying signals, concerns, and generate response drafts',
+  'email_analysis',
+  'Analyze inbound emails for sales intelligence',
   ARRAY['sender_name', 'sender_email', 'sender_title', 'company_name', 'company_industry', 'company_size', 'relationship_stage', 'last_contact_days', 'total_interactions', 'deal_name', 'deal_value', 'deal_stage', 'interaction_history', 'meeting_summaries', 'thread_context', 'subject', 'received_at', 'email_body'],
-  'You are analyzing an inbound email for a sales team. Your job is to understand:
+  E'You are analyzing an inbound email for a sales team. Your job is to understand:
 1. Who is this person and what''s our relationship?
 2. What are they asking for or telling us?
 3. What buying signals or concerns are present?
 4. What should we do next?
 5. Draft a response if appropriate.
 
-Be specific - reference actual data from the context. Never be generic.',
-  E'## CONTEXT ABOUT THE SENDER
+Be specific - reference actual data from the context. Never be generic.
+
+## CONTEXT ABOUT THE SENDER
 
 <sender>
 Name: {{sender_name}}
@@ -116,8 +119,106 @@ Date: {{received_at}}
 
 ---
 
-Analyze this email and return JSON with the structure defined in the output schema.',
-  '{
+Analyze this email and return JSON matching the schema.',
+  E'{
+  "email_analysis": {
+    "request_type": "demo_request | pricing_question | general_question | meeting_request | follow_up | complaint | info_share | introduction | other",
+    "summary": "One sentence summary of what they want",
+    "full_understanding": "2-3 sentences explaining the full context",
+    "key_questions": ["Specific questions they asked"],
+    "urgency": "High | Medium | Low",
+    "sentiment": "Very Positive | Positive | Neutral | Concerned | Frustrated | Negative",
+    "tone": "Brief description of their tone"
+  },
+  "buying_signals": [
+    {
+      "signal": "What the signal indicates",
+      "quote": "Exact quote from email",
+      "strength": "strong | moderate | weak",
+      "implication": "What this means for the deal"
+    }
+  ],
+  "concerns_detected": [
+    {
+      "concern": "What they are worried about",
+      "quote": "Exact quote if available",
+      "severity": "high | medium | low",
+      "suggested_response": "How to address this"
+    }
+  ],
+  "suggested_actions": [
+    {
+      "action": "Specific action to take",
+      "priority": "high | medium | low",
+      "reasoning": "Why this action"
+    }
+  ],
+  "response_draft": {
+    "subject": "Re: {original_subject}",
+    "body": "Full draft email response"
+  },
+  "command_center_classification": {
+    "tier": 1,
+    "tier_trigger": "demo_request | pricing_request | email_reply | meeting_request",
+    "sla_minutes": 120,
+    "why_now": "One compelling sentence"
+  }
+}',
+  E'You are analyzing an inbound email for a sales team. Your job is to understand:
+1. Who is this person and what''s our relationship?
+2. What are they asking for or telling us?
+3. What buying signals or concerns are present?
+4. What should we do next?
+5. Draft a response if appropriate.
+
+Be specific - reference actual data from the context. Never be generic.
+
+## CONTEXT ABOUT THE SENDER
+
+<sender>
+Name: {{sender_name}}
+Email: {{sender_email}}
+Title: {{sender_title}}
+Company: {{company_name}}
+Industry: {{company_industry}}
+Company Size: {{company_size}}
+</sender>
+
+<relationship>
+Stage: {{relationship_stage}}
+Last Contact: {{last_contact_days}} days ago
+Total Interactions: {{total_interactions}}
+</relationship>
+
+<active_deal>
+Deal Name: {{deal_name}}
+Value: ${{deal_value}}
+Stage: {{deal_stage}}
+</active_deal>
+
+<recent_interactions>
+{{interaction_history}}
+</recent_interactions>
+
+<recent_meeting_context>
+{{meeting_summaries}}
+</recent_meeting_context>
+
+<email_thread>
+{{thread_context}}
+</email_thread>
+
+## THE NEW EMAIL TO ANALYZE
+
+Subject: {{subject}}
+Date: {{received_at}}
+
+{{email_body}}
+
+---
+
+Analyze this email and return JSON matching the schema.',
+  E'{
   "email_analysis": {
     "request_type": "demo_request | pricing_question | general_question | meeting_request | follow_up | complaint | info_share | introduction | other",
     "summary": "One sentence summary of what they want",
@@ -163,12 +264,14 @@ Analyze this email and return JSON with the structure defined in the output sche
 }',
   'claude-sonnet-4-20250514',
   2000,
-  0.7,
   true
-) ON CONFLICT (slug) DO UPDATE SET
+) ON CONFLICT (key) DO UPDATE SET
+  description = EXCLUDED.description,
+  category = EXCLUDED.category,
   purpose = EXCLUDED.purpose,
   variables = EXCLUDED.variables,
-  system_prompt = EXCLUDED.system_prompt,
-  user_prompt_template = EXCLUDED.user_prompt_template,
-  output_schema = EXCLUDED.output_schema,
+  prompt_template = EXCLUDED.prompt_template,
+  schema_template = EXCLUDED.schema_template,
+  model = EXCLUDED.model,
+  max_tokens = EXCLUDED.max_tokens,
   updated_at = NOW();
