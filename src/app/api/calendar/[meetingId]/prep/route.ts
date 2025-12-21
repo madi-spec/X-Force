@@ -217,8 +217,7 @@ export async function GET(
       .select(`
         id,
         subject,
-        start_at,
-        end_at,
+        occurred_at,
         deal_id,
         company_id,
         contact_id,
@@ -234,13 +233,13 @@ export async function GET(
       meeting = meetingById;
     } else {
       // Try by Microsoft Graph event ID in metadata
-      const { data: meetingByExternalId } = await supabase
+      // Calendar sync stores the Graph ID as metadata.microsoft_id
+      const { data: meetingByMsId } = await supabase
         .from('activities')
         .select(`
           id,
           subject,
-          start_at,
-          end_at,
+          occurred_at,
           deal_id,
           company_id,
           contact_id,
@@ -249,10 +248,32 @@ export async function GET(
           company:companies(id, name)
         `)
         .eq('type', 'meeting')
-        .contains('metadata', { external_id: meetingId })
+        .contains('metadata', { microsoft_id: meetingId })
         .single();
 
-      meeting = meetingByExternalId;
+      if (meetingByMsId) {
+        meeting = meetingByMsId;
+      } else {
+        // Also try by external_id column (which has 'ms_event_' prefix)
+        const { data: meetingByExternalId } = await supabase
+          .from('activities')
+          .select(`
+            id,
+            subject,
+            occurred_at,
+            deal_id,
+            company_id,
+            contact_id,
+            metadata,
+            deal:deals(id, name, stage, estimated_value, health_score),
+            company:companies(id, name)
+          `)
+          .eq('type', 'meeting')
+          .eq('external_id', `ms_event_${meetingId}`)
+          .single();
+
+        meeting = meetingByExternalId;
+      }
     }
 
     if (!meeting) {
@@ -314,14 +335,18 @@ export async function GET(
       });
     }
 
+    // Get times from metadata (stored by sync) or fall back to occurred_at
+    const startTime = meeting.metadata?.start_time || meeting.occurred_at;
+    const endTime = meeting.metadata?.end_time || null;
+
     // Save prep to database
     const prepRecord = {
       user_id: dbUser.id,
       meeting_id: meetingId,
-      meeting_external_id: meeting.metadata?.external_id,
+      meeting_external_id: meeting.metadata?.microsoft_id || meeting.metadata?.external_id,
       title: meeting.subject,
-      start_time: meeting.start_at,
-      end_time: meeting.end_at,
+      start_time: startTime,
+      end_time: endTime,
       join_url: meeting.metadata?.join_url,
       company_id: meeting.company_id,
       deal_id: meeting.deal_id,
@@ -347,10 +372,10 @@ export async function GET(
     const response: MeetingWithPrep = {
       id: savedPrep?.id || '',
       meeting_id: meetingId,
-      meeting_external_id: meeting.metadata?.external_id,
+      meeting_external_id: meeting.metadata?.microsoft_id || meeting.metadata?.external_id,
       title: meeting.subject,
-      start_time: meeting.start_at,
-      end_time: meeting.end_at,
+      start_time: startTime,
+      end_time: endTime,
       join_url: meeting.metadata?.join_url,
       company_id: meeting.company_id,
       company_name: (() => {

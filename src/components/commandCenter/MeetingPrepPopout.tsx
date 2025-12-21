@@ -112,10 +112,16 @@ export function MeetingPrepPopout({
 
       try {
         const response = await fetch(`/api/calendar/${meeting.meeting_id}/prep`);
-        if (!response.ok) {
-          throw new Error('Failed to load meeting prep');
-        }
         const data = await response.json();
+
+        if (!response.ok) {
+          // Provide a more helpful message for 404
+          if (response.status === 404) {
+            throw new Error('Meeting prep not available yet. This meeting hasn\'t been synced to activities.');
+          }
+          throw new Error(data.error || 'Failed to load meeting prep');
+        }
+
         setPrep(data);
       } catch (err) {
         console.error('[MeetingPrep] Error:', err);

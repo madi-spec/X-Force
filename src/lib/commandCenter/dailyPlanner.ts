@@ -121,10 +121,142 @@ async function getCalendarEventsForDay(
       timezone,
     });
 
-    return events.value || [];
+    const fetchedEvents = events.value || [];
+
+    // Sync events to activities table in the background (don't block)
+    syncEventsToActivities(userId, fetchedEvents).catch(err => {
+      console.error('[DailyPlanner] Background sync error:', err);
+    });
+
+    return fetchedEvents;
   } catch (error) {
     console.error('[DailyPlanner] Error fetching calendar:', error);
     return [];
+  }
+}
+
+/**
+ * Sync calendar events to activities table for meeting prep
+ * This runs in the background and doesn't block the main flow
+ */
+async function syncEventsToActivities(userId: string, events: CalendarEvent[]): Promise<void> {
+  if (events.length === 0) return;
+
+  const supabase = createAdminClient();
+
+  // Get contacts for matching attendees
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('id, email, company_id')
+    .not('email', 'is', null);
+
+  const contactsByEmail = new Map(
+    contacts?.map(c => [c.email?.toLowerCase(), c]) || []
+  );
+
+  // Get deals for contacts
+  const contactIds = contacts?.map(c => c.id) || [];
+  const { data: dealContacts } = await supabase
+    .from('deal_contacts')
+    .select('contact_id, deal_id')
+    .in('contact_id', contactIds.length > 0 ? contactIds : ['none']);
+
+  const dealsByContact = new Map<string, string>();
+  dealContacts?.forEach(dc => {
+    if (!dealsByContact.has(dc.contact_id)) {
+      dealsByContact.set(dc.contact_id, dc.deal_id);
+    }
+  });
+
+  // Get or create External Contacts company for unmatched events
+  let { data: externalCompany } = await supabase
+    .from('companies')
+    .select('id')
+    .eq('name', 'External Contacts')
+    .single();
+
+  if (!externalCompany) {
+    const { data: newCompany } = await supabase
+      .from('companies')
+      .insert({ name: 'External Contacts', industry: 'pest', segment: 'smb', status: 'prospect' })
+      .select('id')
+      .single();
+    externalCompany = newCompany;
+  }
+
+  const externalCompanyId = externalCompany?.id;
+
+  for (const event of events) {
+    try {
+      // Skip cancelled events
+      if ((event as { isCancelled?: boolean }).isCancelled) continue;
+
+      // Check if already synced
+      const externalId = `ms_event_${event.id}`;
+      const { data: existing } = await supabase
+        .from('activities')
+        .select('id')
+        .eq('external_id', externalId)
+        .single();
+
+      if (existing) continue; // Already synced
+
+      // Find matching contact from attendees
+      let matchedContact = null;
+      const attendeeEmails: string[] = [];
+
+      if (event.attendees) {
+        for (const attendee of event.attendees) {
+          const email = attendee.emailAddress?.address?.toLowerCase();
+          if (email) {
+            attendeeEmails.push(email);
+            if (!matchedContact && contactsByEmail.has(email)) {
+              matchedContact = contactsByEmail.get(email);
+            }
+          }
+        }
+      }
+
+      // Get deal for this contact
+      const dealId = matchedContact ? dealsByContact.get(matchedContact.id) : null;
+      const companyId = matchedContact?.company_id || externalCompanyId;
+
+      if (!companyId) continue; // Can't sync without a company
+
+      // Parse event times
+      const startTime = event.start?.dateTime
+        ? new Date(event.start.dateTime + 'Z').toISOString()
+        : new Date().toISOString();
+      const endTime = event.end?.dateTime
+        ? new Date(event.end.dateTime + 'Z').toISOString()
+        : null;
+
+      // Create activity record
+      const activityData = {
+        type: 'meeting' as const,
+        subject: event.subject || '(No subject)',
+        contact_id: matchedContact?.id || null,
+        company_id: companyId,
+        deal_id: dealId || null,
+        user_id: userId,
+        occurred_at: startTime,
+        metadata: {
+          microsoft_id: event.id,
+          is_online: event.isOnlineMeeting,
+          join_url: event.onlineMeetingUrl,
+          attendees: attendeeEmails,
+          start_time: startTime,
+          end_time: endTime,
+          has_contact: !!matchedContact,
+        },
+        external_id: externalId,
+      };
+
+      await supabase.from('activities').insert(activityData);
+    } catch (err) {
+      // Log but don't throw - we don't want to break the main flow
+      console.error(`[DailyPlanner] Failed to sync event ${event.id}:`, err);
+    }
   }
 }
 
