@@ -515,23 +515,28 @@ async function calculateLinkConfidence(
     companyId = contact.company_id;
     reasoning.push(`Matched contact: ${contact.name}`);
 
-    // Check for active deals
-    const { data: dealContacts } = await supabase
-      .from('deal_contacts')
-      .select('deal_id, deals!inner(id, name, stage)')
-      .eq('contact_id', contact.id)
-      .not('deals.stage', 'in', '("closed_won","closed_lost")');
+    // Check for active deals via company_id (deals are linked to companies, not contacts)
+    if (contact.company_id) {
+      const { data: companyDeals } = await supabase
+        .from('deals')
+        .select('id, name, stage')
+        .eq('company_id', contact.company_id)
+        .not('stage', 'in', '("closed_won","closed_lost")');
 
-    if (dealContacts && dealContacts.length === 1) {
-      confidence += 45; // High confidence - known contact on single deal
-      dealId = dealContacts[0].deal_id;
-      reasoning.push(`Contact on one active deal`);
-    } else if (dealContacts && dealContacts.length > 1) {
-      confidence += 30; // Medium - we know the contact but need deal disambiguation
-      reasoning.push(`Contact on ${dealContacts.length} deals - needs disambiguation`);
+      if (companyDeals && companyDeals.length === 1) {
+        confidence += 45; // High confidence - company has one active deal
+        dealId = companyDeals[0].id;
+        reasoning.push(`Company has one active deal: ${companyDeals[0].name}`);
+      } else if (companyDeals && companyDeals.length > 1) {
+        confidence += 30; // Medium - we know the company but need deal disambiguation
+        reasoning.push(`Company has ${companyDeals.length} deals - needs disambiguation`);
+      } else {
+        confidence += 35; // Good confidence - known contact, just no active deal
+        reasoning.push(`Known contact, no active deals`);
+      }
     } else {
-      confidence += 35; // Good confidence - known contact, just no active deal
-      reasoning.push(`Known contact, no active deals`);
+      confidence += 35; // Good confidence - known contact, but no company
+      reasoning.push(`Known contact, no company linked`);
     }
   } else {
     // Try domain match
