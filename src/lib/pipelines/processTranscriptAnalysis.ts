@@ -8,7 +8,7 @@
  * Creates command center items for each detected signal.
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { PriorityTier, TierTrigger } from '@/types/commandCenter';
 
 // Types for transcript analysis structure
@@ -335,7 +335,7 @@ async function processCommitments(
  * Main pipeline function: Process all unprocessed transcripts
  */
 export async function processTranscriptAnalysis(userId?: string): Promise<PipelineResult> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const result: PipelineResult = {
     transcriptsProcessed: 0,
     itemsCreated: 0,
@@ -399,6 +399,105 @@ export async function processTranscriptAnalysis(userId?: string): Promise<Pipeli
   }
 
   return result;
+}
+
+/**
+ * Process a single transcript for command center items
+ * Called immediately after AI analysis completes
+ */
+export async function processSingleTranscript(transcriptId: string): Promise<{
+  success: boolean;
+  itemsCreated: number;
+  tier2Items: number;
+  tier3Items: number;
+  error?: string;
+}> {
+  const supabase = createAdminClient();
+
+  // Fetch the transcript with analysis
+  const { data: transcript, error: fetchError } = await supabase
+    .from('meeting_transcriptions')
+    .select('*')
+    .eq('id', transcriptId)
+    .single();
+
+  if (fetchError || !transcript) {
+    return {
+      success: false,
+      itemsCreated: 0,
+      tier2Items: 0,
+      tier3Items: 0,
+      error: fetchError?.message || 'Transcript not found',
+    };
+  }
+
+  // Check if already processed
+  if (transcript.cc_items_created) {
+    return {
+      success: true,
+      itemsCreated: 0,
+      tier2Items: 0,
+      tier3Items: 0,
+      error: 'Already processed',
+    };
+  }
+
+  // Check if analysis exists
+  if (!transcript.analysis) {
+    return {
+      success: false,
+      itemsCreated: 0,
+      tier2Items: 0,
+      tier3Items: 0,
+      error: 'No analysis available',
+    };
+  }
+
+  try {
+    const typedTranscript: Transcript = {
+      id: transcript.id,
+      user_id: transcript.user_id,
+      deal_id: transcript.deal_id,
+      company_id: transcript.company_id,
+      contact_id: transcript.contact_id,
+      title: transcript.title,
+      meeting_date: transcript.meeting_date,
+      analysis: transcript.analysis as TranscriptAnalysis,
+    };
+
+    // Process buying signals -> Tier 2
+    const tier2Created = await processBuyingSignals(supabase, typedTranscript, typedTranscript.analysis!);
+
+    // Process commitments -> Tier 3
+    const tier3Created = await processCommitments(supabase, typedTranscript, typedTranscript.analysis!);
+
+    const totalCreated = tier2Created + tier3Created;
+
+    // Mark transcript as processed
+    await supabase
+      .from('meeting_transcriptions')
+      .update({
+        cc_items_created: true,
+        cc_processed_at: new Date().toISOString(),
+      })
+      .eq('id', transcriptId);
+
+    return {
+      success: true,
+      itemsCreated: totalCreated,
+      tier2Items: tier2Created,
+      tier3Items: tier3Created,
+    };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    return {
+      success: false,
+      itemsCreated: 0,
+      tier2Items: 0,
+      tier3Items: 0,
+      error: errorMsg,
+    };
+  }
 }
 
 export default processTranscriptAnalysis;

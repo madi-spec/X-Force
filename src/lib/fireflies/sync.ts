@@ -13,12 +13,14 @@ import {
   createEntityReviewTask,
   AIEntityMatchResult,
 } from '@/lib/ai/transcriptEntityMatcher';
+import { processSingleTranscript } from '@/lib/pipelines';
 
 export interface SyncResult {
   synced: number;
   analyzed: number;
   skipped: number;
   reviewTasksCreated: number;
+  ccItemsCreated: number;
   errors: string[];
 }
 
@@ -57,6 +59,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
   let analyzed = 0;
   let skipped = 0;
   let reviewTasksCreated = 0;
+  let ccItemsCreated = 0;
 
   // Get user's Fireflies connection
   const { data: connection, error: connError } = await supabase
@@ -366,6 +369,17 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
 
             analyzed++;
 
+            // Process transcript for command center items
+            try {
+              const ccResult = await processSingleTranscript(saved.id);
+              if (ccResult.success) {
+                ccItemsCreated += ccResult.itemsCreated;
+                console.log(`[Fireflies Sync] Created ${ccResult.itemsCreated} CC items (${ccResult.tier2Items} tier 2, ${ccResult.tier3Items} tier 3)`);
+              }
+            } catch (ccError) {
+              console.error('[Fireflies Sync] Failed to create CC items:', ccError);
+            }
+
             // Auto-create tasks if enabled
             if (connection.auto_create_tasks && analysis.actionItems) {
               await createTasksFromActionItems(
@@ -422,7 +436,24 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
     throw error;
   }
 
-  return { synced, analyzed, skipped, reviewTasksCreated, errors };
+  return { synced, analyzed, skipped, reviewTasksCreated, ccItemsCreated, errors };
+}
+
+// Internal/sales team email domains to exclude from matching
+// These are X-RAI internal emails that shouldn't be used to match transcripts to companies
+const INTERNAL_EMAIL_DOMAINS = new Set([
+  'affiliatedtech.com',
+  'x-rai.com',
+  'xrai.com',
+  'xrailabs.com',
+]);
+
+/**
+ * Check if an email is from an internal domain
+ */
+function isInternalEmail(email: string): boolean {
+  const domain = email.toLowerCase().split('@')[1];
+  return domain ? INTERNAL_EMAIL_DOMAINS.has(domain) : false;
 }
 
 /**
@@ -438,10 +469,10 @@ async function matchTranscriptToEntities(
   let confidence = 0;
   let matchMethod: 'email' | 'name' | 'ai' | 'none' = 'none';
 
-  // Extract emails from participants
+  // Extract emails from participants, excluding internal domains
   const emails = participants
     .map((p) => p.email)
-    .filter((email): email is string => !!email);
+    .filter((email): email is string => !!email && !isInternalEmail(email));
 
   if (emails.length > 0) {
     // Find contacts by email

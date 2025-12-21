@@ -5,7 +5,7 @@
  * by scanning various data sources for tier-specific triggers.
  */
 
-export { processTranscriptAnalysis } from './processTranscriptAnalysis';
+export { processTranscriptAnalysis, processSingleTranscript } from './processTranscriptAnalysis';
 export { detectInboundEmails } from './detectInboundEmails';
 export { detectDealDeadlines } from './detectDealDeadlines';
 export { detectMeetingFollowups } from './detectMeetingFollowups';

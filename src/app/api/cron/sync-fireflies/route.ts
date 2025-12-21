@@ -48,6 +48,7 @@ export async function GET(request: Request) {
     userId: string;
     transcriptsSynced: number;
     transcriptsAnalyzed: number;
+    ccItemsCreated: number;
     errors: string[];
   }> = [];
 
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
         userId: connection.user_id,
         transcriptsSynced: result.synced,
         transcriptsAnalyzed: result.analyzed,
+        ccItemsCreated: result.ccItemsCreated,
         errors: result.errors,
       });
     } catch (err) {
@@ -68,6 +70,7 @@ export async function GET(request: Request) {
         userId: connection.user_id,
         transcriptsSynced: 0,
         transcriptsAnalyzed: 0,
+        ccItemsCreated: 0,
         errors: [`Sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`],
       });
     }
@@ -75,10 +78,11 @@ export async function GET(request: Request) {
 
   const totalSynced = results.reduce((sum, r) => sum + r.transcriptsSynced, 0);
   const totalAnalyzed = results.reduce((sum, r) => sum + r.transcriptsAnalyzed, 0);
+  const totalCCItems = results.reduce((sum, r) => sum + r.ccItemsCreated, 0);
   const totalErrors = results.reduce((sum, r) => sum + r.errors.length, 0);
 
   console.log(
-    `Fireflies sync completed: ${totalSynced} transcripts synced, ${totalAnalyzed} analyzed, ${totalErrors} errors`
+    `Fireflies sync completed: ${totalSynced} transcripts synced, ${totalAnalyzed} analyzed, ${totalCCItems} CC items, ${totalErrors} errors`
   );
 
   return NextResponse.json({
@@ -86,6 +90,7 @@ export async function GET(request: Request) {
     connectionsProcessed: connections.length,
     totalTranscriptsSynced: totalSynced,
     totalTranscriptsAnalyzed: totalAnalyzed,
+    totalCCItemsCreated: totalCCItems,
     totalErrors,
     details: results,
   });
