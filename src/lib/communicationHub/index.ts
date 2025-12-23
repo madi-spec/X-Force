@@ -20,3 +20,23 @@ export {
   syncTranscriptToCommunications,
   syncAllTranscriptsToCommunications,
 } from './adapters/transcriptAdapter';
+
+// Analysis (Phase 2)
+export {
+  analyzeCommunication,
+  analyzeAllPending,
+} from './analysis/analyzeCommunication';
+
+export {
+  filterByConfidence,
+  categorizeByConfidence,
+  getConfidenceLabel,
+  canTriggerAction,
+} from './analysis/confidenceGating';
+
+export {
+  buildAnalysisPrompt,
+  ANALYSIS_PROMPT_VERSION,
+  PRODUCTS,
+  COMMUNICATION_TYPES,
+} from './analysis/prompts/v1';
