@@ -124,6 +124,40 @@ export async function GET(
       .limit(1)
       .single();
 
+    // Get contacts first so we can use them for stakeholders
+    const { data: contacts } = await supabase
+      .from('contacts')
+      .select(`
+        id, name, email, title, role, is_primary,
+        relationship_intelligence:relationship_intelligence(relationship_summary)
+      `)
+      .eq('company_id', companyId)
+      .order('is_primary', { ascending: false })
+      .order('name');
+
+    // Auto-generate stakeholders from contacts if none exist in RI
+    const autoStakeholders = (contacts || []).map((c: Record<string, unknown>) => {
+      // Infer role from title
+      const title = ((c.title as string) || '').toLowerCase();
+      let role = 'user';
+      if (title.includes('ceo') || title.includes('owner') || title.includes('president') || title.includes('vp') || title.includes('director')) {
+        role = 'decision_maker';
+      } else if (title.includes('manager') || title.includes('supervisor')) {
+        role = 'influencer';
+      } else if (c.is_primary) {
+        role = 'champion';
+      }
+
+      return {
+        contact_id: c.id as string,
+        name: c.name as string,
+        role,
+        sentiment: 'neutral',
+        last_interaction: null,
+        notes: c.title as string | null,
+      };
+    });
+
     // Transform RI data to the format the UI expects
     // Database stores: open_commitments.ours, signals.buying_signals, context.key_facts
     // UI expects: context.our_commitments, context.buying_signals, context.facts
@@ -142,8 +176,10 @@ export async function GET(
         objections: (rawRI.signals as any)?.objections || [],
         // Map top-level interactions to context
         interactions: rawRI.interactions || [],
-        // Stakeholders from context
-        stakeholders: (rawRI.context as any)?.stakeholders || [],
+        // Use stored stakeholders or auto-generate from contacts
+        stakeholders: (rawRI.context as any)?.stakeholders?.length > 0
+          ? (rawRI.context as any)?.stakeholders
+          : autoStakeholders,
       },
       // Also keep summary accessible
       context_summary: rawRI.relationship_summary,
@@ -154,18 +190,7 @@ export async function GET(
         : null,
     } : null;
 
-    // Get linked contacts with their RI summaries
-    const { data: contacts } = await supabase
-      .from('contacts')
-      .select(`
-        id, name, email, title, role, is_primary,
-        relationship_intelligence:relationship_intelligence(relationship_summary)
-      `)
-      .eq('company_id', companyId)
-      .order('is_primary', { ascending: false })
-      .order('name');
-
-    // Map contacts to include relationship summary
+    // Map contacts to include relationship summary (contacts already fetched above for stakeholders)
     const contactsWithSummary = (contacts || []).map((c: Record<string, unknown>) => {
       const ri = c.relationship_intelligence as Record<string, unknown>[] | null;
       return {
