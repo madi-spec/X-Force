@@ -70,10 +70,10 @@ function CommitmentCard({
       className={cn(
         'flex items-start gap-3 p-3 rounded-lg border transition-colors',
         status === 'completed'
-          ? 'bg-gray-50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700'
+          ? 'bg-gray-50 border-gray-200'
           : status === 'overdue'
-          ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800'
-          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+          ? 'bg-red-50 border-red-200'
+          : 'bg-white border-gray-200 hover:border-blue-300'
       )}
     >
       <button
@@ -83,7 +83,7 @@ function CommitmentCard({
           'mt-0.5 p-0.5 rounded transition-colors',
           status === 'completed'
             ? 'cursor-default'
-            : 'hover:bg-gray-200 dark:hover:bg-gray-600'
+            : 'hover:bg-gray-200'
         )}
       >
         <StatusIcon
@@ -104,7 +104,7 @@ function CommitmentCard({
             'text-sm',
             status === 'completed'
               ? 'text-gray-500 line-through'
-              : 'text-gray-900 dark:text-gray-100'
+              : 'text-gray-900'
           )}
         >
           {commitment.commitment}
@@ -150,12 +150,12 @@ export function CommitmentsTracker({
   const totalOverdue = [...ourPending, ...theirPending].filter(isOverdue).length;
 
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-6">
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-blue-500" />
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+          <h3 className="font-medium text-gray-900">
             Commitments
           </h3>
         </div>
@@ -175,9 +175,9 @@ export function CommitmentsTracker({
       <div className="grid grid-cols-2 gap-6">
         {/* Our Commitments */}
         <div>
-          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
             <ArrowRight className="w-4 h-4 text-green-500" />
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <h4 className="text-sm font-medium text-gray-700">
               We Promised ({ourPending.length})
             </h4>
           </div>
@@ -201,9 +201,9 @@ export function CommitmentsTracker({
 
         {/* Their Commitments */}
         <div>
-          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
             <ArrowLeft className="w-4 h-4 text-blue-500" />
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <h4 className="text-sm font-medium text-gray-700">
               They Promised ({theirPending.length})
             </h4>
           </div>
@@ -248,7 +248,7 @@ export function CommitmentsTracker({
 
       {/* Completed commitments */}
       {showCompleted && (
-        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 gap-6">
+        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-6">
           <div className="space-y-2">
             {ourCompleted.map((commitment, index) => (
               <CommitmentCard
