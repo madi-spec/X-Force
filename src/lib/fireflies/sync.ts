@@ -6,13 +6,19 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { FirefliesClient, FirefliesTranscript } from './client';
 import { analyzeMeetingTranscription } from '@/lib/ai/meetingAnalysisService';
+// Migrated to context-first architecture
 import {
-  aiMatchTranscriptToEntities,
+  intelligentEntityMatch,
+  updateRelationshipIntelligence,
+  type CommunicationInput,
+  type EntityMatchResult,
+} from '@/lib/intelligence';
+import {
   createTranscriptReviewTask,
   extractEntityDataFromTranscript,
   createEntityReviewTask,
-  AIEntityMatchResult,
-} from '@/lib/ai/transcriptEntityMatcher';
+  type TranscriptMatchResult,
+} from './transcriptUtils';
 import { processSingleTranscript } from '@/lib/pipelines';
 
 export interface SyncResult {
@@ -45,7 +51,7 @@ interface MatchResult {
   companyId: string | null;
   contactIds: string[];
   confidence: number;
-  aiMatchResult?: AIEntityMatchResult;
+  aiMatchResult?: TranscriptMatchResult;
   matchMethod: 'email' | 'name' | 'ai' | 'none';
 }
 
@@ -145,31 +151,56 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
         if (match.confidence < AI_MATCH_THRESHOLD && transcriptText.length > 100) {
           console.log('[Fireflies Sync] Low confidence basic match, using AI matching...');
           try {
-            const aiMatch = await aiMatchTranscriptToEntities(
-              transcriptText,
-              transcript.title || 'Untitled Meeting',
-              participants,
-              userId
-            );
+            // Build CommunicationInput for the new entity matcher
+            const communication: CommunicationInput = {
+              type: 'transcript',
+              attendees: participants.map(p => p.email || p.name),
+              title: transcript.title || 'Untitled Meeting',
+              transcript_text: transcriptText,
+            };
+
+            const entityMatch = await intelligentEntityMatch(communication, userId);
 
             // Update match with AI results if AI found a match
-            if (aiMatch.companyMatch || aiMatch.dealMatch) {
+            if (entityMatch.company) {
+              // Convert EntityMatchResult to TranscriptMatchResult format
+              const aiMatchResult: TranscriptMatchResult = {
+                companyId: entityMatch.company.id,
+                companyName: entityMatch.company.name,
+                dealId: null, // EntityMatchResult doesn't include deal
+                confidence: entityMatch.confidence,
+                reasoning: entityMatch.reasoning,
+                requiresHumanReview: entityMatch.confidence < 0.7,
+                reviewReason: entityMatch.confidence < 0.7 ? 'Low confidence match - review recommended' : null,
+                extractedCompanyName: entityMatch.company.name,
+                extractedPersonNames: participants.map(p => p.name),
+              };
+
               match = {
-                dealId: aiMatch.dealMatch?.id || match.dealId,
-                companyId: aiMatch.companyMatch?.id || match.companyId,
-                contactIds: match.contactIds, // Keep contacts from basic matching
-                confidence: aiMatch.overallConfidence,
-                aiMatchResult: aiMatch,
+                dealId: match.dealId, // Keep deal from basic matching
+                companyId: entityMatch.company.id,
+                contactIds: entityMatch.contact ? [entityMatch.contact.id] : match.contactIds,
+                confidence: entityMatch.confidence,
+                aiMatchResult,
                 matchMethod: 'ai',
               };
               console.log('[Fireflies Sync] AI match found:', {
-                company: aiMatch.companyMatch?.name,
-                deal: aiMatch.dealMatch?.name,
-                confidence: aiMatch.overallConfidence,
+                company: entityMatch.company.name,
+                confidence: entityMatch.confidence,
               });
             } else {
-              // AI didn't find a match either, but save the result for review task creation
-              match.aiMatchResult = aiMatch;
+              // AI didn't find a match, but save the result for review task creation
+              match.aiMatchResult = {
+                companyId: null,
+                companyName: null,
+                dealId: null,
+                confidence: entityMatch.confidence,
+                reasoning: entityMatch.reasoning,
+                requiresHumanReview: true,
+                reviewReason: 'No matching company found',
+                extractedCompanyName: null,
+                extractedPersonNames: participants.map(p => p.name),
+              };
               match.matchMethod = match.confidence > 0 ? match.matchMethod : 'none';
             }
           } catch (aiError) {
@@ -298,23 +329,22 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
             } else {
               // Couldn't extract enough data - create simple review task
               console.log('[Fireflies Sync] Could not extract entity data, creating basic review task');
-              const aiResult = match.aiMatchResult || {
-                companyMatch: null,
-                dealMatch: null,
-                suggestedSalesTeam: null,
-                overallConfidence: match.confidence,
+              const fallbackResult: TranscriptMatchResult = match.aiMatchResult || {
+                companyId: null,
+                companyName: null,
+                dealId: null,
+                confidence: match.confidence,
                 reasoning: 'Could not extract sufficient entity data from transcript',
-                extractedCompanyName: null,
-                extractedPersonNames: participants.map((p) => p.name),
-                extractedTopics: [],
                 requiresHumanReview: true,
                 reviewReason: 'AI could not determine company or deal - manual review required',
+                extractedCompanyName: null,
+                extractedPersonNames: participants.map((p) => p.name),
               };
 
               const taskId = await createTranscriptReviewTask(
                 saved.id,
                 transcript.title || 'Untitled Meeting',
-                aiResult,
+                fallbackResult,
                 userId
               );
 
@@ -378,6 +408,54 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
               }
             } catch (ccError) {
               console.error('[Fireflies Sync] Failed to create CC items:', ccError);
+            }
+
+            // Update Relationship Intelligence with transcript analysis
+            // Only update if we have both company and contact (required by updateRelationshipIntelligence)
+            const primaryContactId = match.contactIds[0];
+            if (match.companyId && primaryContactId) {
+              try {
+                await updateRelationshipIntelligence({
+                  companyId: match.companyId,
+                  contactId: primaryContactId,
+                  communicationId: saved.id,
+                  communicationType: 'transcript',
+                  analysis: {
+                    key_facts_learned: (analysis.keyPoints || []).map((p: any) => ({
+                      fact: typeof p === 'string' ? p : p?.point || String(p),
+                      confidence: 0.8,
+                    })),
+                    buying_signals: (analysis.buyingSignals || []).map((s: any) => ({
+                      signal: s.signal || (typeof s === 'string' ? s : String(s)),
+                      strength: s.strength || 'moderate',
+                    })),
+                    concerns_raised: (analysis.objections || []).map((o: any) => ({
+                      concern: o.objection || (typeof o === 'string' ? o : String(o)),
+                      severity: o.resolved ? 'low' as const : 'medium' as const,
+                    })),
+                    commitment_updates: {
+                      new_ours: (analysis.ourCommitments || []).map((c: any) => ({
+                        commitment: c.commitment,
+                        due_by: c.when,
+                      })),
+                      new_theirs: (analysis.theirCommitments || []).map((c: any) => ({
+                        commitment: c.commitment,
+                        expected_by: c.when,
+                      })),
+                      completed: [],
+                    },
+                    relationship_summary_update: analysis.summary || `Meeting: ${transcript.title}`,
+                    should_create_deal: false,
+                    communication_type: 'general',
+                    suggested_actions: [],
+                  },
+                });
+                console.log('[Fireflies Sync] Updated Relationship Intelligence for', match.companyId);
+              } catch (riError) {
+                console.error('[Fireflies Sync] Failed to update RI:', riError);
+              }
+            } else if (match.companyId) {
+              console.log('[Fireflies Sync] Skipping RI update - no contact linked to transcript');
             }
 
             // Auto-create tasks if enabled
