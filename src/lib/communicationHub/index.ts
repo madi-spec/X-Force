@@ -1,0 +1,22 @@
+/**
+ * Communication Hub
+ *
+ * Unified communication system that replaces fragmented pipelines.
+ *
+ * Core principle:
+ * - Communications = FACTS (immutable events)
+ * - Analysis = OPINIONS (versioned, replaceable)
+ * - Prioritization = JUDGMENT (CC engine decides tier)
+ */
+
+export {
+  emailToCommunication,
+  syncEmailToCommunications,
+  syncAllEmailsToCommunications,
+} from './adapters/emailAdapter';
+
+export {
+  transcriptToCommunication,
+  syncTranscriptToCommunications,
+  syncAllTranscriptsToCommunications,
+} from './adapters/transcriptAdapter';
