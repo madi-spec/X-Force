@@ -450,29 +450,6 @@ function CommunicationBubble({
                 </span>
               ))}
             </div>
-
-            {/* Commitments */}
-            {((comm.current_analysis?.extracted_commitments_us?.length ?? 0) > 0 ||
-              (comm.current_analysis?.extracted_commitments_them?.length ?? 0) > 0) && (
-              <div className="mt-2 pt-2 border-t border-purple-100 grid grid-cols-2 gap-2 text-xs">
-                {(comm.current_analysis?.extracted_commitments_us?.length ?? 0) > 0 && (
-                  <div>
-                    <span className="text-gray-500">We promised: </span>
-                    <span className="text-gray-700">
-                      {comm.current_analysis?.extracted_commitments_us[0].commitment}
-                    </span>
-                  </div>
-                )}
-                {(comm.current_analysis?.extracted_commitments_them?.length ?? 0) > 0 && (
-                  <div>
-                    <span className="text-gray-500">They promised: </span>
-                    <span className="text-gray-700">
-                      {comm.current_analysis?.extracted_commitments_them[0].commitment}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
