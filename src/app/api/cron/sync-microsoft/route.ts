@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { syncEmails } from '@/lib/microsoft/emailSync';
+import { syncAllFolderEmails } from '@/lib/microsoft/emailSync';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
 import { processUnanalyzedEmails } from '@/lib/email';
+import { processSchedulingEmails } from '@/lib/scheduler/responseProcessor';
 
 /**
  * Background cron job to sync Microsoft 365 data for all active connections
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
     emailsImported: number;
     eventsImported: number;
     emailsAnalyzed: number;
+    schedulingResponsesProcessed: number;
     errors: string[];
   }> = [];
 
@@ -59,18 +61,31 @@ export async function GET(request: Request) {
   for (const connection of connections) {
     try {
       const [emailResult, calendarResult] = await Promise.all([
-        syncEmails(connection.user_id),
+        syncAllFolderEmails(connection.user_id),
         syncCalendarEvents(connection.user_id),
       ]);
 
       // Run AI analysis on newly synced emails (limit to 5 per user to avoid timeout)
       let emailsAnalyzed = 0;
+      let schedulingResponsesProcessed = 0;
+
       if (emailResult.imported > 0) {
         try {
           const analysisResult = await processUnanalyzedEmails(connection.user_id, 5);
           emailsAnalyzed = analysisResult.itemsCreated;
         } catch (analysisErr) {
           console.error(`Email analysis failed for user ${connection.user_id}:`, analysisErr);
+        }
+
+        // Process scheduling responses from inbound emails
+        try {
+          const schedulingResult = await processSchedulingEmails(connection.user_id);
+          schedulingResponsesProcessed = schedulingResult.matched;
+          if (schedulingResult.errors.length > 0) {
+            console.warn(`Scheduling response errors for user ${connection.user_id}:`, schedulingResult.errors);
+          }
+        } catch (schedulingErr) {
+          console.error(`Scheduling response processing failed for user ${connection.user_id}:`, schedulingErr);
         }
       }
 
@@ -79,6 +94,7 @@ export async function GET(request: Request) {
         emailsImported: emailResult.imported,
         eventsImported: calendarResult.imported,
         emailsAnalyzed,
+        schedulingResponsesProcessed,
         errors: [...emailResult.errors, ...calendarResult.errors],
       });
     } catch (err) {
@@ -88,6 +104,7 @@ export async function GET(request: Request) {
         emailsImported: 0,
         eventsImported: 0,
         emailsAnalyzed: 0,
+        schedulingResponsesProcessed: 0,
         errors: [`Sync failed: ${err}`],
       });
     }
@@ -96,9 +113,10 @@ export async function GET(request: Request) {
   const totalEmails = results.reduce((sum, r) => sum + r.emailsImported, 0);
   const totalEvents = results.reduce((sum, r) => sum + r.eventsImported, 0);
   const totalAnalyzed = results.reduce((sum, r) => sum + r.emailsAnalyzed, 0);
+  const totalSchedulingResponses = results.reduce((sum, r) => sum + r.schedulingResponsesProcessed, 0);
   const totalErrors = results.reduce((sum, r) => sum + r.errors.length, 0);
 
-  console.log(`Microsoft sync completed: ${totalEmails} emails, ${totalEvents} events, ${totalAnalyzed} analyzed, ${totalErrors} errors`);
+  console.log(`Microsoft sync completed: ${totalEmails} emails, ${totalEvents} events, ${totalAnalyzed} analyzed, ${totalSchedulingResponses} scheduling responses, ${totalErrors} errors`);
 
   return NextResponse.json({
     success: true,
@@ -106,6 +124,7 @@ export async function GET(request: Request) {
     totalEmailsImported: totalEmails,
     totalEventsImported: totalEvents,
     totalEmailsAnalyzed: totalAnalyzed,
+    totalSchedulingResponsesProcessed: totalSchedulingResponses,
     totalErrors,
     details: results,
   });
