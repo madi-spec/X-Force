@@ -40,22 +40,40 @@ export async function GET(request: NextRequest) {
     .order('occurred_at', { ascending: false });
 
   // Apply filters
-  if (companyId) query = query.eq('company_id', companyId);
+  if (companyId) {
+    query = query.eq('company_id', companyId);
+  } else if (senderEmail) {
+    // For unlinked emails: filter by company_id is null
+    // We'll filter by email in JS after fetching
+    query = query.is('company_id', null);
+  }
   if (contactId) query = query.eq('contact_id', contactId);
   if (dealId) query = query.eq('deal_id', dealId);
-  if (senderEmail) {
-    // Filter by sender email in their_participants JSONB array
-    query = query.contains('their_participants', [{ email: senderEmail }]);
-  }
   if (channel) query = query.eq('channel', channel);
   if (direction) query = query.eq('direction', direction);
   if (awaitingResponse) query = query.eq('awaiting_our_response', true);
   if (aiOnly) query = query.eq('is_ai_generated', true);
 
-  // Pagination
-  query = query.range(offset, offset + limit - 1);
+  // Pagination (only apply if not filtering by senderEmail, as we'll filter in JS)
+  if (!senderEmail) {
+    query = query.range(offset, offset + limit - 1);
+  }
 
-  const { data, error, count } = await query;
+  let { data, error, count } = await query;
+
+  // For senderEmail filter, filter results in JS and apply pagination
+  if (senderEmail && data) {
+    const emailLower = senderEmail.toLowerCase();
+    data = data.filter(comm => {
+      const theirEmails = (comm.their_participants as Array<{ email?: string }> || [])
+        .map(p => p.email?.toLowerCase());
+      const ourEmails = (comm.our_participants as Array<{ email?: string }> || [])
+        .map(p => p.email?.toLowerCase());
+      return theirEmails.includes(emailLower) || ourEmails.includes(emailLower);
+    });
+    count = data.length;
+    data = data.slice(offset, offset + limit);
+  }
 
   if (error) {
     console.error('[Communications API] Error:', error);
