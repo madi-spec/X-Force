@@ -31,6 +31,9 @@ export default async function ProvenProcessPage({ params }: Props) {
       pitch_points: stage.pitch_points || [],
       objection_handlers: stage.objection_handlers || [],
       resources: stage.resources || [],
+      ai_suggested_pitch_points: stage.ai_suggested_pitch_points || [],
+      ai_suggested_objections: stage.ai_suggested_objections || [],
+      ai_insights: stage.ai_insights || {},
     }));
 
   return (

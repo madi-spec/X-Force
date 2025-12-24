@@ -6,3 +6,4 @@ export { ProductCustomers } from './ProductCustomers';
 export { ProvenProcessEditor } from './ProvenProcessEditor';
 export { StageDetailPanel } from './StageDetailPanel';
 export { AddStageModal } from './AddStageModal';
+export { AISuggestions } from './AISuggestions';

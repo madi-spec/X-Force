@@ -11,10 +11,25 @@ import {
   Target,
   MessageSquare,
   AlertCircle,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { StageDetailPanel } from './StageDetailPanel';
 import { AddStageModal } from './AddStageModal';
+
+interface AISuggestedPitchPoint {
+  id: string;
+  text: string;
+  effectiveness_score: number;
+}
+
+interface AISuggestedObjection {
+  id: string;
+  objection: string;
+  response: string;
+  frequency: number;
+  success_rate: number;
+}
 
 interface Stage {
   id: string;
@@ -29,6 +44,14 @@ interface Stage {
   resources: Resource[];
   avg_days_in_stage: number | null;
   conversion_rate: number | null;
+  ai_suggested_pitch_points?: AISuggestedPitchPoint[];
+  ai_suggested_objections?: AISuggestedObjection[];
+  ai_insights?: {
+    last_analyzed?: string;
+    transcript_count?: number;
+    win_patterns?: string[];
+    loss_patterns?: string[];
+  };
 }
 
 interface PitchPoint {
@@ -68,6 +91,31 @@ export function ProvenProcessEditor({ product, initialStages }: ProvenProcessEdi
   const [selectedStage, setSelectedStage] = useState<Stage | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const handleAnalyzeTranscripts = async () => {
+    setAnalyzing(true);
+    try {
+      const response = await fetch(`/api/products/${product.slug}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'full' })
+      });
+
+      if (response.ok) {
+        // Refresh the page to show new suggestions
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Analysis failed');
+        setAnalyzing(false);
+      }
+    } catch (error) {
+      console.error('Analysis error:', error);
+      alert('Failed to analyze transcripts');
+      setAnalyzing(false);
+    }
+  };
 
   const handleAddStage = async (stageData: Partial<Stage>) => {
     const response = await fetch(`/api/products/${product.slug}/stages`, {
@@ -148,13 +196,23 @@ export function ProvenProcessEditor({ product, initialStages }: ProvenProcessEdi
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <h2 className="font-medium text-gray-900">Sales Stages</h2>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
-            >
-              <Plus className="w-4 h-4" />
-              Add Stage
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleAnalyzeTranscripts}
+                disabled={analyzing}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Sparkles className={`w-4 h-4 ${analyzing ? 'animate-pulse' : ''}`} />
+                {analyzing ? 'Analyzing...' : 'Analyze Transcripts'}
+              </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <Plus className="w-4 h-4" />
+                Add Stage
+              </button>
+            </div>
           </div>
 
           {stages.length === 0 ? (

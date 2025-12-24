@@ -8,8 +8,24 @@ import {
   Trash2,
   MessageSquare,
   AlertCircle,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
+import { AISuggestions } from './AISuggestions';
+
+interface AISuggestedPitchPoint {
+  id: string;
+  text: string;
+  effectiveness_score: number;
+}
+
+interface AISuggestedObjection {
+  id: string;
+  objection: string;
+  response: string;
+  frequency: number;
+  success_rate: number;
+}
 
 interface Stage {
   id: string;
@@ -22,6 +38,14 @@ interface Stage {
   pitch_points: PitchPoint[];
   objection_handlers: ObjectionHandler[];
   resources: Resource[];
+  ai_suggested_pitch_points?: AISuggestedPitchPoint[];
+  ai_suggested_objections?: AISuggestedObjection[];
+  ai_insights?: {
+    last_analyzed?: string;
+    transcript_count?: number;
+    win_patterns?: string[];
+    loss_patterns?: string[];
+  };
 }
 
 interface PitchPoint {
@@ -52,18 +76,31 @@ interface StageDetailPanelProps {
 }
 
 export function StageDetailPanel({ stage, onUpdate, onClose, saving }: StageDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'pitch' | 'objections' | 'resources'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'pitch' | 'objections' | 'resources' | 'ai'>('details');
   const [editedStage, setEditedStage] = useState(stage);
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleSave = () => {
     onUpdate(editedStage);
   };
+
+  const handleRefreshSuggestions = async () => {
+    setRefreshing(true);
+    // In a real implementation, this would call the API to refresh suggestions
+    // For now, just simulate a delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setRefreshing(false);
+  };
+
+  const hasSuggestions = (stage.ai_suggested_pitch_points?.length || 0) > 0 ||
+    (stage.ai_suggested_objections?.length || 0) > 0;
 
   const tabs = [
     { id: 'details', label: 'Details', icon: FileText },
     { id: 'pitch', label: 'Pitch', icon: MessageSquare, count: editedStage.pitch_points?.length },
     { id: 'objections', label: 'Objections', icon: AlertCircle, count: editedStage.objection_handlers?.length },
     { id: 'resources', label: 'Resources', icon: FileText, count: editedStage.resources?.length },
+    { id: 'ai', label: 'AI', icon: Sparkles, badge: hasSuggestions },
   ];
 
   return (
@@ -80,6 +117,7 @@ export function StageDetailPanel({ stage, onUpdate, onClose, saving }: StageDeta
       <div className="flex border-b border-gray-200">
         {tabs.map((tab) => {
           const Icon = tab.icon;
+          const tabWithBadge = tab as { id: string; label: string; icon: typeof FileText; count?: number; badge?: boolean };
           return (
             <button
               key={tab.id}
@@ -90,9 +128,12 @@ export function StageDetailPanel({ stage, onUpdate, onClose, saving }: StageDeta
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${tab.id === 'ai' ? 'text-purple-500' : ''}`} />
               {tab.count !== undefined && tab.count > 0 && (
                 <span className="text-xs bg-gray-200 rounded-full px-1.5">{tab.count}</span>
+              )}
+              {tabWithBadge.badge && (
+                <span className="w-2 h-2 bg-purple-500 rounded-full" />
               )}
             </button>
           );
@@ -123,6 +164,31 @@ export function StageDetailPanel({ stage, onUpdate, onClose, saving }: StageDeta
           <ResourcesTab
             resources={editedStage.resources || []}
             onChange={(resources) => setEditedStage({ ...editedStage, resources: resources })}
+          />
+        )}
+        {activeTab === 'ai' && (
+          <AISuggestions
+            stageId={stage.id}
+            suggestedPitchPoints={stage.ai_suggested_pitch_points || []}
+            suggestedObjections={stage.ai_suggested_objections || []}
+            onAcceptPitchPoint={(point) => {
+              const newPoints = [...(editedStage.pitch_points || []), {
+                id: crypto.randomUUID(),
+                text: point.text,
+                source: 'ai_suggested' as const
+              }];
+              setEditedStage({ ...editedStage, pitch_points: newPoints });
+            }}
+            onAcceptObjection={(handler) => {
+              const newHandlers = [...(editedStage.objection_handlers || []), {
+                id: crypto.randomUUID(),
+                ...handler,
+                source: 'ai_suggested' as const
+              }];
+              setEditedStage({ ...editedStage, objection_handlers: newHandlers });
+            }}
+            onRefresh={handleRefreshSuggestions}
+            loading={refreshing}
           />
         )}
       </div>
