@@ -74,47 +74,63 @@ function isSchedulingConfirmation(comm: Communication): { isScheduling: boolean;
   const content = comm.full_content || comm.content_preview || '';
   const subject = comm.subject || '';
 
-  // Common scheduling confirmation patterns
-  const schedulingPatterns = [
-    /looking forward to speaking with you/i,
-    /has been scheduled/i,
-    /meeting confirmed/i,
-    /your meeting is booked/i,
-    /calendar invite/i,
-    /new event:.+has been scheduled/i,
-    /scheduled a meeting/i,
-    /booked.+on your calendar/i,
-  ];
-
   // Check for scheduling tool senders (from our participants for outbound confirmations)
   const ourEmails = (comm.our_participants as Array<{ email?: string }> || [])
     .map(p => p.email?.toLowerCase() || '');
   const isFromSchedulingTool = ourEmails.some(email =>
     email.includes('calendly') ||
-    email.includes('hubspot') ||
-    email.includes('xraisales') ||
-    email.includes('schedule') ||
-    email.includes('booking')
+    email.includes('hubspot.com') ||
+    email.includes('scheduling') ||
+    email.includes('booking') ||
+    email.includes('acuity')
   );
 
-  const hasSchedulingPattern = schedulingPatterns.some(p => p.test(content));
+  // Specific patterns that ONLY appear in scheduling confirmations
+  // Must be very specific to avoid false positives
+  const schedulingConfirmationPatterns = [
+    /^looking forward to speaking with you!?\s*$/im, // Exact scheduling footer
+    /new event:.+has been scheduled/i,
+    /your meeting is booked/i,
+    /your meeting has been scheduled/i,
+    /appointment confirmed/i,
+    /booking confirmed/i,
+  ];
 
-  if (isFromSchedulingTool || hasSchedulingPattern) {
-    // Try to extract customer's message (often after separator)
-    const messageMatch = content.match(/=+\s*([\s\S]*?)(?:=+|Looking forward|$)/);
+  // Content structure patterns unique to scheduling confirmations
+  // These emails typically have: separator (===), short message, separator, "Looking forward..."
+  const hasSchedulingStructure =
+    content.includes('==========') &&
+    /looking forward to speaking with you/i.test(content) &&
+    content.length < 1000; // Scheduling confirmations are typically short
+
+  const hasSchedulingPattern = schedulingConfirmationPatterns.some(p => p.test(content));
+
+  // Require either: scheduling tool sender + structure, OR very specific pattern
+  if ((isFromSchedulingTool && hasSchedulingStructure) || hasSchedulingPattern) {
+    // Try to extract customer's message (between separators)
     let customerMessage: string | undefined;
 
-    // Look for the customer's typed message
-    const lines = content.split('\n').filter(l => l.trim());
-    for (const line of lines) {
-      // Skip boilerplate lines
-      if (line.includes('Looking forward') ||
-          line.includes('=====') ||
-          line.length < 10) continue;
-      // First substantive line is likely the customer message
-      if (line.trim().length > 15) {
-        customerMessage = line.trim();
-        break;
+    // Look for content between separator lines
+    const betweenSeparators = content.match(/={5,}\s*([\s\S]*?)\s*={5,}/);
+    if (betweenSeparators && betweenSeparators[1]) {
+      const msg = betweenSeparators[1].trim();
+      if (msg.length > 10 && msg.length < 500) {
+        customerMessage = msg;
+      }
+    }
+
+    // Fallback: look for lines before "Looking forward"
+    if (!customerMessage) {
+      const beforeLookingForward = content.split(/looking forward to speaking/i)[0];
+      const lines = beforeLookingForward.split('\n').filter(l =>
+        l.trim().length > 15 &&
+        !l.includes('=====') &&
+        !l.includes('Subject:') &&
+        !l.includes('From:') &&
+        !l.includes('To:')
+      );
+      if (lines.length > 0) {
+        customerMessage = lines[lines.length - 1].trim();
       }
     }
 
