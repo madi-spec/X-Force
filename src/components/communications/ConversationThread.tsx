@@ -400,8 +400,8 @@ function CommunicationBubble({
             </div>
           )}
 
-          {/* View Source */}
-          {hasSource && (
+          {/* View Source/Analysis */}
+          {(hasSource || (comm.channel === 'meeting' && comm.current_analysis)) && (
             <div className={`mt-3 pt-3 border-t ${isOutbound ? 'border-blue-400' : 'border-gray-200'}`}>
               <button
                 onClick={() => onViewSource(comm)}
@@ -410,7 +410,7 @@ function CommunicationBubble({
                 }`}
               >
                 <ExternalLink className="w-3 h-3" />
-                View Original {comm.source_table === 'email_messages' ? 'Email' : 'Transcript'}
+                {comm.channel === 'meeting' ? 'View Full Analysis' : 'View Original Email'}
               </button>
             </div>
           )}
@@ -480,7 +480,7 @@ function CommunicationBubble({
   );
 }
 
-// Source Preview Modal Component
+// Source Preview Modal Component - Shows email source or meeting analysis
 function SourcePreviewModal({
   communication,
   onClose
@@ -488,15 +488,18 @@ function SourcePreviewModal({
   communication: Communication;
   onClose: () => void;
 }) {
+  const isMeeting = communication.channel === 'meeting';
+  const isEmail = communication.source_table === 'email_messages';
+
+  // Only fetch source data for emails, not for meetings (we use analysis instead)
   const { data, isLoading, error } = useSWR(
-    communication.source_table && communication.source_id
+    !isMeeting && communication.source_table && communication.source_id
       ? `/api/communications/source?table=${communication.source_table}&id=${communication.source_id}`
       : null,
     fetcher
   );
 
-  const isEmail = communication.source_table === 'email_messages';
-  const isTranscript = communication.source_table === 'meeting_transcriptions';
+  const analysis = communication.current_analysis;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -511,16 +514,16 @@ function SourcePreviewModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${isEmail ? 'bg-blue-100' : 'bg-purple-100'}`}>
-              {isEmail ? (
-                <Mail className={`w-5 h-5 ${isEmail ? 'text-blue-600' : 'text-purple-600'}`} />
+            <div className={`p-2 rounded-lg ${isMeeting ? 'bg-purple-100' : 'bg-blue-100'}`}>
+              {isMeeting ? (
+                <Video className="w-5 h-5 text-purple-600" />
               ) : (
-                <FileText className="w-5 h-5 text-purple-600" />
+                <Mail className="w-5 h-5 text-blue-600" />
               )}
             </div>
             <div>
               <h2 className="font-semibold text-gray-900">
-                {isEmail ? 'Original Email' : 'Meeting Transcript'}
+                {isMeeting ? 'Meeting Analysis' : 'Original Email'}
               </h2>
               <p className="text-sm text-gray-500">
                 {communication.subject || 'No subject'}
@@ -537,7 +540,95 @@ function SourcePreviewModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {isLoading ? (
+          {/* Meeting Analysis View */}
+          {isMeeting ? (
+            analysis ? (
+              <div className="space-y-6">
+                {/* Summary */}
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Summary</h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">{analysis.summary}</p>
+                </div>
+
+                {/* Sentiment */}
+                {analysis.sentiment && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Sentiment</h3>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
+                      analysis.sentiment === 'positive' ? 'bg-green-100 text-green-700' :
+                      analysis.sentiment === 'negative' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {analysis.sentiment}
+                      {analysis.sentiment_score && ` (${Math.round(analysis.sentiment_score * 100)}%)`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Signals */}
+                {analysis.extracted_signals && analysis.extracted_signals.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Buying Signals</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {analysis.extracted_signals.map((signal, i) => (
+                        <span key={i} className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                          {signal.signal.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Products Discussed */}
+                {analysis.products_discussed && analysis.products_discussed.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Products Discussed</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {analysis.products_discussed.map((product, i) => (
+                        <span key={i} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+                          {product}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Our Commitments */}
+                {analysis.extracted_commitments_us && analysis.extracted_commitments_us.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Our Commitments</h3>
+                    <ul className="space-y-2">
+                      {analysis.extracted_commitments_us.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-gray-700">
+                          <span className="text-blue-500 mt-1">→</span>
+                          {c.commitment}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Their Commitments */}
+                {analysis.extracted_commitments_them && analysis.extracted_commitments_them.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Their Commitments</h3>
+                    <ul className="space-y-2">
+                      {analysis.extracted_commitments_them.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-gray-700">
+                          <span className="text-green-500 mt-1">←</span>
+                          {c.commitment}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                No analysis available for this meeting
+              </div>
+            )
+          ) : isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
@@ -580,73 +671,24 @@ function SourcePreviewModal({
                 </div>
               )}
 
-              {/* Transcript-specific fields */}
-              {isTranscript && (
-                <div className="grid grid-cols-[80px_1fr] gap-2 text-sm border-b pb-4">
-                  {data.source.title && (
-                    <>
-                      <span className="text-gray-500">Title:</span>
-                      <span className="text-gray-900 font-medium">{data.source.title}</span>
-                    </>
-                  )}
-
-                  {data.source.meeting_date && (
-                    <>
-                      <span className="text-gray-500">Date:</span>
-                      <span className="text-gray-900">
-                        {format(new Date(data.source.meeting_date), 'PPpp')}
-                      </span>
-                    </>
-                  )}
-
-                  {data.source.duration_minutes && (
-                    <>
-                      <span className="text-gray-500">Duration:</span>
-                      <span className="text-gray-900">{data.source.duration_minutes} minutes</span>
-                    </>
-                  )}
-
-                  {data.source.attendees && (
-                    <>
-                      <span className="text-gray-500">Attendees:</span>
-                      <span className="text-gray-900">
-                        {Array.isArray(data.source.attendees)
-                          ? data.source.attendees.map((a: { name?: string; email?: string }) => a.name || a.email).join(', ')
-                          : data.source.attendees}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Body Content */}
+              {/* Body Content (emails only - meetings use analysis view above) */}
               <div className="text-sm text-gray-700 leading-relaxed">
-                {isEmail ? (
-                  data.source.body_html ? (
-                    <div
-                      dangerouslySetInnerHTML={{ __html: data.source.body_html }}
-                      className="email-html-content [&_*]:max-w-full [&_img]:max-w-full [&_img]:h-auto [&_table]:w-full [&_td]:p-1 [&_a]:text-blue-600 [&_a]:underline [&_p]:mb-3 [&_br]:block [&_br]:mb-2"
-                      style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
-                    />
-                  ) : (
-                    <div className="space-y-3">
-                      {(data.source.body_text || 'No content').split(/\n\n+/).map((paragraph: string, i: number) => (
-                        <p key={i} className="whitespace-pre-wrap">
-                          {paragraph.split('\n').map((line: string, j: number) => (
-                            <span key={j}>
-                              {line}
-                              {j < paragraph.split('\n').length - 1 && <br />}
-                            </span>
-                          ))}
-                        </p>
-                      ))}
-                    </div>
-                  )
+                {data.source.body_html ? (
+                  <div
+                    dangerouslySetInnerHTML={{ __html: data.source.body_html }}
+                    className="email-html-content [&_*]:max-w-full [&_img]:max-w-full [&_img]:h-auto [&_table]:w-full [&_td]:p-1 [&_a]:text-blue-600 [&_a]:underline [&_p]:mb-3 [&_br]:block [&_br]:mb-2"
+                    style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
+                  />
                 ) : (
                   <div className="space-y-3">
-                    {(data.source.transcription_text || data.source.summary || 'No transcript content').split(/\n\n+/).map((paragraph: string, i: number) => (
+                    {(data.source.body_text || 'No content').split(/\n\n+/).map((paragraph: string, i: number) => (
                       <p key={i} className="whitespace-pre-wrap">
-                        {paragraph}
+                        {paragraph.split('\n').map((line: string, j: number) => (
+                          <span key={j}>
+                            {line}
+                            {j < paragraph.split('\n').length - 1 && <br />}
+                          </span>
+                        ))}
                       </p>
                     ))}
                   </div>
