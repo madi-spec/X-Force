@@ -337,11 +337,18 @@ function CommunicationBubble({
 
           {/* Summary Content */}
           <p className={`text-sm ${expanded ? 'whitespace-pre-wrap' : ''}`}>
-            {expanded ? (comm.full_content || comm.content_preview || 'No content') : displayContent.summary}
+            {expanded
+              ? (comm.channel === 'meeting'
+                  // For meetings, show analysis summary (not raw transcript)
+                  ? (comm.current_analysis?.summary || comm.content_preview || 'No summary available')
+                  // For emails, show full content
+                  : (comm.full_content || comm.content_preview || 'No content'))
+              : displayContent.summary}
           </p>
 
-          {/* Expand/Collapse - only show if there's more content */}
-          {(comm.full_content?.length || 0) > 200 && (
+          {/* Expand/Collapse - show for meetings with analysis or emails with content */}
+          {((comm.channel === 'meeting' && comm.current_analysis?.summary && comm.current_analysis.summary.length > 150) ||
+            (comm.channel !== 'meeting' && (comm.full_content?.length || 0) > 200)) && (
             <button
               onClick={() => setExpanded(!expanded)}
               className={`mt-2 text-xs font-medium flex items-center gap-1 ${
@@ -351,7 +358,7 @@ function CommunicationBubble({
               {expanded ? (
                 <>Show less <ChevronUp className="w-3 h-3" /></>
               ) : (
-                <>Show full content <ChevronDown className="w-3 h-3" /></>
+                <>Show full {comm.channel === 'meeting' ? 'summary' : 'content'} <ChevronDown className="w-3 h-3" /></>
               )}
             </button>
           )}
