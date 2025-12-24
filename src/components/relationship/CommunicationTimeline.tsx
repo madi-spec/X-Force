@@ -173,12 +173,20 @@ export function CommunicationTimeline({
                     {/* Key points */}
                     {interaction.key_points && interaction.key_points.length > 0 && (
                       <ul className="mt-2 space-y-1">
-                        {interaction.key_points.slice(0, 3).map((point, i) => (
-                          <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
-                            <span className="text-gray-400">•</span>
-                            {point}
-                          </li>
-                        ))}
+                        {interaction.key_points.slice(0, 3).map((point, i) => {
+                          // Handle both string and object formats
+                          const displayText = typeof point === 'string'
+                            ? point
+                            : (point as { topic?: string; details?: string })?.topic ||
+                              (point as { topic?: string; details?: string })?.details ||
+                              JSON.stringify(point);
+                          return (
+                            <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
+                              <span className="text-gray-400">•</span>
+                              {displayText}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
 
