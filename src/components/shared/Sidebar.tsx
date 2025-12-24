@@ -5,27 +5,27 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import {
-  LayoutDashboard,
   Users,
   Building2,
   Inbox,
   Calendar,
-  CheckSquare,
   Settings,
   LogOut,
   Zap,
-  Brain,
+  Target,
+  MessageSquare,
+  Package,
 } from 'lucide-react';
 
 const navigation = [
-  { name: 'AI Command', href: '/ai', icon: Brain },
-  { name: 'Pipeline', href: '/pipeline', icon: LayoutDashboard },
+  { name: 'Command Center', href: '/command-center', icon: Target },
+  { name: 'Products', href: '/products', icon: Package },
   { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Contacts', href: '/contacts', icon: Users },
+  { name: 'Communications', href: '/communications', icon: MessageSquare },
   { name: 'Inbox', href: '/inbox', icon: Inbox },
   { name: 'Calendar', href: '/calendar', icon: Calendar },
-  { name: 'Tasks', href: '/tasks', icon: CheckSquare },
 ];
 
 const bottomNavigation = [
@@ -48,7 +48,7 @@ export function Sidebar() {
   };
 
   return (
-    <div className="flex h-full w-64 flex-col bg-gray-900">
+    <div className="hidden lg:flex h-full w-64 flex-col bg-gray-900">
       {/* Logo */}
       <div className="flex h-16 items-center px-6">
         <span className="text-xl font-bold text-white">X-FORCE</span>
