@@ -31,6 +31,14 @@ import {
 import { CompanyResearchTab, IntelligenceOverviewPanel } from '@/components/intelligence';
 import { AccountMemoryPanel } from '@/components/companies/AccountMemoryPanel';
 import { ContactCardWithFacts } from '@/components/contacts';
+import {
+  RelationshipSummaryCard,
+  KeyFactsPanel,
+  CommunicationTimeline,
+  SignalsPanel,
+  StakeholderMap,
+  ActiveActionsPanel,
+} from '@/components/relationship';
 
 interface CompanyDetailProps {
   company: Company;
@@ -62,6 +70,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
+  { id: 'relationship', label: 'Relationship Context' },
   { id: 'deals', label: 'Deals' },
   { id: 'activities', label: 'Activities' },
   { id: 'contacts', label: 'Contacts' },
@@ -86,6 +95,9 @@ export function CompanyDetail({
   const router = useRouter();
   const tabFromUrl = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(tabFromUrl || 'overview');
+  const [relationshipData, setRelationshipData] = useState<any>(null);
+  const [relationshipLoading, setRelationshipLoading] = useState(false);
+  const [refreshingSummary, setRefreshingSummary] = useState(false);
 
   // Sync tab with URL
   useEffect(() => {
@@ -93,6 +105,43 @@ export function CompanyDetail({
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
+
+  // Fetch relationship intelligence when tab is active
+  useEffect(() => {
+    if (activeTab === 'relationship' && !relationshipData && !relationshipLoading) {
+      fetchRelationshipData();
+    }
+  }, [activeTab]);
+
+  const fetchRelationshipData = async () => {
+    setRelationshipLoading(true);
+    try {
+      const response = await fetch(`/api/companies/${company.id}/intelligence`);
+      if (response.ok) {
+        const data = await response.json();
+        setRelationshipData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching relationship intelligence:', err);
+    } finally {
+      setRelationshipLoading(false);
+    }
+  };
+
+  const handleRefreshSummary = async () => {
+    setRefreshingSummary(true);
+    try {
+      // Trigger AI to regenerate the summary
+      await fetch(`/api/companies/${company.id}/intelligence/refresh-summary`, {
+        method: 'POST',
+      });
+      await fetchRelationshipData();
+    } catch (err) {
+      console.error('Error refreshing summary:', err);
+    } finally {
+      setRefreshingSummary(false);
+    }
+  };
 
   // Update URL when tab changes
   const handleTabChange = (tabId: string) => {
@@ -445,6 +494,72 @@ export function CompanyDetail({
             )}
           </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'relationship' && (
+        <div className="space-y-6">
+          {relationshipLoading ? (
+            <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-6">
+              <div className="animate-pulse space-y-4">
+                <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
+                <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-full" />
+                <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-2/3" />
+              </div>
+            </div>
+          ) : relationshipData ? (
+            <>
+              {/* Relationship Summary */}
+              <RelationshipSummaryCard
+                summary={relationshipData.relationshipIntelligence?.context_summary || null}
+                updatedAt={relationshipData.relationshipIntelligence?.context_summary_updated_at || null}
+                healthScore={relationshipData.relationshipIntelligence?.health_score || null}
+                interactionCount={relationshipData.relationshipIntelligence?.interaction_count || 0}
+                lastInteractionAt={relationshipData.relationshipIntelligence?.last_interaction_at || null}
+                onRefreshSummary={handleRefreshSummary}
+                isRefreshing={refreshingSummary}
+              />
+
+              {/* Two column layout for key data */}
+              <div className="grid grid-cols-2 gap-6">
+                {/* Stakeholder Map */}
+                <StakeholderMap
+                  stakeholders={relationshipData.relationshipIntelligence?.context?.stakeholders || []}
+                  contacts={relationshipData.contacts}
+                  onContactClick={(id) => router.push(`/contacts/${id}`)}
+                />
+
+                {/* Active Actions */}
+                <ActiveActionsPanel
+                  actions={relationshipData.activeActions || []}
+                  onActionClick={(id) => router.push(`/command-center?action=${id}`)}
+                />
+              </div>
+
+              {/* Signals Panel */}
+              <SignalsPanel
+                buyingSignals={relationshipData.relationshipIntelligence?.context?.buying_signals || []}
+                concerns={relationshipData.relationshipIntelligence?.context?.concerns || []}
+                objections={relationshipData.relationshipIntelligence?.context?.objections || []}
+              />
+
+              {/* Key Facts */}
+              <KeyFactsPanel
+                facts={relationshipData.relationshipIntelligence?.context?.facts || []}
+              />
+
+              {/* Communication Timeline */}
+              <CommunicationTimeline
+                interactions={relationshipData.relationshipIntelligence?.context?.interactions || []}
+              />
+            </>
+          ) : (
+            <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-6 text-center">
+              <p className="text-sm text-gray-500">
+                No relationship intelligence available yet. This will be populated as you interact with the company through emails and meetings.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
