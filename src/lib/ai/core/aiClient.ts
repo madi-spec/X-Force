@@ -1,16 +1,26 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getPrompt } from '@/lib/ai/promptManager';
 
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Lazily initialize Anthropic client (to support scripts that load env after import)
+let _anthropic: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+  if (!_anthropic) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error('ANTHROPIC_API_KEY environment variable is not set');
+    }
+    _anthropic = new Anthropic({ apiKey });
+  }
+  return _anthropic;
+}
 
 export interface AIRequest {
   prompt: string;
   systemPrompt?: string;
   maxTokens?: number;
   temperature?: number;
-  model?: 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307';
+  model?: 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307' | 'claude-opus-4-20250514';
 }
 
 export interface AIResponse {
@@ -27,7 +37,8 @@ export interface AIJsonRequest<T> extends AIRequest {
   schema?: string; // Description of expected JSON structure
 }
 
-const DEFAULT_SYSTEM_PROMPT = `You are an expert AI sales assistant for X-FORCE, a CRM for the pest control and lawn care industry.
+// Fallback system prompt (used if DB fetch fails)
+const FALLBACK_SYSTEM_PROMPT = `You are an expert AI sales assistant for X-FORCE, a CRM for the pest control and lawn care industry.
 
 Your role is to:
 - Analyze sales conversations, emails, and meetings
@@ -51,6 +62,35 @@ Always be:
 
 When generating JSON, respond ONLY with valid JSON, no markdown or extra text.`;
 
+// Cache for the system prompt
+let cachedSystemPrompt: { prompt: string; fetchedAt: number } | null = null;
+const SYSTEM_PROMPT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get the default system prompt from the database (with caching)
+ */
+async function getDefaultSystemPrompt(): Promise<string> {
+  // Check cache
+  if (cachedSystemPrompt && Date.now() - cachedSystemPrompt.fetchedAt < SYSTEM_PROMPT_CACHE_TTL) {
+    return cachedSystemPrompt.prompt;
+  }
+
+  try {
+    const promptData = await getPrompt('core_system');
+    if (promptData) {
+      cachedSystemPrompt = {
+        prompt: promptData.prompt_template,
+        fetchedAt: Date.now(),
+      };
+      return promptData.prompt_template;
+    }
+  } catch (error) {
+    console.error('[AIClient] Failed to fetch core_system prompt from DB:', error);
+  }
+
+  return FALLBACK_SYSTEM_PROMPT;
+}
+
 /**
  * Core AI call function
  */
@@ -58,11 +98,12 @@ export async function callAI(request: AIRequest): Promise<AIResponse> {
   const startTime = Date.now();
 
   const model = request.model || 'claude-sonnet-4-20250514';
+  const systemPrompt = request.systemPrompt || await getDefaultSystemPrompt();
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropicClient().messages.create({
     model,
     max_tokens: request.maxTokens || 4000,
-    system: request.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: 'user', content: request.prompt }],
     ...(request.temperature !== undefined && { temperature: request.temperature }),
   });
@@ -133,15 +174,16 @@ export async function callAIStream(
 ): Promise<AIResponse> {
   const startTime = Date.now();
   const model = request.model || 'claude-sonnet-4-20250514';
+  const systemPrompt = request.systemPrompt || await getDefaultSystemPrompt();
 
   let fullContent = '';
   let inputTokens = 0;
   let outputTokens = 0;
 
-  const stream = anthropic.messages.stream({
+  const stream = getAnthropicClient().messages.stream({
     model,
     max_tokens: request.maxTokens || 4000,
-    system: request.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: 'user', content: request.prompt }],
   });
 

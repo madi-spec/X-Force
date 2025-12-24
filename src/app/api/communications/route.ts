@@ -8,16 +8,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { searchParams } = new URL(request.url);
 
   // Filters
   const companyId = searchParams.get('company_id');
   const contactId = searchParams.get('contact_id');
   const dealId = searchParams.get('deal_id');
+  const senderEmail = searchParams.get('sender_email');
   const channel = searchParams.get('channel');
   const direction = searchParams.get('direction');
   const awaitingResponse = searchParams.get('awaiting_response') === 'true';
@@ -31,9 +32,9 @@ export async function GET(request: NextRequest) {
     .from('communications')
     .select(`
       *,
-      company:companies(id, name, domain),
-      contact:contacts(id, name, email),
-      deal:deals(id, name, stage, estimated_value),
+      company:companies!company_id(id, name, domain),
+      contact:contacts!contact_id(id, name, email),
+      deal:deals!deal_id(id, name, stage, estimated_value),
       current_analysis:communication_analysis!current_analysis_id(*)
     `, { count: 'exact' })
     .order('occurred_at', { ascending: false });
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
   if (companyId) query = query.eq('company_id', companyId);
   if (contactId) query = query.eq('contact_id', contactId);
   if (dealId) query = query.eq('deal_id', dealId);
+  if (senderEmail) {
+    // Filter by sender email in their_participants JSONB array
+    query = query.contains('their_participants', [{ email: senderEmail }]);
+  }
   if (channel) query = query.eq('channel', channel);
   if (direction) query = query.eq('direction', direction);
   if (awaitingResponse) query = query.eq('awaiting_our_response', true);

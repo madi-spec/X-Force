@@ -12,24 +12,33 @@ interface EmailMessage {
   subject: string | null;
   from_email: string | null;
   from_name: string | null;
-  to_email: string | null;
-  to_name: string | null;
+  to_emails: string[] | null;
+  to_names: (string | null)[] | null;
   body_text: string | null;
   body_html: string | null;
+  body_preview: string | null;
   received_at: string | null;
   sent_at: string | null;
   is_sent_by_user: boolean;
-  conversation_id: string | null;
+  conversation_ref: string | null;
   message_id: string | null;
-  attachments: unknown[];
-  company_id: string | null;
-  contact_id: string | null;
-  deal_id: string | null;
+  has_attachments: boolean;
   user_id: string | null;
 }
 
 export function emailToCommunication(email: EmailMessage): Partial<Communication> {
   const isOutbound = email.is_sent_by_user;
+
+  // Build participants arrays
+  const toParticipants = (email.to_emails || []).map((toEmail, i) => ({
+    email: toEmail || '',
+    name: email.to_names?.[i] || '',
+  }));
+
+  const fromParticipant = {
+    email: email.from_email || '',
+    name: email.from_name || '',
+  };
 
   return {
     // Channel
@@ -41,24 +50,24 @@ export function emailToCommunication(email: EmailMessage): Partial<Communication
 
     // Content
     subject: email.subject,
-    content_preview: email.body_text?.substring(0, 500) || null,
+    content_preview: email.body_preview || email.body_text?.substring(0, 500) || null,
     full_content: email.body_text,
     content_html: email.body_html,
-    attachments: (email.attachments || []) as Communication['attachments'],
+    attachments: email.has_attachments ? [{ name: 'attachment', type: 'unknown', size: 0, url: '' }] : [],
 
-    // Participants
+    // Participants - properly handle arrays
     our_participants: isOutbound
-      ? [{ email: email.from_email || '', name: email.from_name || '', role: 'sender' }]
-      : [{ email: email.to_email || '', name: email.to_name || '', role: 'recipient' }],
+      ? [{ ...fromParticipant, role: 'sender' }]
+      : toParticipants.map(p => ({ ...p, role: 'recipient' as const })),
     their_participants: isOutbound
-      ? [{ email: email.to_email || '', name: email.to_name || '' }]
-      : [{ email: email.from_email || '', name: email.from_name || '' }],
+      ? toParticipants
+      : [fromParticipant],
 
     // Source
     source_table: 'email_messages',
     source_id: email.id,
     external_id: email.message_id,
-    thread_id: email.conversation_id,
+    thread_id: email.conversation_ref,
 
     // Response state (inbound = awaiting our response)
     awaiting_our_response: !isOutbound,
@@ -68,10 +77,10 @@ export function emailToCommunication(email: EmailMessage): Partial<Communication
       ? new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
       : null,
 
-    // Relationships
-    company_id: email.company_id,
-    contact_id: email.contact_id,
-    deal_id: email.deal_id,
+    // Relationships - email_messages doesn't have these columns
+    company_id: null,
+    contact_id: null,
+    deal_id: null,
     user_id: email.user_id,
 
     // AI

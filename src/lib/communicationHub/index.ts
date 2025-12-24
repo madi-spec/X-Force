@@ -40,3 +40,11 @@ export {
   PRODUCTS,
   COMMUNICATION_TYPES,
 } from './analysis/prompts/v1';
+
+// Live sync
+export {
+  syncEmailToCommunication,
+  syncRecentEmailsToCommunications,
+  syncTranscriptToCommunication,
+  syncRecentTranscriptsToCommunications,
+} from './sync';
