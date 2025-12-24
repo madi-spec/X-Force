@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { MicrosoftGraphClient } from './graph';
 import { getValidToken, updateLastSync } from './auth';
+import { isInternalEmail, getExternalEmails } from '@/lib/communicationHub/matching/matchEmailToCompany';
 
 interface EmailSyncResult {
   imported: number;
@@ -153,24 +154,39 @@ export async function syncEmails(userId: string, options: EmailSyncOptions = {})
         }
 
         // Find matching contact (optional - we import all emails now)
-        // For inbound: match on sender
-        // For outbound: match on ANY recipient (not just the first one)
+        // For inbound: match on sender (if not internal)
+        // For outbound: match on ANY external recipient
+        // Internal domains (voiceforpest.com, affiliatedtech.com, etc.) are excluded
         let matchedContact: { id: string; email: string | null; company_id: string | null } | null | undefined = null;
 
         if (message.direction === 'inbound') {
           const emailAddress = message.from?.emailAddress?.address?.toLowerCase();
-          matchedContact = emailAddress ? contactsByEmail.get(emailAddress) : null;
-        } else {
-          // Check all recipients for outbound emails
-          const recipients = message.toRecipients || [];
-          for (const recipient of recipients) {
-            const recipientEmail = recipient.emailAddress?.address?.toLowerCase();
-            if (recipientEmail) {
+          // Skip internal senders - look for external recipients instead
+          if (emailAddress && !isInternalEmail(emailAddress)) {
+            matchedContact = contactsByEmail.get(emailAddress);
+          } else if (emailAddress && isInternalEmail(emailAddress)) {
+            // Internal sender - try to match on external recipients
+            const externalRecipients = getExternalEmails(
+              (message.toRecipients || []).map(r => r.emailAddress?.address?.toLowerCase()).filter(Boolean) as string[]
+            );
+            for (const recipientEmail of externalRecipients) {
               const contact = contactsByEmail.get(recipientEmail);
               if (contact) {
                 matchedContact = contact;
-                break; // Use first matching contact
+                break;
               }
+            }
+          }
+        } else {
+          // Check all external recipients for outbound emails
+          const externalRecipients = getExternalEmails(
+            (message.toRecipients || []).map(r => r.emailAddress?.address?.toLowerCase()).filter(Boolean) as string[]
+          );
+          for (const recipientEmail of externalRecipients) {
+            const contact = contactsByEmail.get(recipientEmail);
+            if (contact) {
+              matchedContact = contact;
+              break; // Use first matching contact
             }
           }
         }
@@ -401,24 +417,39 @@ export async function syncAllFolderEmails(
         }
 
         // Find matching contact
-        // For inbound: match on sender
-        // For outbound: match on ANY recipient (not just the first one)
+        // For inbound: match on sender (if not internal)
+        // For outbound: match on ANY external recipient
+        // Internal domains (voiceforpest.com, affiliatedtech.com, etc.) are excluded
         let matchedContact: { id: string; email: string | null; company_id: string | null } | null | undefined = null;
 
         if (message.direction === 'inbound') {
           const emailAddress = message.from?.emailAddress?.address?.toLowerCase();
-          matchedContact = emailAddress ? contactsByEmail.get(emailAddress) : null;
-        } else {
-          // Check all recipients for outbound emails
-          const recipients = message.toRecipients || [];
-          for (const recipient of recipients) {
-            const recipientEmail = recipient.emailAddress?.address?.toLowerCase();
-            if (recipientEmail) {
+          // Skip internal senders - look for external recipients instead
+          if (emailAddress && !isInternalEmail(emailAddress)) {
+            matchedContact = contactsByEmail.get(emailAddress);
+          } else if (emailAddress && isInternalEmail(emailAddress)) {
+            // Internal sender - try to match on external recipients
+            const externalRecipients = getExternalEmails(
+              (message.toRecipients || []).map(r => r.emailAddress?.address?.toLowerCase()).filter(Boolean) as string[]
+            );
+            for (const recipientEmail of externalRecipients) {
               const contact = contactsByEmail.get(recipientEmail);
               if (contact) {
                 matchedContact = contact;
-                break; // Use first matching contact
+                break;
               }
+            }
+          }
+        } else {
+          // Check all external recipients for outbound emails
+          const externalRecipients = getExternalEmails(
+            (message.toRecipients || []).map(r => r.emailAddress?.address?.toLowerCase()).filter(Boolean) as string[]
+          );
+          for (const recipientEmail of externalRecipients) {
+            const contact = contactsByEmail.get(recipientEmail);
+            if (contact) {
+              matchedContact = contact;
+              break; // Use first matching contact
             }
           }
         }

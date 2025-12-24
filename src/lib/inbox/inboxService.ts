@@ -10,6 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 import { getValidToken } from '@/lib/microsoft/auth';
 import { syncEmailToCommunication } from '@/lib/communicationHub/sync';
+import { isInternalEmail, getExternalEmails } from '@/lib/communicationHub/matching/matchEmailToCompany';
 
 // ============================================================================
 // Types
@@ -334,16 +335,26 @@ async function processMessage(
   const supabase = createAdminClient();
   const isInbound = direction === 'inbound';
 
-  // For inbound: use sender email
-  // For outbound: we'll check all recipients in calculateLinkConfidence
-  const primaryEmail = isInbound
-    ? message.from?.emailAddress?.address?.toLowerCase()
-    : message.toRecipients?.[0]?.emailAddress?.address?.toLowerCase();
+  // For inbound: use sender email (if not internal)
+  // For outbound: check all recipients, filtering out internal domains
+  const senderEmail = message.from?.emailAddress?.address?.toLowerCase();
+  const isInboundFromInternal = isInbound && senderEmail && isInternalEmail(senderEmail);
 
-  // Get all recipient emails for outbound matching
-  const allRecipientEmails = message.toRecipients
-    ?.map(r => r.emailAddress?.address?.toLowerCase())
-    .filter(Boolean) as string[] || [];
+  // Get all recipient emails for outbound matching, filter out internal domains
+  const allRecipientEmails = getExternalEmails(
+    message.toRecipients
+      ?.map(r => r.emailAddress?.address?.toLowerCase())
+      .filter(Boolean) as string[] || []
+  );
+
+  // For inbound from internal, try to find external recipients instead
+  const primaryEmail = isInboundFromInternal
+    ? allRecipientEmails[0] // Use first external recipient
+    : (isInbound ? senderEmail : allRecipientEmails[0]);
+
+  if (isInboundFromInternal) {
+    console.log(`[InboxService] Internal sender ${senderEmail}, looking for external recipients`);
+  }
 
   if (!message.conversationId) {
     return { newConversation: false, linked: false };
@@ -523,9 +534,12 @@ async function calculateLinkConfidence(
 
   // 1. Check if email matches a known contact
   // For outbound emails, check ALL recipients, not just the first one
-  const emailsToCheck = allRecipientEmails.length > 0
-    ? allRecipientEmails
-    : [primaryEmail];
+  // Filter out internal domains - we only want to match to customer emails
+  const emailsToCheck = getExternalEmails(
+    allRecipientEmails.length > 0
+      ? allRecipientEmails
+      : (primaryEmail ? [primaryEmail] : [])
+  );
 
   let contact: { id: string; name: string; company_id: string | null } | null = null;
 
