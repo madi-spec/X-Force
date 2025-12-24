@@ -206,9 +206,19 @@ function getDisplayContent(comm: Communication): {
     // Skip analysis if it indicates empty/no content (bad AI analysis)
     const isEmptyPlaceholder = /empty|no content|no actual content|couldn't extract/i.test(analysisSummary);
     if (!isEmptyPlaceholder) {
+      // For display, truncate long summaries (full version shown when expanded)
+      let displaySummary = analysisSummary;
+      if (analysisSummary.length > 200) {
+        // Find a good break point (end of sentence or word)
+        const truncated = analysisSummary.substring(0, 200);
+        const lastPeriod = truncated.lastIndexOf('.');
+        const lastSpace = truncated.lastIndexOf(' ');
+        const breakPoint = lastPeriod > 150 ? lastPeriod + 1 : lastSpace;
+        displaySummary = truncated.substring(0, breakPoint).trim() + '...';
+      }
       return {
         title: subject || null,
-        summary: analysisSummary,
+        summary: displaySummary,
         isMinimized: false,
         type: 'normal'
       };
@@ -346,8 +356,8 @@ function CommunicationBubble({
               : displayContent.summary}
           </p>
 
-          {/* Expand/Collapse - show for meetings with analysis or emails with content */}
-          {((comm.channel === 'meeting' && comm.current_analysis?.summary && comm.current_analysis.summary.length > 150) ||
+          {/* Expand/Collapse - show when there's more content to show */}
+          {((comm.current_analysis?.summary && comm.current_analysis.summary.length > 200) ||
             (comm.channel !== 'meeting' && (comm.full_content?.length || 0) > 200)) && (
             <button
               onClick={() => setExpanded(!expanded)}
