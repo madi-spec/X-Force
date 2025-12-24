@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
 import { buildAnalysisPrompt, ANALYSIS_PROMPT_VERSION } from './prompts/v1';
+import { cleanEmailContent } from '@/lib/email/contentCleaner';
 import type { Communication } from '@/types/communicationHub';
 
 // Expected AI response structure
@@ -103,12 +104,15 @@ export async function analyzeCommunication(
     .eq('id', communicationId);
 
   try {
-    // Build prompt
+    // Build prompt with cleaned content (removes boilerplate security headers/footers)
+    const rawContent = comm.full_content || comm.content_preview || '';
+    const cleanedContent = comm.channel === 'email' ? cleanEmailContent(rawContent) : rawContent;
+
     const prompt = buildAnalysisPrompt({
       channel: comm.channel,
       direction: comm.direction,
       subject: comm.subject,
-      content: comm.full_content || comm.content_preview,
+      content: cleanedContent,
       participants: {
         our: (comm.our_participants || []).map((p: { name?: string; email?: string }) => p.name || p.email).filter(Boolean) as string[],
         their: (comm.their_participants || []).map((p: { name?: string; email?: string }) => p.name || p.email).filter(Boolean) as string[],

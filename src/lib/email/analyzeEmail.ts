@@ -13,6 +13,7 @@ import {
   type EmailContext,
   type InboundEmail,
 } from './enrichEmailContext';
+import { cleanEmailContent } from './contentCleaner';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -108,8 +109,33 @@ function buildPrompt(email: InboundEmail, context: EmailContext): string {
       }).join('\n---\n')
     : 'This is a new conversation thread.';
 
-  // Get email body (prefer text, fall back to preview)
-  const emailBody = email.body_text || email.body_preview || '(No body content)';
+  // Format relationship intelligence
+  const ri = context.relationshipIntel;
+
+  const salespersonNotes = ri.notes.length > 0
+    ? ri.notes.map(n => `- [${n.context_type.toUpperCase()}] ${n.note}`).join('\n')
+    : 'No salesperson notes.';
+
+  const knownBuyingSignals = ri.buyingSignals.length > 0
+    ? ri.buyingSignals.map(s => `- [${s.strength}] ${s.signal}${s.quote ? ` ("${s.quote}")` : ''}`).join('\n')
+    : 'None detected yet.';
+
+  const knownConcerns = ri.concerns.filter(c => !c.resolved).length > 0
+    ? ri.concerns.filter(c => !c.resolved).map(c => `- [${c.severity}] ${c.concern}`).join('\n')
+    : 'None detected.';
+
+  const openCommitments = [
+    ...ri.ourCommitments.map(c => `- [OURS] ${c.commitment}${c.due_by ? ` (due: ${c.due_by})` : ''}`),
+    ...ri.theirCommitments.map(c => `- [THEIRS] ${c.commitment}${c.expected_by ? ` (expected: ${c.expected_by})` : ''}`),
+  ].join('\n') || 'None outstanding.';
+
+  const keyFacts = ri.keyFacts.length > 0
+    ? ri.keyFacts.map(f => `- ${f}`).join('\n')
+    : 'None recorded.';
+
+  // Get email body (prefer text, fall back to preview) and clean boilerplate
+  const rawBody = email.body_text || email.body_preview || '(No body content)';
+  const emailBody = cleanEmailContent(rawBody);
 
   return `You are analyzing an inbound email for a sales team. Your job is to understand:
 1. Who is this person and what's our relationship?
@@ -142,6 +168,27 @@ Deal Name: ${context.deal?.name || 'No active deal'}
 Value: ${context.deal?.estimated_value ? `$${context.deal.estimated_value.toLocaleString()}` : 'Unknown'}
 Stage: ${context.deal?.stage || 'N/A'}
 </active_deal>
+
+${ri.summary ? `<relationship_summary>\n${ri.summary}\n</relationship_summary>\n` : ''}
+<salesperson_notes>
+${salespersonNotes}
+</salesperson_notes>
+
+<known_buying_signals>
+${knownBuyingSignals}
+</known_buying_signals>
+
+<known_concerns>
+${knownConcerns}
+</known_concerns>
+
+<open_commitments>
+${openCommitments}
+</open_commitments>
+
+<key_facts_about_them>
+${keyFacts}
+</key_facts_about_them>
 
 <recent_interactions>
 ${interactionHistory}
@@ -205,7 +252,7 @@ Analyze this email and return JSON with this exact structure:
   },
   "command_center_classification": {
     "tier": 1,
-    "tier_trigger": "demo_request | pricing_request | email_reply | meeting_request",
+    "tier_trigger": "demo_request | pricing_request | trial_request | email_reply | meeting_request | inbound_lead | objection | competitor | meeting_commitment | follow_up | general",
     "sla_minutes": 120,
     "why_now": "One compelling sentence"
   }
@@ -215,12 +262,12 @@ Important guidelines:
 - Be specific and reference actual data from the context
 - For buying_signals and concerns_detected, quote directly from the email when possible
 - The response_draft should be professional, warm, and reference specific context
-- For command_center_classification:
-  - Tier 1 (RESPOND NOW): Demo requests, pricing questions, direct replies waiting for response
-  - Tier 2 (DON'T LOSE THIS): Competitive mentions, deadline pressure
-  - Tier 3 (KEEP YOUR WORD): Follow-ups on commitments we made
-  - Tier 4 (MOVE BIG DEALS): High-value deals needing attention
-  - Tier 5 (BUILD PIPELINE): Everything else
+- For command_center_classification, use EXACTLY these tier_trigger values:
+  - Tier 1 (RESPOND NOW): demo_request, pricing_request, trial_request, email_reply, meeting_request, inbound_lead, direct_question
+  - Tier 2 (DON'T LOSE THIS): objection, competitor, competitive_risk, deadline_critical, urgency_signal, buying_signal
+  - Tier 3 (KEEP YOUR WORD): meeting_commitment, follow_up, deliverable_promised, action_item
+  - Tier 4 (MOVE BIG DEALS): high_value, deal_stale (deal going quiet)
+  - Tier 5 (BUILD PIPELINE): general, informational, nurture, research_needed
 - If arrays are empty (no signals, no concerns), use empty arrays []
 
 Respond ONLY with valid JSON, no markdown or extra text.`;
