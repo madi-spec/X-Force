@@ -18,6 +18,16 @@ const INTERNAL_DOMAINS = [
   'affiliatedtech.com',
   'x-rai.com',
   'xraisales.com',
+  'xrailabsteam.com',
+];
+
+// Notification/system domains - not real people, exclude from matching
+const EXCLUDED_DOMAINS = [
+  'otter.ai',
+  'fireflies.ai',
+  'calendly.com',
+  'hubspot.com',
+  'updates.otter.ai',
 ];
 
 /**
@@ -30,10 +40,19 @@ export function isInternalEmail(email: string): boolean {
 }
 
 /**
- * Extract external emails from a list, filtering out internal domains
+ * Check if an email is from a notification/system domain (not a real person)
+ */
+export function isExcludedEmail(email: string): boolean {
+  if (!email) return false;
+  const domain = email.toLowerCase().split('@')[1];
+  return EXCLUDED_DOMAINS.some(d => domain === d || domain?.endsWith(`.${d}`));
+}
+
+/**
+ * Extract external emails from a list, filtering out internal and excluded domains
  */
 export function getExternalEmails(emails: string[]): string[] {
-  return emails.filter(e => e && !isInternalEmail(e));
+  return emails.filter(e => e && !isInternalEmail(e) && !isExcludedEmail(e));
 }
 
 /**

@@ -48,28 +48,6 @@ export async function syncEmails(userId: string, options: EmailSyncOptions = {})
   const client = new MicrosoftGraphClient(token);
 
   try {
-    // Get or create a default company for external emails
-    let { data: externalCompany } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('name', 'External Contacts')
-      .single();
-
-    if (!externalCompany) {
-      const { data: newCompany, error: companyError } = await supabase
-        .from('companies')
-        .insert({ name: 'External Contacts', industry: 'pest', segment: 'smb', status: 'prospect' })
-        .select('id')
-        .single();
-      if (companyError) {
-        console.error('[EmailSync] Failed to create External Contacts company:', companyError);
-      }
-      externalCompany = newCompany;
-    }
-
-    const externalCompanyId = externalCompany?.id;
-    console.log('[EmailSync] External company ID:', externalCompanyId);
-
     // Get all contacts with email addresses for matching
     const { data: contacts } = await supabase
       .from('contacts')
@@ -194,16 +172,10 @@ export async function syncEmails(userId: string, options: EmailSyncOptions = {})
         // Get deal for this contact if available
         const dealId = matchedContact ? dealsByContact.get(matchedContact.id) : null;
 
-        // Use external company for emails without matched contacts
-        const companyId = matchedContact?.company_id || externalCompanyId;
+        // Use matched company or leave as null (unlinked)
+        const companyId = matchedContact?.company_id || null;
 
-        if (!companyId) {
-          console.log('[EmailSync] Skipping email - no company available:', message.subject);
-          result.skipped++;
-          continue;
-        }
-
-        // Create activity record
+        // Create activity record (company_id can be null for unlinked emails)
         const activityData = {
           type: message.direction === 'inbound' ? 'email_received' as const : 'email_sent' as const,
           subject: message.subject || '(No subject)',
@@ -277,27 +249,6 @@ export async function syncAllFolderEmails(
   const client = new MicrosoftGraphClient(token);
 
   try {
-    // Get or create a default company for external emails
-    let { data: externalCompany } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('name', 'External Contacts')
-      .single();
-
-    if (!externalCompany) {
-      const { data: newCompany, error: companyError } = await supabase
-        .from('companies')
-        .insert({ name: 'External Contacts', industry: 'pest', segment: 'smb', status: 'prospect' })
-        .select('id')
-        .single();
-      if (companyError) {
-        console.error('[EmailSync] Failed to create External Contacts company:', companyError);
-      }
-      externalCompany = newCompany;
-    }
-
-    const externalCompanyId = externalCompany?.id;
-
     // Get all contacts with email addresses for matching
     const { data: contacts } = await supabase
       .from('contacts')
@@ -457,15 +408,10 @@ export async function syncAllFolderEmails(
         // Get deal for this contact if available
         const dealId = matchedContact ? dealsByContact.get(matchedContact.id) : null;
 
-        // Use external company for emails without matched contacts
-        const companyId = matchedContact?.company_id || externalCompanyId;
+        // Use matched company or leave as null (unlinked)
+        const companyId = matchedContact?.company_id || null;
 
-        if (!companyId) {
-          result.skipped++;
-          continue;
-        }
-
-        // Create activity record
+        // Create activity record (company_id can be null for unlinked emails)
         const activityData = {
           type: message.direction === 'inbound' ? 'email_received' as const : 'email_sent' as const,
           subject: message.subject || '(No subject)',
