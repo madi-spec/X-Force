@@ -19,7 +19,8 @@ import {
   AlertCircle,
   ExternalLink,
   X,
-  FileText
+  FileText,
+  Calendar
 } from 'lucide-react';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -68,11 +69,71 @@ const sentimentIcons: Record<string, { icon: React.ElementType; color: string }>
   excited: { icon: Smile, color: 'text-green-600' },
 };
 
-// Helper to generate smart display content
-function getDisplayContent(comm: Communication): { title: string | null; summary: string } {
+// Helper to detect scheduling confirmation emails
+function isSchedulingConfirmation(comm: Communication): { isScheduling: boolean; customerMessage?: string } {
+  const content = comm.full_content || comm.content_preview || '';
   const subject = comm.subject || '';
 
-  // Check for calendar responses
+  // Common scheduling confirmation patterns
+  const schedulingPatterns = [
+    /looking forward to speaking with you/i,
+    /has been scheduled/i,
+    /meeting confirmed/i,
+    /your meeting is booked/i,
+    /calendar invite/i,
+    /new event:.+has been scheduled/i,
+    /scheduled a meeting/i,
+    /booked.+on your calendar/i,
+  ];
+
+  // Check for scheduling tool senders (from our participants for outbound confirmations)
+  const ourEmails = (comm.our_participants as Array<{ email?: string }> || [])
+    .map(p => p.email?.toLowerCase() || '');
+  const isFromSchedulingTool = ourEmails.some(email =>
+    email.includes('calendly') ||
+    email.includes('hubspot') ||
+    email.includes('xraisales') ||
+    email.includes('schedule') ||
+    email.includes('booking')
+  );
+
+  const hasSchedulingPattern = schedulingPatterns.some(p => p.test(content));
+
+  if (isFromSchedulingTool || hasSchedulingPattern) {
+    // Try to extract customer's message (often after separator)
+    const messageMatch = content.match(/=+\s*([\s\S]*?)(?:=+|Looking forward|$)/);
+    let customerMessage: string | undefined;
+
+    // Look for the customer's typed message
+    const lines = content.split('\n').filter(l => l.trim());
+    for (const line of lines) {
+      // Skip boilerplate lines
+      if (line.includes('Looking forward') ||
+          line.includes('=====') ||
+          line.length < 10) continue;
+      // First substantive line is likely the customer message
+      if (line.trim().length > 15) {
+        customerMessage = line.trim();
+        break;
+      }
+    }
+
+    return { isScheduling: true, customerMessage };
+  }
+
+  return { isScheduling: false };
+}
+
+// Helper to generate smart display content
+function getDisplayContent(comm: Communication): {
+  title: string | null;
+  summary: string;
+  isMinimized?: boolean;
+  type?: 'calendar_response' | 'scheduling_confirmation' | 'normal';
+} {
+  const subject = comm.subject || '';
+
+  // Check for calendar responses (Accepted/Declined/Tentative)
   const calendarPatterns = [
     { pattern: /^Accepted:\s*/i, status: 'confirmed' },
     { pattern: /^Declined:\s*/i, status: 'declined' },
@@ -85,9 +146,30 @@ function getDisplayContent(comm: Communication): { title: string | null; summary
       const dateStr = format(new Date(comm.occurred_at), 'MMM d');
       return {
         title: null,
-        summary: `Meeting "${meetingTitle}" ${status} for ${dateStr}`
+        summary: `Meeting "${meetingTitle}" ${status} for ${dateStr}`,
+        isMinimized: true,
+        type: 'calendar_response'
       };
     }
+  }
+
+  // Check for scheduling confirmations
+  const scheduling = isSchedulingConfirmation(comm);
+  if (scheduling.isScheduling) {
+    const dateStr = format(new Date(comm.occurred_at), 'MMM d');
+    const direction = comm.direction === 'outbound' ? 'Sent' : 'Received';
+    let summary = `📅 Meeting scheduled: "${subject}" (${dateStr})`;
+
+    if (scheduling.customerMessage) {
+      summary += `\n💬 "${scheduling.customerMessage}"`;
+    }
+
+    return {
+      title: null,
+      summary,
+      isMinimized: true,
+      type: 'scheduling_confirmation'
+    };
   }
 
   // Helper to extract summary from content
@@ -110,7 +192,9 @@ function getDisplayContent(comm: Communication): { title: string | null; summary
     if (!isEmptyPlaceholder) {
       return {
         title: subject || null,
-        summary: analysisSummary
+        summary: analysisSummary,
+        isMinimized: false,
+        type: 'normal'
       };
     }
   }
@@ -118,7 +202,9 @@ function getDisplayContent(comm: Communication): { title: string | null; summary
   // Fall back to content preview (first 2 sentences or 150 chars)
   return {
     title: subject || null,
-    summary: extractFromContent()
+    summary: extractFromContent(),
+    isMinimized: false,
+    type: 'normal'
   };
 }
 
@@ -143,6 +229,33 @@ function CommunicationBubble({
     (comm.current_analysis.extracted_commitments_us?.length ?? 0) > 0 ||
     (comm.current_analysis.extracted_commitments_them?.length ?? 0) > 0
   );
+
+  // Render minimized version for calendar responses and scheduling confirmations
+  if (displayContent.isMinimized) {
+    return (
+      <div className="flex justify-center mb-3">
+        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs ${
+          displayContent.type === 'scheduling_confirmation'
+            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+            : 'bg-gray-100 text-gray-600 border border-gray-200'
+        }`}>
+          <Calendar className="w-3.5 h-3.5" />
+          <span className="whitespace-pre-line">{displayContent.summary}</span>
+          <span className="text-gray-400">•</span>
+          <span className="text-gray-400">{format(new Date(comm.occurred_at), 'MMM d')}</span>
+          {hasSource && (
+            <button
+              onClick={() => onViewSource(comm)}
+              className="ml-1 p-1 hover:bg-white/50 rounded"
+              title="View original"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex gap-3 mb-4 ${isOutbound ? 'flex-row-reverse' : ''}`}>
