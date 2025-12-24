@@ -338,12 +338,30 @@ function CommunicationBubble({
             ? 'bg-blue-500 text-white rounded-tr-sm'
             : 'bg-gray-100 text-gray-900 rounded-tl-sm'
         }`}>
-          {/* Title (if not a calendar response) */}
-          {displayContent.title && (
-            <p className={`font-medium mb-2 ${isOutbound ? 'text-blue-100' : 'text-gray-500'}`}>
-              {displayContent.title}
-            </p>
-          )}
+          {/* Header row with title and view button */}
+          <div className="flex items-start justify-between gap-2 mb-2">
+            {/* Title (if not a calendar response) */}
+            {displayContent.title ? (
+              <p className={`font-medium flex-1 ${isOutbound ? 'text-blue-100' : 'text-gray-500'}`}>
+                {displayContent.title}
+              </p>
+            ) : <div className="flex-1" />}
+
+            {/* View Source/Analysis button - upper right */}
+            {(hasSource || (comm.channel === 'meeting' && comm.current_analysis)) && (
+              <button
+                onClick={() => onViewSource(comm)}
+                className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${
+                  isOutbound
+                    ? 'hover:bg-blue-400 text-blue-200 hover:text-white'
+                    : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                }`}
+                title={comm.channel === 'meeting' ? 'View Full Analysis' : 'View Original Email'}
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+            )}
+          </div>
 
           {/* Summary Content */}
           <p className={`text-sm ${expanded ? 'whitespace-pre-wrap' : ''}`}>
@@ -373,6 +391,43 @@ function CommunicationBubble({
             </button>
           )}
 
+          {/* AI Insights Tags (inside bubble) */}
+          {!isOutbound && hasAnalysis && (
+            <div className={`mt-3 pt-3 border-t ${isOutbound ? 'border-blue-400' : 'border-gray-200'}`}>
+              <div className="flex items-center gap-2 text-xs flex-wrap">
+                {/* Sentiment */}
+                {comm.current_analysis?.sentiment && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-white/80 rounded-full">
+                    <SentimentIcon className={`w-3 h-3 ${sentiment?.color}`} />
+                    <span className="capitalize text-gray-600">
+                      {comm.current_analysis.sentiment}
+                    </span>
+                  </div>
+                )}
+
+                {/* Signals */}
+                {comm.current_analysis?.extracted_signals?.slice(0, 2).map((signal, i) => (
+                  <span
+                    key={i}
+                    className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full"
+                  >
+                    {signal.signal.replace(/_/g, ' ')}
+                  </span>
+                ))}
+
+                {/* Products */}
+                {comm.current_analysis?.products_discussed?.slice(0, 2).map((product, i) => (
+                  <span
+                    key={i}
+                    className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full"
+                  >
+                    {product}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Attachments */}
           {comm.attachments && comm.attachments.length > 0 && (
             <div className={`mt-3 pt-3 border-t ${isOutbound ? 'border-blue-400' : 'border-gray-200'}`}>
@@ -399,59 +454,7 @@ function CommunicationBubble({
               </a>
             </div>
           )}
-
-          {/* View Source/Analysis */}
-          {(hasSource || (comm.channel === 'meeting' && comm.current_analysis)) && (
-            <div className={`mt-3 pt-3 border-t ${isOutbound ? 'border-blue-400' : 'border-gray-200'}`}>
-              <button
-                onClick={() => onViewSource(comm)}
-                className={`flex items-center gap-2 text-xs ${
-                  isOutbound ? 'text-blue-200 hover:text-white' : 'text-blue-600 hover:text-blue-700'
-                }`}
-              >
-                <ExternalLink className="w-3 h-3" />
-                {comm.channel === 'meeting' ? 'View Full Analysis' : 'View Original Email'}
-              </button>
-            </div>
-          )}
         </div>
-
-        {/* AI Insights (Below bubble, for inbound only) */}
-        {!isOutbound && hasAnalysis && (
-          <div className="mt-2 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100">
-            <div className="flex items-center gap-4 text-xs flex-wrap">
-              {/* Sentiment */}
-              {comm.current_analysis?.sentiment && (
-                <div className="flex items-center gap-1">
-                  <SentimentIcon className={`w-4 h-4 ${sentiment?.color}`} />
-                  <span className="capitalize text-gray-600">
-                    {comm.current_analysis.sentiment}
-                  </span>
-                </div>
-              )}
-
-              {/* Signals */}
-              {comm.current_analysis?.extracted_signals?.slice(0, 2).map((signal, i) => (
-                <span
-                  key={i}
-                  className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full"
-                >
-                  {signal.signal.replace(/_/g, ' ')}
-                </span>
-              ))}
-
-              {/* Products */}
-              {comm.current_analysis?.products_discussed?.slice(0, 2).map((product, i) => (
-                <span
-                  key={i}
-                  className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full"
-                >
-                  {product}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
