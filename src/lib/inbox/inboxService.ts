@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 import { getValidToken } from '@/lib/microsoft/auth';
+import { syncEmailToCommunication } from '@/lib/communicationHub/sync';
 
 // ============================================================================
 // Types
@@ -132,6 +133,18 @@ const SYNC_CONFIG = {
   rate_limit_delay_ms: 100,
 };
 
+// Folders to exclude from sync
+const EXCLUDED_FOLDER_NAMES = [
+  'deleted items',
+  'deleteditems',
+  'junk email',
+  'junk',
+  'spam',
+  'deleted',
+  'trash',
+  'drafts',
+];
+
 const LINK_THRESHOLDS = {
   AUTO_HIGH: 65, // Lowered - contact with one deal (40) + thread linked (30) = 70 should qualify
   AUTO_SUGGESTED: 30, // Lowered to allow domain-only matches (35 points)
@@ -199,7 +212,7 @@ export async function getOutlookFolders(userId: string) {
 // ============================================================================
 
 /**
- * Perform initial email sync (last 30 days)
+ * Perform initial email sync (last 30 days) from ALL folders
  */
 export async function performInitialSync(userId: string): Promise<SyncResult> {
   const token = await getValidToken(userId);
@@ -214,88 +227,76 @@ export async function performInitialSync(userId: string): Promise<SyncResult> {
   const stats: SyncResult = { conversations: 0, messages: 0, linked: 0, errors: [] };
 
   try {
-    // Sync inbox
-    let nextLink: string | undefined =
-      `/me/mailFolders/inbox/messages?` +
-      `$filter=receivedDateTime ge ${cutoffDate.toISOString()}&` +
-      `$top=${SYNC_CONFIG.max_messages_per_batch}&` +
-      `$orderby=receivedDateTime desc&` +
-      `$select=id,conversationId,internetMessageId,subject,from,toRecipients,ccRecipients,` +
-      `receivedDateTime,sentDateTime,isRead,hasAttachments,bodyPreview,body,importance,flag`;
+    // Get all mail folders
+    const foldersResponse = await graph.getMailFolders();
+    const allFolders = foldersResponse.value || [];
 
-    while (nextLink) {
-      const response = await graph.getMessages('inbox', {
-        top: SYNC_CONFIG.max_messages_per_batch,
-        filter: `receivedDateTime ge ${cutoffDate.toISOString()}`,
-        orderby: 'receivedDateTime desc',
-        select: [
-          'id',
-          'conversationId',
-          'internetMessageId',
-          'subject',
-          'from',
-          'toRecipients',
-          'ccRecipients',
-          'receivedDateTime',
-          'sentDateTime',
-          'isRead',
-          'hasAttachments',
-          'bodyPreview',
-          'body',
-          'importance',
-          'flag',
-        ],
-      });
+    console.log(`[InboxService] Found ${allFolders.length} mail folders`);
 
-      for (const message of response.value) {
-        try {
-          const result = await processMessage(userId, message as MicrosoftMessage, 'inbound');
-          stats.messages++;
-          if (result.newConversation) stats.conversations++;
-          if (result.linked) stats.linked++;
-        } catch (err) {
-          stats.errors.push(`Error processing message ${message.id}: ${err}`);
-        }
-      }
-
-      nextLink = response['@odata.nextLink']?.replace('https://graph.microsoft.com/v1.0', '');
-
-      if (nextLink) {
-        await sleep(SYNC_CONFIG.rate_limit_delay_ms);
-      }
-    }
-
-    // Sync sent items
-    const sentResponse = await graph.getMessages('sentitems', {
-      top: SYNC_CONFIG.max_messages_per_batch,
-      filter: `sentDateTime ge ${cutoffDate.toISOString()}`,
-      orderby: 'sentDateTime desc',
-      select: [
-        'id',
-        'conversationId',
-        'internetMessageId',
-        'subject',
-        'from',
-        'toRecipients',
-        'ccRecipients',
-        'sentDateTime',
-        'receivedDateTime',
-        'hasAttachments',
-        'bodyPreview',
-        'body',
-        'importance',
-        'flag',
-      ],
+    // Filter out excluded folders
+    const foldersToSync = allFolders.filter((folder: { displayName: string }) => {
+      const displayNameLower = folder.displayName.toLowerCase();
+      return !EXCLUDED_FOLDER_NAMES.includes(displayNameLower);
     });
 
-    for (const message of sentResponse.value) {
+    console.log(`[InboxService] Syncing from ${foldersToSync.length} folders:`,
+      foldersToSync.map((f: { displayName: string }) => f.displayName).join(', '));
+
+    // Sync each folder
+    for (const folder of foldersToSync) {
+      const folderNameLower = folder.displayName.toLowerCase();
+      const isSentFolder = folderNameLower.includes('sent') || folderNameLower === 'outbox';
+      const direction = isSentFolder ? 'outbound' : 'inbound';
+
+      // Use appropriate date filter for sent vs received folders
+      const dateFilter = isSentFolder
+        ? `sentDateTime ge ${cutoffDate.toISOString()}`
+        : `receivedDateTime ge ${cutoffDate.toISOString()}`;
+      const orderBy = isSentFolder ? 'sentDateTime desc' : 'receivedDateTime desc';
+
       try {
-        const result = await processMessage(userId, message as MicrosoftMessage, 'outbound');
-        stats.messages++;
-        if (result.newConversation) stats.conversations++;
-        if (result.linked) stats.linked++;
-      } catch (err) {
-        stats.errors.push(`Error processing sent message ${message.id}: ${err}`);
+        const response = await graph.getMessages(folder.id, {
+          top: SYNC_CONFIG.max_messages_per_batch,
+          filter: dateFilter,
+          orderby: orderBy,
+          select: [
+            'id',
+            'conversationId',
+            'internetMessageId',
+            'subject',
+            'from',
+            'toRecipients',
+            'ccRecipients',
+            'receivedDateTime',
+            'sentDateTime',
+            'isRead',
+            'hasAttachments',
+            'bodyPreview',
+            'body',
+            'importance',
+            'flag',
+          ],
+        });
+
+        console.log(`[InboxService] Folder "${folder.displayName}": ${response.value?.length || 0} messages`);
+
+        for (const message of response.value || []) {
+          try {
+            const result = await processMessage(userId, message as MicrosoftMessage, direction);
+            stats.messages++;
+            if (result.newConversation) stats.conversations++;
+            if (result.linked) stats.linked++;
+          } catch (err) {
+            stats.errors.push(`Error processing message ${message.id} from ${folder.displayName}: ${err}`);
+          }
+        }
+
+        // Rate limiting between folders
+        await sleep(SYNC_CONFIG.rate_limit_delay_ms);
+
+      } catch (folderErr) {
+        console.error(`[InboxService] Error syncing folder "${folder.displayName}":`, folderErr);
+        stats.errors.push(`Failed to sync folder ${folder.displayName}: ${folderErr}`);
       }
     }
 
@@ -333,9 +334,16 @@ async function processMessage(
   const supabase = createAdminClient();
   const isInbound = direction === 'inbound';
 
+  // For inbound: use sender email
+  // For outbound: we'll check all recipients in calculateLinkConfidence
   const primaryEmail = isInbound
     ? message.from?.emailAddress?.address?.toLowerCase()
     : message.toRecipients?.[0]?.emailAddress?.address?.toLowerCase();
+
+  // Get all recipient emails for outbound matching
+  const allRecipientEmails = message.toRecipients
+    ?.map(r => r.emailAddress?.address?.toLowerCase())
+    .filter(Boolean) as string[] || [];
 
   if (!message.conversationId) {
     return { newConversation: false, linked: false };
@@ -357,8 +365,8 @@ async function processMessage(
     // NEW CONVERSATION
     newConversation = true;
 
-    // Calculate link confidence
-    const linkResult = await calculateLinkConfidence(userId, message, primaryEmail || '');
+    // Calculate link confidence - pass all recipient emails for outbound matching
+    const linkResult = await calculateLinkConfidence(userId, message, primaryEmail || '', allRecipientEmails);
     linked = linkResult.confidence >= LINK_THRESHOLDS.AUTO_SUGGESTED;
 
     const status: ConversationStatus = isInbound ? 'pending' : 'awaiting_response';
@@ -466,9 +474,18 @@ async function processMessage(
       .update(messageData)
       .eq('id', existingMsg.id);
   } else {
-    await supabase
+    const { data: inserted } = await supabase
       .from('email_messages')
-      .insert(messageData);
+      .insert(messageData)
+      .select('id')
+      .single();
+
+    // Sync new email to Communication Hub (async, don't block)
+    if (inserted?.id) {
+      syncEmailToCommunication(inserted.id).catch((err) => {
+        console.error('[InboxService] Failed to sync email to Communication Hub:', err);
+      });
+    }
   }
 
   return { newConversation, linked };
@@ -493,7 +510,8 @@ interface LinkResult {
 async function calculateLinkConfidence(
   userId: string,
   message: MicrosoftMessage,
-  primaryEmail: string
+  primaryEmail: string,
+  allRecipientEmails: string[] = []
 ): Promise<LinkResult> {
   const supabase = createAdminClient();
 
@@ -504,11 +522,26 @@ async function calculateLinkConfidence(
   let dealId: string | null = null;
 
   // 1. Check if email matches a known contact
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('id, name, company_id')
-    .ilike('email', primaryEmail)
-    .single();
+  // For outbound emails, check ALL recipients, not just the first one
+  const emailsToCheck = allRecipientEmails.length > 0
+    ? allRecipientEmails
+    : [primaryEmail];
+
+  let contact: { id: string; name: string; company_id: string | null } | null = null;
+
+  for (const email of emailsToCheck) {
+    if (!email) continue;
+    const { data: matchedContact } = await supabase
+      .from('contacts')
+      .select('id, name, company_id')
+      .ilike('email', email)
+      .single();
+
+    if (matchedContact) {
+      contact = matchedContact;
+      break; // Use first matching contact
+    }
+  }
 
   if (contact) {
     contactId = contact.id;
@@ -539,9 +572,12 @@ async function calculateLinkConfidence(
       reasoning.push(`Known contact, no company linked`);
     }
   } else {
-    // Try domain match
-    const domain = primaryEmail.split('@')[1];
-    if (domain) {
+    // Try domain match - check all recipient domains for outbound emails
+    const domainsToCheck = emailsToCheck
+      .map(email => email?.split('@')[1])
+      .filter(Boolean) as string[];
+
+    for (const domain of domainsToCheck) {
       const { data: company } = await supabase
         .from('companies')
         .select('id, name')
@@ -552,6 +588,7 @@ async function calculateLinkConfidence(
         companyId = company.id;
         confidence += 35; // Domain matching is reliable for B2B emails
         reasoning.push(`Domain matches company: ${company.name}`);
+        break; // Use first matching company
       }
     }
   }
