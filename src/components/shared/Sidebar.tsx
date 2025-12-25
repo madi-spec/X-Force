@@ -15,17 +15,21 @@ import {
   Target,
   MessageSquare,
   Package,
+  BarChart3,
+  Crosshair,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Command Center', href: '/command-center', icon: Target },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Prospecting', href: '/prospecting', icon: Crosshair },
   { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Contacts', href: '/contacts', icon: Users },
   { name: 'Communications', href: '/communications', icon: MessageSquare },
   { name: 'Inbox', href: '/inbox', icon: Inbox },
   { name: 'Calendar', href: '/calendar', icon: Calendar },
+  { name: 'Whitespace', href: '/analytics/whitespace', icon: BarChart3 },
 ];
 
 const bottomNavigation = [
