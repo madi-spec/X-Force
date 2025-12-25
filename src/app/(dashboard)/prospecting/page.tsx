@@ -34,7 +34,7 @@ export default async function ProspectingPage() {
   // Filter to non-VFP products (these are prospecting opportunities)
   const nonVfpProspects = (prospects || []).filter(p => {
     const product = Array.isArray(p.product) ? p.product[0] : p.product;
-    return product && !['voice-for-pest', 'voice-for-turf'].includes(product.slug);
+    return product && !['vfp', 'vft'].includes(product.slug);
   });
 
   // Group by a simple stage assignment (all in 'lead' for now)

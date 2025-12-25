@@ -34,7 +34,7 @@ interface Product {
   id: string;
   name: string;
   slug: string;
-  base_price: number | null;
+  base_price_monthly: number | null;
 }
 
 interface CompanyProduct {
@@ -60,10 +60,10 @@ export async function analyzeWhitespace(): Promise<WhitespaceStats> {
   // Get all sellable products (excluding VFP/VFT base products)
   const { data: products } = await supabase
     .from('products')
-    .select('id, name, slug, base_price')
+    .select('id, name, slug, base_price_monthly')
     .eq('is_sellable', true)
     .eq('is_active', true)
-    .not('slug', 'in', '("voice-for-pest","voice-for-turf")');
+    .not('slug', 'in', '("vfp","vft")');
 
   // Get all VFP/VFT customers
   const { data: vfpCustomers } = await supabase
@@ -81,7 +81,7 @@ export async function analyzeWhitespace(): Promise<WhitespaceStats> {
     (vfpCustomers || [])
       .filter(c => {
         const product = Array.isArray(c.product) ? c.product[0] : c.product;
-        return product && ['voice-for-pest', 'voice-for-turf'].includes(product.slug);
+        return product && ['vfp', 'vft'].includes(product.slug);
       })
       .map(c => c.company_id)
   )];
@@ -100,7 +100,7 @@ export async function analyzeWhitespace(): Promise<WhitespaceStats> {
   // Filter to non-VFP products
   const filteredAdoptions = (aiAdoptions || []).filter(a => {
     const product = Array.isArray(a.product) ? a.product[0] : a.product;
-    return product && !['voice-for-pest', 'voice-for-turf'].includes(product.slug);
+    return product && !['vfp', 'vft'].includes(product.slug);
   });
 
   // Build adoption map
@@ -126,7 +126,7 @@ export async function analyzeWhitespace(): Promise<WhitespaceStats> {
       product_id: product.id,
       product_name: product.name,
       potential_customers: potentialCustomers,
-      potential_mrr: potentialCustomers * (product.base_price || 0)
+      potential_mrr: potentialCustomers * (product.base_price_monthly || 0)
     };
   });
 
@@ -160,10 +160,10 @@ export async function getWhitespaceOpportunities(
   // Get all sellable products
   const { data: products } = await supabase
     .from('products')
-    .select('id, name, slug, base_price')
+    .select('id, name, slug, base_price_monthly')
     .eq('is_sellable', true)
     .eq('is_active', true)
-    .not('slug', 'in', '("voice-for-pest","voice-for-turf")');
+    .not('slug', 'in', '("vfp","vft")');
 
   // Get companies with their products
   const { data: companies } = await supabase
@@ -187,7 +187,7 @@ export async function getWhitespaceOpportunities(
 
     const hasVFP = activeProducts.some((cp) => {
       const product = Array.isArray(cp.product) ? cp.product[0] : cp.product;
-      return product && ['voice-for-pest', 'voice-for-turf'].includes(product.slug);
+      return product && ['vfp', 'vft'].includes(product.slug);
     });
 
     if (!hasVFP) continue;
@@ -208,7 +208,7 @@ export async function getWhitespaceOpportunities(
           product_id: product.id,
           product_name: product.name,
           product_slug: product.slug,
-          estimated_mrr: product.base_price || 0,
+          estimated_mrr: product.base_price_monthly || 0,
           fit_score: score,
           fit_reasons: reasons
         };
