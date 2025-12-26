@@ -19,6 +19,12 @@ export interface AIPrompt {
   created_at: string;
   updated_at: string;
   updated_by: string | null;
+  // New fields for model/token configuration
+  model: string;
+  max_tokens: number;
+  category: string | null;
+  purpose: string | null;
+  variables: string[] | null;
 }
 
 // In-memory cache for prompts (refreshes every 5 minutes)
@@ -76,11 +82,17 @@ export async function getAllPrompts(): Promise<AIPrompt[]> {
 
 /**
  * Get prompt template with variables replaced
+ * Returns the prompt, schema, model, and maxTokens for use with the AI client
  */
 export async function getPromptWithVariables(
   key: string,
   variables: Record<string, string>
-): Promise<{ prompt: string; schema: string | null } | null> {
+): Promise<{
+  prompt: string;
+  schema: string | null;
+  model: string;
+  maxTokens: number;
+} | null> {
   const promptData = await getPrompt(key);
   if (!promptData) return null;
 
@@ -96,7 +108,12 @@ export async function getPromptWithVariables(
     }
   }
 
-  return { prompt, schema };
+  return {
+    prompt,
+    schema,
+    model: promptData.model || 'claude-sonnet-4-20250514',
+    maxTokens: promptData.max_tokens || 4096,
+  };
 }
 
 /**
@@ -107,6 +124,8 @@ export async function updatePrompt(
   updates: {
     prompt_template: string;
     schema_template?: string | null;
+    model?: string;
+    max_tokens?: number;
   },
   userId: string,
   changeReason?: string
@@ -124,26 +143,40 @@ export async function updatePrompt(
     return { success: false, error: 'Prompt not found' };
   }
 
-  // Save to history
+  // Save to history (including model/max_tokens for tracking)
   await supabase.from('ai_prompt_history').insert({
     prompt_id: id,
     prompt_template: current.prompt_template,
     schema_template: current.schema_template,
+    model: current.model,
+    max_tokens: current.max_tokens,
     version: current.version,
     changed_by: userId,
     change_reason: changeReason || 'Updated via settings',
   });
 
+  // Build update object - only include fields that are provided
+  const updateData: Record<string, unknown> = {
+    prompt_template: updates.prompt_template,
+    version: current.version + 1,
+    updated_at: new Date().toISOString(),
+    updated_by: userId,
+  };
+
+  if (updates.schema_template !== undefined) {
+    updateData.schema_template = updates.schema_template;
+  }
+  if (updates.model !== undefined) {
+    updateData.model = updates.model;
+  }
+  if (updates.max_tokens !== undefined) {
+    updateData.max_tokens = updates.max_tokens;
+  }
+
   // Update the prompt
   const { error: updateError } = await supabase
     .from('ai_prompts')
-    .update({
-      prompt_template: updates.prompt_template,
-      schema_template: updates.schema_template,
-      version: current.version + 1,
-      updated_at: new Date().toISOString(),
-      updated_by: userId,
-    })
+    .update(updateData)
     .eq('id', id);
 
   if (updateError) {
@@ -254,4 +287,101 @@ export async function getPromptHistory(
  */
 export function clearPromptCache(): void {
   promptCache.clear();
+}
+
+/**
+ * Get prompt with fallback key pattern
+ * Tries specific key first, then falls back to base key
+ * Example: getPromptWithFallback('email_followup_stalled', 'pest-control')
+ *   -> tries 'email_followup_stalled__pest-control' first
+ *   -> falls back to 'email_followup_stalled'
+ */
+export async function getPromptWithFallback(
+  baseKey: string,
+  overrideSuffix?: string | null
+): Promise<AIPrompt | null> {
+  // Try specific key first if suffix provided
+  if (overrideSuffix) {
+    const specificKey = `${baseKey}__${overrideSuffix}`;
+    const specificPrompt = await getPrompt(specificKey);
+    if (specificPrompt) {
+      return specificPrompt;
+    }
+  }
+
+  // Fall back to base key
+  return getPrompt(baseKey);
+}
+
+/**
+ * Email draft output structure
+ */
+export interface EmailDraftOutput {
+  subject: string;
+  body: string;
+  quality_checks: {
+    used_contact_name: boolean;
+    referenced_prior_interaction: boolean;
+  };
+}
+
+/**
+ * Generate an email draft using a prompt from ai_prompts
+ *
+ * @param promptKey - Base prompt key (e.g., 'email_followup_stalled')
+ * @param variables - Variables to inject into the prompt template
+ * @param options - Additional options
+ * @returns Parsed email draft with subject, body, and quality checks
+ */
+export async function generateEmailFromPromptKey(
+  promptKey: string,
+  variables: Record<string, string>,
+  options?: {
+    productSlug?: string | null; // For product-specific prompt override
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+  }
+): Promise<EmailDraftOutput> {
+  // Dynamic import to avoid circular dependency
+  const { callAIJson } = await import('@/lib/ai/core/aiClient');
+
+  // Try to get prompt with product-specific override
+  const prompt = await getPromptWithFallback(promptKey, options?.productSlug);
+
+  if (!prompt) {
+    throw new Error(`Prompt not found: ${promptKey}`);
+  }
+
+  // Replace variables in the template
+  let promptText = prompt.prompt_template;
+  let schemaText = prompt.schema_template;
+
+  for (const [varName, value] of Object.entries(variables)) {
+    const regex = new RegExp(`\\{\\{${varName}\\}\\}`, 'g');
+    promptText = promptText.replace(regex, value || '');
+    if (schemaText) {
+      schemaText = schemaText.replace(regex, value || '');
+    }
+  }
+
+  // Call AI with the prompt
+  const result = await callAIJson<EmailDraftOutput>({
+    prompt: promptText,
+    schema: schemaText || undefined,
+    model: (options?.model || prompt.model || 'claude-sonnet-4-20250514') as 'claude-sonnet-4-20250514',
+    maxTokens: options?.maxTokens || prompt.max_tokens || 1000,
+    temperature: options?.temperature ?? 0.7,
+  });
+
+  // Ensure quality_checks exists with defaults
+  const draft = result.data;
+  if (!draft.quality_checks) {
+    draft.quality_checks = {
+      used_contact_name: !!variables.contact_name && variables.contact_name !== 'there',
+      referenced_prior_interaction: !!(variables.last_inbound || variables.last_outbound),
+    };
+  }
+
+  return draft;
 }

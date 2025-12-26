@@ -17,7 +17,27 @@ interface AIPrompt {
   is_active: boolean;
   version: number;
   updated_at: string;
+  // Model configuration
+  model: string;
+  max_tokens: number;
+  category: string | null;
+  purpose: string | null;
+  variables: string[] | null;
 }
+
+const AVAILABLE_MODELS = [
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4 (Recommended)', description: 'Best balance of speed and quality' },
+  { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', description: 'Most capable, highest quality' },
+  { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fastest, most economical' },
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  general: 'bg-gray-100 text-gray-700',
+  meetings: 'bg-purple-100 text-purple-700',
+  inbox: 'bg-blue-100 text-blue-700',
+  intelligence: 'bg-amber-100 text-amber-700',
+  daily_driver: 'bg-green-100 text-green-700',
+};
 
 interface HistoryEntry {
   id: string;
@@ -36,6 +56,8 @@ export default function AIPromptsPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState('');
   const [editedSchema, setEditedSchema] = useState('');
+  const [editedModel, setEditedModel] = useState('claude-sonnet-4-20250514');
+  const [editedMaxTokens, setEditedMaxTokens] = useState(4096);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -46,6 +68,8 @@ export default function AIPromptsPage() {
     if (selectedPrompt) {
       setEditedPrompt(selectedPrompt.prompt_template);
       setEditedSchema(selectedPrompt.schema_template || '');
+      setEditedModel(selectedPrompt.model || 'claude-sonnet-4-20250514');
+      setEditedMaxTokens(selectedPrompt.max_tokens || 4096);
       setHasChanges(false);
       fetchHistory(selectedPrompt.id);
     }
@@ -55,9 +79,11 @@ export default function AIPromptsPage() {
     if (selectedPrompt) {
       const promptChanged = editedPrompt !== selectedPrompt.prompt_template;
       const schemaChanged = editedSchema !== (selectedPrompt.schema_template || '');
-      setHasChanges(promptChanged || schemaChanged);
+      const modelChanged = editedModel !== (selectedPrompt.model || 'claude-sonnet-4-20250514');
+      const tokensChanged = editedMaxTokens !== (selectedPrompt.max_tokens || 4096);
+      setHasChanges(promptChanged || schemaChanged || modelChanged || tokensChanged);
     }
-  }, [editedPrompt, editedSchema, selectedPrompt]);
+  }, [editedPrompt, editedSchema, editedModel, editedMaxTokens, selectedPrompt]);
 
   async function fetchPrompts() {
     try {
@@ -95,6 +121,8 @@ export default function AIPromptsPage() {
         body: JSON.stringify({
           prompt_template: editedPrompt,
           schema_template: editedSchema || null,
+          model: editedModel,
+          max_tokens: editedMaxTokens,
         }),
       });
 
@@ -207,12 +235,19 @@ export default function AIPromptsPage() {
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    <span className="font-medium text-sm">{prompt.name}</span>
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    <span className="font-medium text-sm truncate">{prompt.name}</span>
                   </div>
-                  <p className="text-xs text-xs text-gray-500 mt-1 truncate">
-                    v{prompt.version} • {new Date(prompt.updated_at).toLocaleDateString()}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {prompt.category && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${CATEGORY_COLORS[prompt.category] || 'bg-gray-100 text-gray-600'}`}>
+                        {prompt.category}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-500">
+                      v{prompt.version}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -292,6 +327,72 @@ export default function AIPromptsPage() {
                   </div>
                 </div>
               )}
+
+              {/* Purpose & Variables Info */}
+              {(selectedPrompt.purpose || selectedPrompt.variables) && (
+                <div className="px-4 pt-4 space-y-3">
+                  {selectedPrompt.purpose && (
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</span>
+                      <p className="text-sm text-gray-700 mt-1">{selectedPrompt.purpose}</p>
+                    </div>
+                  )}
+                  {selectedPrompt.variables && selectedPrompt.variables.length > 0 && (
+                    <div className="p-3 bg-blue-50 rounded-lg">
+                      <span className="text-xs font-medium text-blue-600 uppercase tracking-wider">Variables</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {selectedPrompt.variables.map((v) => (
+                          <code key={v} className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                            {`{{${v}}}`}
+                          </code>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Model & Token Configuration */}
+              <div className="px-4 pt-4">
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                      Model
+                    </label>
+                    <select
+                      value={editedModel}
+                      onChange={(e) => setEditedModel(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    >
+                      {AVAILABLE_MODELS.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {AVAILABLE_MODELS.find(m => m.id === editedModel)?.description}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                      Max Tokens
+                    </label>
+                    <input
+                      type="number"
+                      value={editedMaxTokens}
+                      onChange={(e) => setEditedMaxTokens(Math.max(100, Math.min(8192, parseInt(e.target.value) || 4096)))}
+                      min={100}
+                      max={8192}
+                      step={100}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Maximum response length (100-8192)
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               {/* Editor Content */}
               <div className="p-4">

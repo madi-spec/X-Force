@@ -2,24 +2,37 @@
  * POST /api/attention-flags/[id]/execute
  *
  * Execute suggested action for stalled attention flags.
- * Generates a follow-up draft message using AI.
+ * Generates a follow-up draft message using AI via ai_prompts system.
  *
  * Phase 1: Returns draft only (no sending)
  * Phase 2: If send=true and sending mechanism exists, sends and resolves flag
+ *
+ * Prompt keys used:
+ * - email_followup_stalled: For STALE_IN_STAGE, NO_NEXT_STEP_AFTER_MEETING, GHOSTING_AFTER_PROPOSAL
+ * - email_followup_needs_reply: For NEEDS_REPLY flags
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { firstOrNull } from '@/lib/supabase/normalize';
-import { callAI } from '@/lib/ai/core/aiClient';
+import { generateEmailFromPromptKey } from '@/lib/ai/promptManager';
 import { AttentionFlagType } from '@/types/operatingLayer';
 
-// Stall flag types that support execute action
+// Flag types that support execute action
 const STALL_FLAG_TYPES: AttentionFlagType[] = [
   'STALE_IN_STAGE',
   'NO_NEXT_STEP_AFTER_MEETING',
   'GHOSTING_AFTER_PROPOSAL',
+  'NEEDS_REPLY',
 ];
+
+// Map flag types to prompt keys
+const FLAG_TYPE_TO_PROMPT_KEY: Record<string, string> = {
+  'STALE_IN_STAGE': 'email_followup_stalled',
+  'NO_NEXT_STEP_AFTER_MEETING': 'email_followup_stalled',
+  'GHOSTING_AFTER_PROPOSAL': 'email_followup_stalled',
+  'NEEDS_REPLY': 'email_followup_needs_reply',
+};
 
 interface ExecuteRequest {
   send?: boolean; // Phase 2: actually send the message
@@ -130,14 +143,16 @@ export async function POST(
 
     const primaryContact = firstOrNull(contacts);
 
-    // 5. Load company_product context
+    // 5. Load company_product context (product_name is MANDATORY)
     let productContext: {
       product_name: string | null;
+      product_slug: string | null;
       stage_name: string | null;
       last_stage_moved_at: string | null;
       next_step_due_at: string | null;
     } = {
       product_name: null,
+      product_slug: null,
       stage_name: null,
       last_stage_moved_at: null,
       next_step_due_at: null,
@@ -150,22 +165,34 @@ export async function POST(
           id,
           last_stage_moved_at,
           next_step_due_at,
-          product:products(id, name),
+          product:products(id, name, slug),
           current_stage:product_sales_stages(id, name)
         `)
         .eq('id', flag.company_product_id)
         .single();
 
       if (companyProduct) {
-        const product = firstOrNull(companyProduct.product as { id: string; name: string } | { id: string; name: string }[] | null);
+        const product = firstOrNull(companyProduct.product as { id: string; name: string; slug: string } | { id: string; name: string; slug: string }[] | null);
         const stage = firstOrNull(companyProduct.current_stage as { id: string; name: string } | { id: string; name: string }[] | null);
         productContext = {
           product_name: product?.name || null,
+          product_slug: product?.slug || null,
           stage_name: stage?.name || null,
           last_stage_moved_at: companyProduct.last_stage_moved_at,
           next_step_due_at: companyProduct.next_step_due_at,
         };
       }
+    }
+
+    // Product is MANDATORY for generating meaningful follow-up emails
+    if (!productContext.product_name) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Cannot generate follow-up: No product associated with this flag. The attention flag must be linked to a company_product.',
+        },
+        { status: 400 }
+      );
     }
 
     // 6. Load recent communications for context
@@ -179,41 +206,70 @@ export async function POST(
     const lastInbound = recentComms?.find((c) => c.direction === 'inbound');
     const lastOutbound = recentComms?.find((c) => c.direction === 'outbound');
 
-    // 7. Generate draft using AI
-    const contactName = primaryContact?.name || 'there';
-    const firstName = contactName.split(' ')[0];
+    // 7. Generate draft using AI via ai_prompts system
+    const contactName = primaryContact?.name || null;
+    const contactFirstName = contactName ? contactName.split(' ')[0] : null;
 
-    const prompt = buildFollowUpPrompt({
-      companyName: company.name,
-      contactName,
-      firstName,
-      contactTitle: primaryContact?.title || null,
-      contactEmail: primaryContact?.email || null,
-      productName: productContext.product_name,
-      stageName: productContext.stage_name,
-      flagType: flag.flag_type as AttentionFlagType,
-      reason: flag.reason,
-      recommendedAction: flag.recommended_action,
-      lastInbound: lastInbound ? {
-        subject: lastInbound.subject,
-        snippet: lastInbound.body?.slice(0, 200),
-        date: lastInbound.occurred_at,
-      } : null,
-      lastOutbound: lastOutbound ? {
-        subject: lastOutbound.subject,
-        snippet: lastOutbound.body?.slice(0, 200),
-        date: lastOutbound.occurred_at,
-      } : null,
-    });
+    // Build variables for the prompt template
+    // These MUST match the variables defined in the ai_prompts migration
+    const promptVariables: Record<string, string> = {
+      company_name: company.name,
+      contact_name: contactName || 'there',
+      contact_first_name: contactFirstName || 'there',
+      contact_title: primaryContact?.title || '',
+      product_name: productContext.product_name, // Already validated as non-null above
+      stage_name: productContext.stage_name || 'In Progress',
+      flag_type: flag.flag_type,
+      reason: flag.reason || 'No recent activity',
+      recommended_action: flag.recommended_action || 'Follow up to re-engage',
+      last_inbound_summary: lastInbound
+        ? `[${new Date(lastInbound.occurred_at).toLocaleDateString()}] Subject: "${lastInbound.subject || '(no subject)'}"\n${lastInbound.body?.slice(0, 300) || '(no content)'}`
+        : '(No prior inbound messages)',
+      last_outbound_summary: lastOutbound
+        ? `[${new Date(lastOutbound.occurred_at).toLocaleDateString()}] Subject: "${lastOutbound.subject || '(no subject)'}"\n${lastOutbound.body?.slice(0, 300) || '(no content)'}`
+        : '(No prior outbound messages)',
+    };
 
-    const aiResponse = await callAI({
-      prompt,
-      maxTokens: 500,
-      temperature: 0.7,
-    });
+    // Determine base prompt key based on flag type
+    const basePromptKey = FLAG_TYPE_TO_PROMPT_KEY[flag.flag_type] || 'email_followup_stalled';
 
-    // Parse AI response
-    const draft = parseAIDraft(aiResponse.content, firstName, company.name);
+    // Generate email using the ai_prompts system with product-specific override
+    // Priority: email_followup_stalled__{product_slug} -> email_followup_stalled
+    let draft: { subject: string; body: string; quality_checks: QualityChecks };
+    try {
+      const emailDraft = await generateEmailFromPromptKey(
+        basePromptKey,
+        promptVariables,
+        { productSlug: productContext.product_slug }
+      );
+      draft = {
+        subject: emailDraft.subject,
+        body: emailDraft.body,
+        quality_checks: emailDraft.quality_checks,
+      };
+    } catch (promptError) {
+      // NO FALLBACK - if prompt system fails, return clear error
+      const errorMessage = promptError instanceof Error ? promptError.message : 'Unknown error';
+      console.error('[ExecuteFlag] AI prompt system error:', errorMessage);
+
+      // Determine which prompt keys were tried
+      const triedKeys = productContext.product_slug
+        ? [`${basePromptKey}__${productContext.product_slug}`, basePromptKey]
+        : [basePromptKey];
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to generate email draft. AI prompt not found or failed.`,
+          details: {
+            tried_prompt_keys: triedKeys,
+            product_slug: productContext.product_slug,
+            underlying_error: errorMessage,
+          },
+        },
+        { status: 500 }
+      );
+    }
 
     // Build response
     const response: ExecuteResponse = {
@@ -254,153 +310,3 @@ export async function POST(
   }
 }
 
-// ============================================
-// HELPERS
-// ============================================
-
-function buildFollowUpPrompt(params: {
-  companyName: string;
-  contactName: string;
-  firstName: string;
-  contactTitle: string | null;
-  contactEmail: string | null;
-  productName: string | null;
-  stageName: string | null;
-  flagType: AttentionFlagType;
-  reason: string;
-  recommendedAction: string | null;
-  lastInbound: { subject: string | null; snippet: string | null; date: string } | null;
-  lastOutbound: { subject: string | null; snippet: string | null; date: string } | null;
-}): string {
-  const {
-    companyName,
-    contactName,
-    firstName,
-    contactTitle,
-    contactEmail,
-    productName,
-    stageName,
-    flagType,
-    reason,
-    lastInbound,
-    lastOutbound,
-  } = params;
-
-  let situationContext = '';
-  if (flagType === 'STALE_IN_STAGE') {
-    situationContext = `The deal has been stale - ${reason}. We need to re-engage and move things forward.`;
-  } else if (flagType === 'NO_NEXT_STEP_AFTER_MEETING') {
-    situationContext = `We had a meeting but no next step was scheduled. ${reason}`;
-  } else if (flagType === 'GHOSTING_AFTER_PROPOSAL') {
-    situationContext = `We sent a proposal but haven't heard back. ${reason}`;
-  }
-
-  let commContext = '';
-  const hasPriorInteraction = !!(lastInbound || lastOutbound);
-  if (lastInbound) {
-    commContext += `\nLast message from them (${new Date(lastInbound.date).toLocaleDateString()}): "${lastInbound.snippet || 'No preview'}..."`;
-  }
-  if (lastOutbound) {
-    commContext += `\nOur last message (${new Date(lastOutbound.date).toLocaleDateString()}): "${lastOutbound.snippet || 'No preview'}..."`;
-  }
-
-  const hasContactInfo = contactEmail && contactName !== 'there';
-  const contactInstruction = hasContactInfo
-    ? `Use their first name (${firstName}) in the greeting.`
-    : `IMPORTANT: No primary contact email is on file. Draft a generic message WITHOUT using a name. Start with "Hi there" or similar. Include a question asking to confirm the right contact person for this conversation.`;
-
-  return `Generate a follow-up email for a stalled sales deal. Output MUST be valid JSON.
-
-CONTEXT:
-- Company: ${companyName}
-- Contact: ${hasContactInfo ? `${contactName}${contactTitle ? ` (${contactTitle})` : ''}` : 'Unknown (no primary contact on file)'}
-- Product: ${productName || 'Unknown'}
-- Current stage: ${stageName || 'Unknown'}
-- Situation: ${situationContext}
-${commContext ? `\nPRIOR COMMUNICATIONS:${commContext}` : '\nNo prior communications on file.'}
-
-STRICT RULES:
-1. Output MUST be valid JSON with this exact structure (no markdown, no code blocks)
-2. Body: 70-120 words maximum. Be concise.
-3. NO INVENTED DETAILS: Do not reference specific calls, dates, pricing, or prior discussions UNLESS explicitly mentioned in the context above
-4. Include exactly ONE clear next step: either propose a 15-minute call OR ask a quick yes/no question
-5. Tone: Friendly, direct, professional. No hype. No "I hope this finds you well" or similar filler
-6. ${contactInstruction}
-7. Do NOT use phrases like "just following up" or "checking in" - be specific about why you're reaching out
-
-OUTPUT FORMAT (respond with ONLY valid JSON, nothing else):
-{
-  "subject": "short, direct subject line",
-  "body": "email body text here",
-  "quality_checks": {
-    "used_contact_name": ${hasContactInfo},
-    "referenced_prior_interaction": ${hasPriorInteraction}
-  }
-}`;
-}
-
-function parseAIDraft(
-  content: string,
-  firstName: string,
-  companyName: string
-): { subject: string; body: string; quality_checks: QualityChecks } {
-  // Try to parse JSON response
-  try {
-    // Clean up content - remove markdown code blocks if present
-    let jsonContent = content.trim();
-    if (jsonContent.startsWith('```json')) {
-      jsonContent = jsonContent.slice(7);
-    } else if (jsonContent.startsWith('```')) {
-      jsonContent = jsonContent.slice(3);
-    }
-    if (jsonContent.endsWith('```')) {
-      jsonContent = jsonContent.slice(0, -3);
-    }
-    jsonContent = jsonContent.trim();
-
-    const parsed = JSON.parse(jsonContent);
-    if (parsed.subject && parsed.body) {
-      return {
-        subject: parsed.subject,
-        body: parsed.body,
-        quality_checks: parsed.quality_checks || {
-          used_contact_name: false,
-          referenced_prior_interaction: false,
-        },
-      };
-    }
-  } catch {
-    // JSON parse failed, try legacy format
-  }
-
-  // Try to parse legacy SUBJECT/BODY format
-  const subjectMatch = content.match(/SUBJECT:\s*(.+?)(?:\n|BODY:)/i);
-  const bodyMatch = content.match(/BODY:\s*([\s\S]+)/i);
-
-  if (subjectMatch && bodyMatch) {
-    return {
-      subject: subjectMatch[1].trim(),
-      body: bodyMatch[1].trim(),
-      quality_checks: {
-        used_contact_name: false,
-        referenced_prior_interaction: false,
-      },
-    };
-  }
-
-  // Fallback: Use entire content as body with generated subject
-  return {
-    subject: `Quick question for ${companyName}`,
-    body: content.trim() || `Hi ${firstName},
-
-I wanted to touch base and see if you had any questions about our conversation. I'd love to find a time for a quick call to discuss next steps.
-
-Would you have 15 minutes this week?
-
-Best regards`,
-    quality_checks: {
-      used_contact_name: false,
-      referenced_prior_interaction: false,
-    },
-  };
-}
