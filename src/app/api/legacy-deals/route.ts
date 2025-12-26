@@ -25,7 +25,6 @@ export interface LegacyDealItem {
   stage_name: string | null;
   last_human_touch_at: string | null;
   created_at: string;
-  snoozed_until: string | null;
   status: string;
 }
 
@@ -67,7 +66,6 @@ export async function GET(request: NextRequest) {
     // Query for legacy deals:
     // - status = 'in_sales' (active deals only)
     // - AND (current_stage_id IS NULL OR last_human_touch_at IS NULL OR last_human_touch_at < 30 days ago)
-    // - AND (snoozed_until IS NULL OR snoozed_until < now) -- not currently snoozed
     const { data: legacyDeals, error: queryError } = await supabase
       .from('company_products')
       .select(`
@@ -76,7 +74,6 @@ export async function GET(request: NextRequest) {
         current_stage_id,
         last_human_touch_at,
         created_at,
-        snoozed_until,
         status,
         company:companies(id, name),
         product:products(id, name, slug),
@@ -84,7 +81,6 @@ export async function GET(request: NextRequest) {
       `)
       .eq('status', 'in_sales')
       .or(`current_stage_id.is.null,last_human_touch_at.is.null,last_human_touch_at.lt.${thirtyDaysAgo.toISOString()}`)
-      .or(`snoozed_until.is.null,snoozed_until.lt.${now.toISOString()}`)
       .order('created_at', { ascending: true });
 
     if (queryError) {
@@ -108,7 +104,6 @@ export async function GET(request: NextRequest) {
         stage_name: (stage?.name as string) || null,
         last_human_touch_at: row.last_human_touch_at,
         created_at: row.created_at,
-        snoozed_until: row.snoozed_until,
         status: row.status,
       };
     });

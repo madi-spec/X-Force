@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Archive, RefreshCw, Clock, X, Loader2, Building2 } from 'lucide-react';
+import { Archive, RefreshCw, X, Loader2, Building2 } from 'lucide-react';
 
 interface LegacyDeal {
   id: string;
@@ -14,7 +14,6 @@ interface LegacyDeal {
   stage_name: string | null;
   last_human_touch_at: string | null;
   created_at: string;
-  snoozed_until: string | null;
   status: string;
 }
 
@@ -59,26 +58,6 @@ export function LegacyDealsView() {
     } catch (err) {
       console.error('Error re-engaging deal:', err);
       alert(err instanceof Error ? err.message : 'Failed to re-engage deal');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleSnooze = async (dealId: string) => {
-    setActionLoading(dealId);
-    try {
-      const res = await fetch(`/api/legacy-deals/${dealId}/snooze`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to snooze deal');
-      }
-      // Remove from list after successful snooze
-      setDeals((prev) => prev.filter((d) => d.id !== dealId));
-    } catch (err) {
-      console.error('Error snoozing deal:', err);
-      alert(err instanceof Error ? err.message : 'Failed to snooze deal');
     } finally {
       setActionLoading(null);
     }
@@ -162,7 +141,7 @@ export function LegacyDealsView() {
           <h1 className="text-xl font-normal text-gray-900">Legacy Deals</h1>
         </div>
         <p className="text-sm text-gray-500">
-          Older deals that need attention. Re-engage to move them into active sales, snooze to revisit later, or close if no longer relevant.
+          Older deals that need attention. Re-engage to move them into active sales, or close if no longer relevant.
         </p>
       </div>
 
@@ -250,14 +229,6 @@ export function LegacyDealsView() {
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                             Re-engage
-                          </button>
-                          <button
-                            onClick={() => handleSnooze(deal.id)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                            title="Snooze for 14 days"
-                          >
-                            <Clock className="h-3.5 w-3.5" />
-                            Snooze
                           </button>
                           <button
                             onClick={() => handleClose(deal.id)}
