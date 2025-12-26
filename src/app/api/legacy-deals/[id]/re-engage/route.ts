@@ -81,7 +81,6 @@ export async function POST(
         last_stage_moved_at: now.toISOString(),
         last_human_touch_at: now.toISOString(),
         next_step_due_at: threeDaysFromNow.toISOString(),
-        snoozed_until: null, // Clear any snooze
       })
       .eq('id', id);
 

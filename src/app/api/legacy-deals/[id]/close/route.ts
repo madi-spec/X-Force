@@ -54,7 +54,6 @@ export async function POST(
         status: 'closed_lost',
         closed_at: now.toISOString(),
         closed_reason: 'Legacy deal closed',
-        snoozed_until: null,
       })
       .eq('id', id);
 
