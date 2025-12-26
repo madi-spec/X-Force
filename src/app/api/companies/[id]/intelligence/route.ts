@@ -209,7 +209,7 @@ export async function GET(
       .from('deals')
       .select(`
         id, name, stage, estimated_value, expected_close_date,
-        owner:users(name)
+        owner:users!deals_owner_id_fkey(name)
       `)
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });

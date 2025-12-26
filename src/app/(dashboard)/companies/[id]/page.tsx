@@ -32,7 +32,7 @@ export default async function CompanyPage({ params }: CompanyPageProps) {
   // Get all deals (open and closed)
   const { data: deals } = await supabase
     .from('deals')
-    .select('*, owner:users(id, name, email)')
+    .select('*, owner:users!deals_owner_id_fkey(id, name, email)')
     .eq('company_id', id)
     .order('created_at', { ascending: false });
 
@@ -70,31 +70,36 @@ export default async function CompanyPage({ params }: CompanyPageProps) {
     .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
     .slice(0, 20);
 
-  // Get company products
+  // Get company products with new product-centric model
   const { data: companyProducts } = await supabase
     .from('company_products')
     .select(`
       *,
-      product:products(id, name, display_name, description, typical_mrr_low, typical_mrr_high, category:product_categories(id, name, display_name, owner))
+      product:products(
+        id, name, slug, description, product_type, icon, color,
+        base_price_monthly, pricing_model, is_sellable, parent_product_id
+      ),
+      tier:product_tiers(id, name, slug, price_monthly),
+      current_stage:product_sales_stages(id, name, slug, stage_order),
+      owner:users(id, name)
     `)
-    .eq('company_id', id);
+    .eq('company_id', id)
+    .order('created_at', { ascending: false });
 
-  // Get all products for reference (for showing what's not sold yet)
+  // Get all sellable products for reference (suites and addons, not modules)
   const { data: allProducts } = await supabase
     .from('products')
     .select(`
       *,
-      category:product_categories(id, name, display_name, owner)
+      tiers:product_tiers(id, name, slug, price_monthly, display_order)
     `)
     .eq('is_active', true)
-    .order('category_id')
-    .order('sort_order');
+    .eq('is_sellable', true)
+    .in('product_type', ['suite', 'addon'])
+    .order('display_order');
 
-  // Get product categories
-  const { data: productCategories } = await supabase
-    .from('product_categories')
-    .select('*')
-    .order('name');
+  // Product categories are no longer needed with the new model
+  const productCategories: any[] = [];
 
   // Get company watchers
   const { data: watchers } = await supabase

@@ -3,10 +3,11 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, LayoutGrid, List, Building2 } from 'lucide-react';
+import { Plus, Search, LayoutGrid, List, Building2, ArrowRightCircle } from 'lucide-react';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
-import { TableHeaderWithInfo, MetricLabel } from '@/components/ui/InfoTooltip';
+import { TableHeaderWithInfo } from '@/components/ui/InfoTooltip';
 import { MarkAsWonButton } from '@/components/deals/MarkAsWonButton';
+import { ConvertDealWizard } from '@/components/deals/ConvertDealWizard';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { getHealthScoreColor, PIPELINE_STAGES } from '@/types';
 import type { Deal, SalesTeam } from '@/types';
@@ -23,6 +24,7 @@ type ViewMode = 'pipeline' | 'list';
 
 export function DealsView({ initialDeals, currentUserId, users, companies }: DealsViewProps) {
   const router = useRouter();
+  const [deals, setDeals] = useState<Deal[]>(initialDeals);
   const [viewMode, setViewMode] = useState<ViewMode>('pipeline');
   const [searchQuery, setSearchQuery] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
@@ -30,8 +32,20 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
   const [teamFilter, setTeamFilter] = useState<SalesTeam | 'all'>('all');
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
 
+  // Convert wizard state
+  const [convertingDeal, setConvertingDeal] = useState<Deal | null>(null);
+
+  const handleConvertComplete = () => {
+    if (convertingDeal) {
+      // Remove deal from list after conversion
+      setDeals((prev) => prev.filter((d) => d.id !== convertingDeal.id));
+      setConvertingDeal(null);
+      router.refresh();
+    }
+  };
+
   const filteredDeals = useMemo(() => {
-    return initialDeals.filter(deal => {
+    return deals.filter(deal => {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -60,7 +74,7 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
 
       return true;
     });
-  }, [initialDeals, searchQuery, companyFilter, salespersonFilter, teamFilter, productFilter]);
+  }, [deals, searchQuery, companyFilter, salespersonFilter, teamFilter, productFilter]);
 
   return (
     <div className="h-full flex flex-col">
@@ -69,7 +83,7 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
         <div>
           <h1 className="text-xl font-normal text-gray-900">Deals</h1>
           <p className="text-xs text-gray-500 mt-1">
-            {filteredDeals.length} of {initialDeals.length} deals
+            {filteredDeals.length} of {deals.length} deals
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -264,16 +278,28 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
                         : '-'}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {deal.stage !== 'closed_won' && deal.stage !== 'closed_lost' && (
-                        <MarkAsWonButton
-                          dealId={deal.id}
-                          dealName={deal.name}
-                          dealValue={deal.estimated_value}
-                          currentStage={deal.stage}
-                          variant="icon"
-                          onSuccess={() => router.refresh()}
-                        />
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {deal.stage !== 'closed_won' && deal.stage !== 'closed_lost' && (
+                          <>
+                            <button
+                              onClick={() => setConvertingDeal(deal)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
+                              title="Convert to new pipeline"
+                            >
+                              <ArrowRightCircle className="h-3.5 w-3.5" />
+                              Convert
+                            </button>
+                            <MarkAsWonButton
+                              dealId={deal.id}
+                              dealName={deal.name}
+                              dealValue={deal.estimated_value}
+                              currentStage={deal.stage}
+                              variant="icon"
+                              onSuccess={() => router.refresh()}
+                            />
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -281,7 +307,7 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
               {filteredDeals.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                    {initialDeals.length === 0
+                    {deals.length === 0
                       ? 'No deals yet. Create your first deal to get started.'
                       : 'No deals match your filters.'}
                   </td>
@@ -290,6 +316,16 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Convert Wizard */}
+      {convertingDeal && (
+        <ConvertDealWizard
+          dealId={convertingDeal.id}
+          dealName={convertingDeal.name}
+          onClose={() => setConvertingDeal(null)}
+          onConverted={handleConvertComplete}
+        />
       )}
     </div>
   );

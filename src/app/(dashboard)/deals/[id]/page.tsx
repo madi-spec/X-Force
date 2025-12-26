@@ -80,7 +80,7 @@ export default async function DealPage({ params }: DealPageProps) {
     .select(`
       *,
       company:companies(*),
-      owner:users(id, name, email)
+      owner:users!deals_owner_id_fkey(id, name, email)
     `)
     .eq('id', id)
     .single();

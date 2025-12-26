@@ -5,35 +5,25 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import {
-  Users,
   Building2,
-  Inbox,
   Calendar,
   Settings,
   LogOut,
   Zap,
-  Target,
   MessageSquare,
   Package,
-  BarChart3,
-  Crosshair,
   ListTodo,
   Archive,
 } from 'lucide-react';
 
 const navigation = [
-  { name: 'Command Center', href: '/command-center', icon: Target },
   { name: 'Daily Driver', href: '/daily', icon: ListTodo },
-  { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
+  { name: 'Communications', href: '/communications', icon: MessageSquare },
   { name: 'Products', href: '/products', icon: Package },
-  { name: 'Prospecting', href: '/prospecting', icon: Crosshair },
+  { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
-  { name: 'Contacts', href: '/contacts', icon: Users },
-  { name: 'Communications', href: '/communications', icon: MessageSquare },
-  { name: 'Inbox', href: '/inbox', icon: Inbox },
   { name: 'Calendar', href: '/calendar', icon: Calendar },
-  { name: 'Whitespace', href: '/analytics/whitespace', icon: BarChart3 },
 ];
 
 const bottomNavigation = [
