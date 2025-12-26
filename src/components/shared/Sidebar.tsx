@@ -17,10 +17,14 @@ import {
   Package,
   BarChart3,
   Crosshair,
+  ListTodo,
+  Archive,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Command Center', href: '/command-center', icon: Target },
+  { name: 'Daily Driver', href: '/daily', icon: ListTodo },
+  { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Prospecting', href: '/prospecting', icon: Crosshair },
   { name: 'Deals', href: '/deals', icon: Zap },

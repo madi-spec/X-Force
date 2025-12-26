@@ -1,0 +1,1 @@
+export { LegacyDealsView } from './LegacyDealsView';
