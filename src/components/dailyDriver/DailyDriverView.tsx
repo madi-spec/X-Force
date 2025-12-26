@@ -16,6 +16,9 @@ import {
   X,
   Loader2,
   Send,
+  Zap,
+  Eye,
+  CalendarClock,
 } from 'lucide-react';
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
@@ -24,8 +27,10 @@ import {
   DailyDriverResponse,
   AttentionFlagSeverity,
   AttentionFlagType,
+  AttentionLevel,
   ATTENTION_FLAG_TYPES,
   SEVERITY_LEVELS,
+  ATTENTION_LEVELS,
 } from '@/types/operatingLayer';
 
 // ============================================
@@ -644,6 +649,124 @@ function Section({
 }
 
 // ============================================
+// ATTENTION LEVEL SECTION
+// ============================================
+
+interface AttentionLevelSectionProps {
+  level: AttentionLevel;
+  items: DailyDriverItem[];
+  renderItem: (item: DailyDriverItem) => React.ReactNode;
+  defaultExpanded?: boolean;
+}
+
+function AttentionLevelSection({
+  level,
+  items,
+  renderItem,
+  defaultExpanded = true,
+}: AttentionLevelSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  const levelInfo = ATTENTION_LEVELS.find((l) => l.level === level);
+  if (!levelInfo) return null;
+
+  // Icons for each level
+  const levelIcons: Record<AttentionLevel, React.ReactNode> = {
+    now: <Zap className="h-5 w-5 text-red-500" />,
+    soon: <CalendarClock className="h-5 w-5 text-amber-500" />,
+    monitor: <Eye className="h-5 w-5 text-gray-400" />,
+  };
+
+  // Background colors for header
+  const headerBgColors: Record<AttentionLevel, string> = {
+    now: 'bg-red-50 border-l-4 border-l-red-500',
+    soon: 'bg-amber-50 border-l-4 border-l-amber-500',
+    monitor: 'bg-gray-50 border-l-4 border-l-gray-300',
+  };
+
+  // Count badge colors
+  const countBadgeColors: Record<AttentionLevel, string> = {
+    now: 'bg-red-600 text-white',
+    soon: 'bg-amber-600 text-white',
+    monitor: 'bg-gray-500 text-white',
+  };
+
+  return (
+    <div className={cn(
+      'bg-white rounded-xl border border-gray-200 overflow-hidden',
+      level === 'monitor' && !isExpanded && 'opacity-75'
+    )}>
+      {/* Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={cn(
+          'w-full flex items-center justify-between px-4 py-3',
+          'hover:bg-opacity-80 transition-colors',
+          headerBgColors[level]
+        )}
+      >
+        <div className="flex items-center gap-3">
+          {levelIcons[level]}
+          <h2 className={cn(
+            'text-sm font-semibold',
+            level === 'now' ? 'text-red-900' :
+            level === 'soon' ? 'text-amber-900' :
+            'text-gray-700'
+          )}>
+            {levelInfo.label}
+          </h2>
+          <span className={cn(
+            'inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium rounded-full',
+            countBadgeColors[level]
+          )}>
+            {items.length}
+          </span>
+          <span className={cn(
+            'text-xs',
+            level === 'now' ? 'text-red-600' :
+            level === 'soon' ? 'text-amber-600' :
+            'text-gray-500'
+          )}>
+            {levelInfo.description}
+          </span>
+        </div>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 transition-transform',
+            level === 'now' ? 'text-red-500' :
+            level === 'soon' ? 'text-amber-500' :
+            'text-gray-400',
+            isExpanded ? 'rotate-0' : '-rotate-90'
+          )}
+        />
+      </button>
+
+      {/* Content */}
+      {isExpanded && (
+        <div className="divide-y divide-gray-100">
+          {items.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-gray-500">
+              No items at this level
+            </div>
+          ) : (
+            items.map((item) => (
+              <div key={item.id} className={cn(
+                'px-4 py-3',
+                level === 'now' ? 'hover:bg-red-50/50' :
+                level === 'soon' ? 'hover:bg-amber-50/50' :
+                'hover:bg-gray-50'
+              )}>
+                {renderItem(item)}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -1188,6 +1311,26 @@ Next Steps:
     );
   };
 
+  // Unified item renderer - determines which style to use based on item type
+  const renderUnifiedItem = (item: DailyDriverItem) => {
+    // Check if it's a ready-to-close item (has close_confidence or close_ready, no flag)
+    if (!item.attention_flag_id && (item.close_confidence !== null || item.close_ready)) {
+      return renderCloseRow(item);
+    }
+
+    // Check if it's a stalled flag (use stalled row with Draft Follow-up)
+    if (
+      item.flag_type === 'STALE_IN_STAGE' ||
+      item.flag_type === 'NO_NEXT_STEP_AFTER_MEETING' ||
+      item.flag_type === 'GHOSTING_AFTER_PROPOSAL'
+    ) {
+      return renderStalledRow(item);
+    }
+
+    // Default to flag row (for needs human attention items)
+    return renderFlagRow(item);
+  };
+
   // Loading state
   if (isLoading && !data) {
     return (
@@ -1228,6 +1371,12 @@ Next Steps:
           <h1 className="text-xl font-normal text-gray-900">Daily Driver</h1>
           <p className="text-xs text-gray-500">
             {data.counts.total} items requiring attention
+            <span className="mx-2">•</span>
+            <span className="text-red-600 font-medium">{data.counts.now} now</span>
+            <span className="mx-1.5">·</span>
+            <span className="text-amber-600">{data.counts.soon} soon</span>
+            <span className="mx-1.5">·</span>
+            <span className="text-gray-400">{data.counts.monitor} monitor</span>
           </p>
         </div>
         <button
@@ -1245,37 +1394,28 @@ Next Steps:
         </button>
       </div>
 
-      {/* Needs Human Attention */}
-      <Section
-        title="Needs Human Attention"
-        icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
-        items={data.needsHuman}
-        count={data.counts.needsHuman}
-        emptyMessage="No items need human attention right now"
-        renderItem={renderFlagRow}
-        headerColor="border-l-4 border-l-amber-500"
+      {/* Action Now - Items needing immediate attention */}
+      <AttentionLevelSection
+        level="now"
+        items={data.byAttentionLevel.now}
+        renderItem={renderUnifiedItem}
+        defaultExpanded={true}
       />
 
-      {/* Stalled / At Risk */}
-      <Section
-        title="Stalled / At Risk"
-        icon={<Clock className="h-5 w-5 text-red-500" />}
-        items={data.stalled}
-        count={data.counts.stalled}
-        emptyMessage="No stalled deals detected"
-        renderItem={renderStalledRow}
-        headerColor="border-l-4 border-l-red-500"
+      {/* This Week - Items to handle soon */}
+      <AttentionLevelSection
+        level="soon"
+        items={data.byAttentionLevel.soon}
+        renderItem={renderUnifiedItem}
+        defaultExpanded={true}
       />
 
-      {/* Ready to Close */}
-      <Section
-        title="Ready to Close"
-        icon={<CheckCircle2 className="h-5 w-5 text-green-500" />}
-        items={data.readyToClose}
-        count={data.counts.readyToClose}
-        emptyMessage="No deals ready to close yet"
-        renderItem={renderCloseRow}
-        headerColor="border-l-4 border-l-green-500"
+      {/* Monitor - Informational items */}
+      <AttentionLevelSection
+        level="monitor"
+        items={data.byAttentionLevel.monitor}
+        renderItem={renderUnifiedItem}
+        defaultExpanded={false}
       />
 
       {/* Draft Follow-up Modal */}
