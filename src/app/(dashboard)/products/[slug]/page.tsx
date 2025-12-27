@@ -7,6 +7,11 @@ import { ProductStats } from '@/components/products/ProductStats';
 
 type ViewType = 'pipeline' | 'in_sales' | 'active' | 'in_onboarding' | 'inactive' | 'customers';
 
+// Product conversion mappings (legacy product slug -> target product slug)
+const PRODUCT_CONVERSIONS: Record<string, string> = {
+  'xrai-1': 'xrai-2',
+};
+
 interface Props {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ view?: string }>;
@@ -33,6 +38,24 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
 
   if (error || !product) {
     notFound();
+  }
+
+  // Get conversion target if this is a legacy product
+  let conversionTarget: { productId: string; productName: string } | undefined;
+  const targetSlug = PRODUCT_CONVERSIONS[slug];
+  if (targetSlug) {
+    const { data: targetProduct } = await supabase
+      .from('products')
+      .select('id, name')
+      .eq('slug', targetSlug)
+      .single();
+
+    if (targetProduct) {
+      conversionTarget = {
+        productId: targetProduct.id,
+        productName: targetProduct.name,
+      };
+    }
   }
 
   // Sort stages by order
@@ -126,6 +149,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
             customers={activeCustomers || []}
             title="Active Customers"
             emptyMessage="No active customers yet"
+            conversionTarget={conversionTarget}
           />
         );
       case 'in_onboarding':
