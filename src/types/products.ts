@@ -101,6 +101,18 @@ export interface Resource {
   type: 'document' | 'video' | 'link';
 }
 
+// Risk level for company product pipeline health
+export type CompanyProductRiskLevel = 'none' | 'low' | 'med' | 'high';
+
+// Open objection tracked on a company product
+export interface OpenObjection {
+  objection: string;
+  detected_at: string;
+  severity: 'low' | 'medium' | 'high';
+  source_communication_id?: string;
+  addressed?: boolean;
+}
+
 export interface CompanyProduct {
   id: string;
   company_id: string;
@@ -124,6 +136,16 @@ export interface CompanyProduct {
   notes: string | null;
   created_at: string;
   updated_at: string;
+
+  // Operating Layer Extensions
+  last_stage_moved_at: string | null;
+  last_human_touch_at: string | null;
+  last_ai_touch_at: string | null;
+  close_confidence: number | null; // 0-100
+  close_ready: boolean;
+  risk_level: CompanyProductRiskLevel | null;
+  open_objections: OpenObjection[];
+  next_step_due_at: string | null;
 
   // Joined data
   product?: Product;
@@ -204,6 +226,7 @@ export interface ProductCardData {
   description: string | null;
   icon: string | null;
   color: string | null;
+  is_sellable: boolean;
   stages: { id: string; name: string; stage_order: number }[];
   stats: {
     active: number;

@@ -6,7 +6,7 @@ import type { ProductCardData } from '@/types/products';
 export default async function ProductsPage() {
   const supabase = await createClient();
 
-  // Get products with stats
+  // Get products with stats (include legacy products for visibility)
   const { data: products } = await supabase
     .from('products')
     .select(`
@@ -15,7 +15,6 @@ export default async function ProductsPage() {
     `)
     .is('parent_product_id', null)
     .eq('is_active', true)
-    .eq('is_sellable', true)
     .order('display_order');
 
   // Get stats for each product
@@ -65,6 +64,7 @@ export default async function ProductsPage() {
         description: product.description,
         icon: product.icon,
         color: product.color,
+        is_sellable: product.is_sellable,
         stages: product.stages || [],
         stats,
         pipelineByStage,

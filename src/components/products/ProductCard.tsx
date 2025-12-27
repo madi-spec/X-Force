@@ -24,7 +24,14 @@ export function ProductCard({ product }: ProductCardProps) {
               {product.icon || '📦'}
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">{product.name}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-gray-900">{product.name}</h2>
+                {!product.is_sellable && (
+                  <span className="px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-100 rounded-full">
+                    Legacy
+                  </span>
+                )}
+              </div>
               {product.description && (
                 <p className="text-sm text-gray-500">{product.description}</p>
               )}
@@ -50,26 +57,38 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       </div>
 
-      {/* Stats Row */}
+      {/* Stats Row - Clickable */}
       <div className="p-4 border-b bg-gray-50">
         <div className="grid grid-cols-5 gap-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{product.stats.active}</div>
-            <div className="text-xs text-gray-500">Active</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-yellow-600">{product.stats.in_sales}</div>
-            <div className="text-xs text-gray-500">In Sales</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{product.stats.in_onboarding}</div>
-            <div className="text-xs text-gray-500">Onboarding</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-gray-400">{product.stats.inactive}</div>
-            <div className="text-xs text-gray-500">Inactive</div>
-          </div>
-          <div className="text-center">
+          <Link
+            href={`/products/${product.slug}?view=active`}
+            className="text-center p-2 -m-2 rounded-lg hover:bg-green-50 transition-colors cursor-pointer group"
+          >
+            <div className="text-2xl font-bold text-green-600 group-hover:text-green-700">{product.stats.active}</div>
+            <div className="text-xs text-gray-500 group-hover:text-green-600">Active</div>
+          </Link>
+          <Link
+            href={`/products/${product.slug}?view=in_sales`}
+            className="text-center p-2 -m-2 rounded-lg hover:bg-yellow-50 transition-colors cursor-pointer group"
+          >
+            <div className="text-2xl font-bold text-yellow-600 group-hover:text-yellow-700">{product.stats.in_sales}</div>
+            <div className="text-xs text-gray-500 group-hover:text-yellow-600">In Sales</div>
+          </Link>
+          <Link
+            href={`/products/${product.slug}?view=in_onboarding`}
+            className="text-center p-2 -m-2 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer group"
+          >
+            <div className="text-2xl font-bold text-blue-600 group-hover:text-blue-700">{product.stats.in_onboarding}</div>
+            <div className="text-xs text-gray-500 group-hover:text-blue-600">Onboarding</div>
+          </Link>
+          <Link
+            href={`/products/${product.slug}?view=inactive`}
+            className="text-center p-2 -m-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer group"
+          >
+            <div className="text-2xl font-bold text-gray-400 group-hover:text-gray-600">{product.stats.inactive}</div>
+            <div className="text-xs text-gray-500 group-hover:text-gray-600">Inactive</div>
+          </Link>
+          <div className="text-center p-2 -m-2">
             <div className="text-2xl font-bold text-green-600">
               ${product.stats.total_mrr.toLocaleString()}
             </div>
