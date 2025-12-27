@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Building2,
   Edit2,
+  Flag,
   Mail,
   MapPin,
   Pencil,
@@ -19,6 +20,12 @@ import {
   XCircle,
   Clock,
   User,
+  Zap,
+  Bot,
+  Layers,
+  PlayCircle,
+  PauseCircle,
+  TrendingUp,
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
 import {
@@ -30,6 +37,7 @@ import {
 } from '@/types';
 import { CompanyResearchTab, IntelligenceOverviewPanel } from '@/components/intelligence';
 import { AccountMemoryPanel } from '@/components/companies/AccountMemoryPanel';
+import { QuickFlagModal } from '@/components/companies/QuickFlagModal';
 import { ContactCardWithFacts } from '@/components/contacts';
 import {
   RelationshipSummaryCard,
@@ -68,6 +76,58 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   churned: { label: 'Churned', color: 'bg-red-100 text-red-700' },
 };
 
+const industryLabels: Record<string, { label: string; color: string }> = {
+  pest: { label: 'Pest', color: 'bg-amber-100 text-amber-700' },
+  lawn: { label: 'Lawn', color: 'bg-green-100 text-green-700' },
+  both: { label: 'Both', color: 'bg-purple-100 text-purple-700' },
+};
+
+// Product status configuration for new product-centric model
+const productStatusConfig: Record<string, { label: string; color: string; bgColor: string; icon: any }> = {
+  active: { label: 'Active', color: 'text-green-700', bgColor: 'bg-green-100', icon: CheckCircle },
+  in_onboarding: { label: 'Onboarding', color: 'text-blue-700', bgColor: 'bg-blue-100', icon: PlayCircle },
+  in_sales: { label: 'In Sales', color: 'text-purple-700', bgColor: 'bg-purple-100', icon: TrendingUp },
+  inactive: { label: 'Not Started', color: 'text-gray-500', bgColor: 'bg-gray-100', icon: Clock },
+  declined: { label: 'Declined', color: 'text-orange-700', bgColor: 'bg-orange-100', icon: XCircle },
+  churned: { label: 'Churned', color: 'text-red-700', bgColor: 'bg-red-100', icon: XCircle },
+};
+
+// Product type icons
+const productTypeIcons: Record<string, { icon: any; color: string }> = {
+  suite: { icon: Layers, color: 'text-blue-600' },
+  addon: { icon: Zap, color: 'text-purple-600' },
+  module: { icon: Bot, color: 'text-green-600' },
+};
+
+// Helper to parse address string to get city/state
+function parseAddress(address: string | { city?: string; state?: string } | null | undefined): string | null {
+  if (!address) return null;
+
+  // If it's already an object with city/state
+  if (typeof address === 'object' && address.city) {
+    return `${address.city}${address.state ? `, ${address.state}` : ''}`;
+  }
+
+  // If it's a string, try to extract city, state from format like "123 Main St  City, ST 12345"
+  if (typeof address === 'string') {
+    // Many addresses use double-space to separate street from city/state/zip
+    // e.g., "830 Kennesaw Ave NW  Marietta, GA 30060"
+    const parts = address.split(/\s{2,}/);
+    const cityStateZip = parts.length > 1 ? parts[parts.length - 1] : address;
+
+    // Match "City, ST 12345" or "City, ST" pattern
+    const match = cityStateZip.match(/^([^,]+),\s*([A-Z]{2})(?:\s+\d{5})?/);
+    if (match) {
+      return `${match[1].trim()}, ${match[2]}`;
+    }
+
+    // Fallback: return truncated address if no city/state pattern found
+    return address.length > 40 ? address.substring(0, 40) + '...' : address;
+  }
+
+  return null;
+}
+
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'relationship', label: 'Relationship Context' },
@@ -98,6 +158,8 @@ export function CompanyDetail({
   const [relationshipData, setRelationshipData] = useState<any>(null);
   const [relationshipLoading, setRelationshipLoading] = useState(false);
   const [refreshingSummary, setRefreshingSummary] = useState(false);
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
+  const [editingCompanyProduct, setEditingCompanyProduct] = useState<any>(null);
 
   // Sync tab with URL
   useEffect(() => {
@@ -161,15 +223,17 @@ export function CompanyDetail({
     .filter(cp => cp.status === 'active')
     .reduce((sum, cp) => sum + (cp.mrr || 0), 0);
 
-  // Group products by category
-  const productsByCategory = productCategories.map(cat => ({
-    category: cat,
-    owned: companyProducts.filter(cp => cp.product?.category?.id === cat.id),
-    available: allProducts.filter(p =>
-      p.category?.id === cat.id &&
-      !companyProducts.some(cp => cp.product?.id === p.id)
-    ),
-  }));
+  // Group company products by status for Current Stack display
+  const activeProducts = companyProducts.filter((cp: any) => cp.status === 'active');
+  const inSalesProducts = companyProducts.filter((cp: any) => cp.status === 'in_sales');
+  const inOnboardingProducts = companyProducts.filter((cp: any) => cp.status === 'in_onboarding');
+  const otherProducts = companyProducts.filter((cp: any) =>
+    ['inactive', 'declined', 'churned'].includes(cp.status)
+  );
+
+  // Get products not yet in company_products (available for selling)
+  const ownedProductIds = new Set(companyProducts.map((cp: any) => cp.product_id));
+  const availableProducts = allProducts.filter((p: any) => !ownedProductIds.has(p.id));
 
   // Get unique team members involved with this company
   const teamMembers = new Map<string, any>();
@@ -232,13 +296,21 @@ export function CompanyDetail({
                   <span className={cn('text-sm font-medium px-2.5 py-0.5 rounded-full', status.color)}>
                     {status.label}
                   </span>
+                  {company.industry && industryLabels[company.industry] && (
+                    <span className={cn(
+                      'text-sm font-medium px-2.5 py-0.5 rounded-full',
+                      industryLabels[company.industry].color
+                    )}>
+                      {industryLabels[company.industry].label}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                  {company.address?.city && (
+                  {parseAddress(company.address) && (
                     <>
                       <span className="flex items-center gap-1">
                         <MapPin className="h-4 w-4" />
-                        {company.address.city}, {company.address.state}
+                        {parseAddress(company.address)}
                       </span>
                       <span>•</span>
                     </>
@@ -246,6 +318,16 @@ export function CompanyDetail({
                   <span>{company.employee_range || company.agent_count} employees</span>
                   <span>•</span>
                   <span>{segmentLabels[company.segment]}</span>
+                  {(company.vfp_customer_id || company.ats_id) && (
+                    <>
+                      <span>•</span>
+                      <span className="text-gray-400">
+                        {company.vfp_customer_id && `Rev #${company.vfp_customer_id}`}
+                        {company.vfp_customer_id && company.ats_id && ' / '}
+                        {company.ats_id && `ATS #${company.ats_id}`}
+                      </span>
+                    </>
+                  )}
                   {company.crm_platform && (
                     <>
                       <span>•</span>
@@ -253,6 +335,11 @@ export function CompanyDetail({
                     </>
                   )}
                 </div>
+                {company.vfp_support_contact && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Success Rep: {company.vfp_support_contact}
+                  </p>
+                )}
                 {primaryContact && (
                   <p className="text-sm text-gray-500 mt-1">
                     Primary: {primaryContact.name}
@@ -263,6 +350,13 @@ export function CompanyDetail({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setFlagModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100"
+              >
+                <Flag className="h-4 w-4" />
+                Flag
+              </button>
               <Link
                 href={`/companies/${company.id}/edit`}
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -317,40 +411,82 @@ export function CompanyDetail({
               </span>
             </div>
             <div className="space-y-4">
-              {productsByCategory.map(({ category, owned }) => (
-                <div key={category.id}>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                    {category.display_name || category.name}
+              {/* Active Products */}
+              {activeProducts.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-green-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" />
+                    Active ({activeProducts.length})
                   </h3>
-                  {owned.length > 0 ? (
-                    <div className="space-y-2">
-                      {owned.map(cp => (
-                        <div
-                          key={cp.id}
-                          className={cn(
-                            'flex items-center gap-2 text-sm',
-                            cp.status === 'active' ? 'text-gray-900' : 'text-gray-400 line-through'
-                          )}
-                        >
-                          {cp.status === 'active' ? (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-gray-400" />
-                          )}
-                          <span>{cp.product?.display_name || cp.product?.name}</span>
-                          {cp.mrr > 0 && (
-                            <span className="text-gray-500 ml-auto">
-                              {formatCurrency(cp.mrr)}/mo
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 italic">(none)</p>
-                  )}
+                  <div className="space-y-2">
+                    {activeProducts.map((cp: any) => (
+                      <div key={cp.id} className="flex items-center gap-2 text-sm text-gray-900">
+                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                        <span className="flex-1">{cp.product?.name}</span>
+                        {cp.tier && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                            {cp.tier.name}
+                          </span>
+                        )}
+                        {cp.mrr > 0 && (
+                          <span className="text-gray-500">{formatCurrency(cp.mrr)}/mo</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {/* In Onboarding */}
+              {inOnboardingProducts.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <PlayCircle className="h-3 w-3" />
+                    Onboarding ({inOnboardingProducts.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {inOnboardingProducts.map((cp: any) => (
+                      <div key={cp.id} className="flex items-center gap-2 text-sm text-gray-700">
+                        <PlayCircle className="h-4 w-4 text-blue-500 shrink-0" />
+                        <span className="flex-1">{cp.product?.name}</span>
+                        {cp.tier && (
+                          <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                            {cp.tier.name}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* In Sales Pipeline */}
+              {inSalesProducts.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <TrendingUp className="h-3 w-3" />
+                    In Sales ({inSalesProducts.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {inSalesProducts.map((cp: any) => (
+                      <div key={cp.id} className="flex items-center gap-2 text-sm text-gray-700">
+                        <TrendingUp className="h-4 w-4 text-purple-500 shrink-0" />
+                        <span className="flex-1">{cp.product?.name}</span>
+                        {cp.current_stage && (
+                          <span className="text-xs bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">
+                            {cp.current_stage.name}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {activeProducts.length === 0 && inOnboardingProducts.length === 0 && inSalesProducts.length === 0 && (
+                <p className="text-sm text-gray-400 italic text-center py-4">No products yet</p>
+              )}
             </div>
           </div>
 
@@ -444,24 +580,26 @@ export function CompanyDetail({
             )}
 
             {/* Products not yet pitched */}
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Not Yet Pitched
-              </h3>
-              <div className="space-y-1">
-                {productsByCategory.flatMap(({ available }) => available).slice(0, 3).map(product => (
-                  <div key={product.id} className="flex items-center justify-between py-2 text-sm">
-                    <span className="text-gray-600">{product.display_name || product.name}</span>
-                    <Link
-                      href={`/deals/new?company=${company.id}&product=${product.id}`}
-                      className="text-blue-600 hover:text-blue-700"
-                    >
-                      Create Deal
-                    </Link>
-                  </div>
-                ))}
+            {availableProducts.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Available to Sell
+                </h3>
+                <div className="space-y-1">
+                  {availableProducts.slice(0, 3).map((product: any) => (
+                    <div key={product.id} className="flex items-center justify-between py-2 text-sm">
+                      <span className="text-gray-600">{product.name}</span>
+                      <Link
+                        href={`/deals/new?company=${company.id}&product=${product.id}`}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        Start Sale
+                      </Link>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Panel 4: Team Involvement */}
@@ -721,75 +859,169 @@ export function CompanyDetail({
       )}
 
       {activeTab === 'products' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="font-semibold text-gray-900 mb-4">Product History</h2>
-          <div className="space-y-6">
-            {productsByCategory.map(({ category, owned, available }) => (
-              <div key={category.id}>
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
-                  {category.display_name || category.name}
-                </h3>
-                <div className="space-y-2">
-                  {owned.map(cp => (
+        <div className="space-y-6">
+          {/* Current Products */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-900">Product Portfolio</h2>
+              <span className="text-sm text-gray-500">
+                Total MRR: <span className="font-medium text-green-600">{formatCurrency(totalMRR)}</span>
+              </span>
+            </div>
+
+            {companyProducts.length > 0 ? (
+              <div className="space-y-3">
+                {companyProducts.map((cp: any) => {
+                  const statusConfig = productStatusConfig[cp.status] || productStatusConfig.inactive;
+                  const StatusIcon = statusConfig.icon;
+                  return (
                     <div
                       key={cp.id}
-                      className="p-3 rounded-lg border border-gray-100"
+                      className="p-4 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {cp.status === 'active' ? (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          ) : cp.status === 'churned' ? (
-                            <XCircle className="h-4 w-4 text-red-500" />
-                          ) : (
-                            <Clock className="h-4 w-4 text-gray-400" />
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <StatusIcon className={cn('h-5 w-5 mt-0.5', statusConfig.color)} />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">
+                                {cp.product?.name}
+                              </span>
+                              {cp.tier && (
+                                <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">
+                                  {cp.tier.name}
+                                </span>
+                              )}
+                              {cp.seats && (
+                                <span className="text-xs text-gray-500">
+                                  {cp.seats} seat{cp.seats !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                            {cp.current_stage && (
+                              <p className="text-sm text-purple-600 mt-0.5">
+                                Stage: {cp.current_stage.name}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                              {cp.status === 'active' && cp.activated_at && (
+                                <span>Active since {formatDate(cp.activated_at)}</span>
+                              )}
+                              {cp.status === 'in_sales' && cp.sales_started_at && (
+                                <span>Started {formatDate(cp.sales_started_at)}</span>
+                              )}
+                              {cp.status === 'in_onboarding' && cp.onboarding_started_at && (
+                                <span>Onboarding since {formatDate(cp.onboarding_started_at)}</span>
+                              )}
+                              {cp.status === 'churned' && cp.churned_at && (
+                                <span>Churned {formatDate(cp.churned_at)}</span>
+                              )}
+                              {cp.status === 'declined' && cp.declined_at && (
+                                <span>Declined {formatDate(cp.declined_at)}</span>
+                              )}
+                              {cp.owner && (
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  {cp.owner.name}
+                                </span>
+                              )}
+                            </div>
+                            {cp.declined_reason && (
+                              <p className="text-sm text-orange-600 mt-1">
+                                Reason: {cp.declined_reason}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {cp.mrr > 0 && (
+                            <span className="text-sm font-medium text-gray-900">
+                              {formatCurrency(cp.mrr)}/mo
+                            </span>
                           )}
+                          <button
+                            onClick={() => setEditingCompanyProduct(cp)}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                            title="Edit product"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
                           <span className={cn(
-                            'font-medium',
-                            cp.status === 'active' ? 'text-gray-900' : 'text-gray-500'
+                            'text-xs font-medium px-2 py-1 rounded-full',
+                            statusConfig.bgColor,
+                            statusConfig.color
                           )}>
-                            {cp.product?.display_name || cp.product?.name}
+                            {statusConfig.label}
                           </span>
                         </div>
-                        <span className={cn(
-                          'text-xs font-medium px-2 py-0.5 rounded-full',
-                          cp.status === 'active' ? 'bg-green-100 text-green-700' :
-                          cp.status === 'churned' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
-                        )}>
-                          {cp.status}
-                        </span>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Since {formatDate(cp.started_at || cp.created_at)}
-                        {cp.mrr > 0 && ` • MRR: ${formatCurrency(cp.mrr)}`}
-                      </p>
                     </div>
-                  ))}
-                  {available.map(product => (
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-8">No products associated with this company</p>
+            )}
+          </div>
+
+          {/* Available Products */}
+          {availableProducts.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h2 className="font-semibold text-gray-900 mb-4">Available Products</h2>
+              <div className="grid grid-cols-2 gap-3">
+                {availableProducts.map((product: any) => {
+                  const typeConfig = productTypeIcons[product.product_type] || productTypeIcons.suite;
+                  const TypeIcon = typeConfig.icon;
+                  return (
                     <div
                       key={product.id}
-                      className="p-3 rounded-lg border border-dashed border-gray-200"
+                      className="p-4 rounded-lg border border-dashed border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="h-4 w-4 rounded-full border border-gray-300" />
-                          <span className="text-gray-500">{product.display_name || product.name}</span>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <TypeIcon className={cn('h-5 w-5 mt-0.5', typeConfig.color)} />
+                          <div>
+                            <p className="font-medium text-gray-900">{product.name}</p>
+                            {product.description && (
+                              <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">
+                                {product.description}
+                              </p>
+                            )}
+                            {product.tiers && product.tiers.length > 0 && (
+                              <div className="flex items-center gap-1 mt-2">
+                                {product.tiers
+                                  .sort((a: any, b: any) => a.display_order - b.display_order)
+                                  .map((tier: any) => (
+                                    <span
+                                      key={tier.id}
+                                      className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded"
+                                    >
+                                      {tier.name}
+                                      {tier.price_monthly && ` $${tier.price_monthly}`}
+                                    </span>
+                                  ))}
+                              </div>
+                            )}
+                            {product.base_price_monthly && !product.tiers?.length && (
+                              <p className="text-sm text-gray-500 mt-1">
+                                ${product.base_price_monthly}/mo
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <Link
                           href={`/deals/new?company=${company.id}&product=${product.id}`}
-                          className="text-sm text-blue-600 hover:text-blue-700"
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
                         >
-                          Create Deal
+                          Start Sale
                         </Link>
                       </div>
-                      <p className="text-sm text-gray-400 mt-1">Not sold</p>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -800,6 +1032,238 @@ export function CompanyDetail({
       {activeTab === 'research' && (
         <CompanyResearchTab companyId={company.id} companyName={company.name} />
       )}
+
+      {/* Quick Flag Modal */}
+      <QuickFlagModal
+        isOpen={flagModalOpen}
+        onClose={() => setFlagModalOpen(false)}
+        companyId={company.id}
+        companyName={company.name}
+      />
+
+      {/* Edit Company Product Modal */}
+      {editingCompanyProduct && (
+        <EditCompanyProductModal
+          companyId={company.id}
+          companyProduct={editingCompanyProduct}
+          productInfo={allProducts.find((p: any) => p.id === editingCompanyProduct.product_id)}
+          onClose={() => setEditingCompanyProduct(null)}
+          onSaved={() => {
+            setEditingCompanyProduct(null);
+            router.refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Edit Company Product Modal
+function EditCompanyProductModal({
+  companyId,
+  companyProduct,
+  productInfo,
+  onClose,
+  onSaved,
+}: {
+  companyId: string;
+  companyProduct: any;
+  productInfo?: any;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    status: companyProduct.status,
+    tier_id: companyProduct.tier?.id || companyProduct.tier_id || '',
+    current_stage_id: companyProduct.current_stage?.id || companyProduct.current_stage_id || '',
+    mrr: companyProduct.mrr?.toString() || '',
+    seats: companyProduct.seats?.toString() || '',
+    notes: companyProduct.notes || '',
+  });
+
+  const statusOptions = [
+    { value: 'inactive', label: 'Inactive' },
+    { value: 'in_sales', label: 'In Sales' },
+    { value: 'in_onboarding', label: 'Onboarding' },
+    { value: 'active', label: 'Active' },
+    { value: 'declined', label: 'Declined' },
+    { value: 'churned', label: 'Churned' },
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await fetch(`/api/companies/${companyId}/products`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_product_id: companyProduct.id,
+          status: formData.status,
+          tier_id: formData.tier_id || null,
+          current_stage_id: formData.current_stage_id || null,
+          mrr: formData.mrr || null,
+          seats: formData.seats ? parseInt(formData.seats) : null,
+          notes: formData.notes || null,
+        }),
+      });
+
+      if (response.ok) {
+        onSaved();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to update');
+      }
+    } catch (error) {
+      alert('Failed to update');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const tiers = productInfo?.tiers || [];
+  const stages = (productInfo?.stages || []).sort((a: any, b: any) => a.stage_order - b.stage_order);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-medium text-gray-900">
+            Edit {companyProduct.product?.name}
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {/* Status */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Status
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {statusOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Tier (if available) */}
+          {tiers.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tier
+              </label>
+              <select
+                value={formData.tier_id}
+                onChange={(e) => setFormData({ ...formData, tier_id: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">No tier selected</option>
+                {tiers.map((tier: any) => (
+                  <option key={tier.id} value={tier.id}>
+                    {tier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Stage (if in_sales) */}
+          {formData.status === 'in_sales' && stages.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Pipeline Stage
+              </label>
+              <select
+                value={formData.current_stage_id}
+                onChange={(e) => setFormData({ ...formData, current_stage_id: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select stage</option>
+                {stages.map((stage: any) => (
+                  <option key={stage.id} value={stage.id}>
+                    {stage.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* MRR */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              MRR ($)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={formData.mrr}
+              onChange={(e) => setFormData({ ...formData, mrr: e.target.value })}
+              placeholder="0.00"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Seats */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Seats
+            </label>
+            <input
+              type="number"
+              value={formData.seats}
+              onChange={(e) => setFormData({ ...formData, seats: e.target.value })}
+              placeholder="0"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes
+            </label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              rows={3}
+              placeholder="Optional notes..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

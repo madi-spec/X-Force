@@ -216,3 +216,172 @@ export async function POST(
     stage: firstStage ? { id: firstStage.id, name: firstStage.name } : null,
   }, { status: isUpdate ? 200 : 201 });
 }
+
+// PUT - Update an existing company product
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createClient();
+  const { id: companyId } = await params;
+  const body = await request.json();
+
+  const {
+    company_product_id,
+    status,
+    tier_id,
+    mrr,
+    seats,
+    current_stage_id,
+    notes,
+    activated_at,
+    onboarding_started_at,
+  } = body;
+
+  if (!company_product_id) {
+    return NextResponse.json({ error: 'company_product_id required' }, { status: 400 });
+  }
+
+  // Fetch existing record
+  const { data: existing, error: fetchError } = await supabase
+    .from('company_products')
+    .select('*, product:products(id, name)')
+    .eq('id', company_product_id)
+    .eq('company_id', companyId)
+    .single();
+
+  if (fetchError || !existing) {
+    return NextResponse.json({ error: 'Company product not found' }, { status: 404 });
+  }
+
+  const now = new Date().toISOString();
+  const updates: Record<string, unknown> = { updated_at: now };
+  const historyEntries: Array<{ event_type: string; from_value: string | null; to_value: string | null; notes: string }> = [];
+
+  // Handle status change
+  if (status !== undefined && status !== existing.status) {
+    updates.status = status;
+    historyEntries.push({
+      event_type: 'status_changed',
+      from_value: existing.status,
+      to_value: status,
+      notes: `Status changed from ${existing.status} to ${status}`,
+    });
+
+    // Set appropriate timestamps based on status
+    if (status === 'active' && !existing.activated_at) {
+      updates.activated_at = activated_at || now;
+    }
+    if (status === 'in_onboarding' && !existing.onboarding_started_at) {
+      updates.onboarding_started_at = onboarding_started_at || now;
+    }
+    if (status === 'in_sales' && !existing.sales_started_at) {
+      updates.sales_started_at = now;
+    }
+    if (status === 'churned') {
+      updates.churned_at = now;
+    }
+    if (status === 'declined') {
+      updates.declined_at = now;
+    }
+  }
+
+  // Handle tier change
+  if (tier_id !== undefined && tier_id !== existing.tier_id) {
+    updates.tier_id = tier_id || null;
+    historyEntries.push({
+      event_type: 'tier_changed',
+      from_value: existing.tier_id,
+      to_value: tier_id || null,
+      notes: 'Tier updated',
+    });
+  }
+
+  // Handle MRR change
+  if (mrr !== undefined) {
+    const newMrr = mrr === '' || mrr === null ? null : parseFloat(mrr);
+    const existingMrr = existing.mrr ? parseFloat(existing.mrr) : null;
+    if (newMrr !== existingMrr) {
+      updates.mrr = newMrr;
+      historyEntries.push({
+        event_type: 'mrr_changed',
+        from_value: existingMrr?.toString() || null,
+        to_value: newMrr?.toString() || null,
+        notes: `MRR updated from $${existingMrr || 0} to $${newMrr || 0}`,
+      });
+    }
+  }
+
+  // Handle seats change
+  if (seats !== undefined && seats !== existing.seats) {
+    updates.seats = seats || null;
+    historyEntries.push({
+      event_type: 'seats_changed',
+      from_value: existing.seats?.toString() || null,
+      to_value: seats?.toString() || null,
+      notes: `Seats updated from ${existing.seats || 0} to ${seats || 0}`,
+    });
+  }
+
+  // Handle stage change
+  if (current_stage_id !== undefined && current_stage_id !== existing.current_stage_id) {
+    updates.current_stage_id = current_stage_id || null;
+    updates.stage_entered_at = now;
+    updates.last_stage_moved_at = now;
+    historyEntries.push({
+      event_type: 'stage_changed',
+      from_value: existing.current_stage_id,
+      to_value: current_stage_id || null,
+      notes: 'Stage updated',
+    });
+  }
+
+  // Handle notes change
+  if (notes !== undefined && notes !== existing.notes) {
+    updates.notes = notes || null;
+    historyEntries.push({
+      event_type: 'note_added',
+      from_value: null,
+      to_value: notes || null,
+      notes: 'Notes updated',
+    });
+  }
+
+  // Handle explicit date overrides
+  if (activated_at !== undefined) {
+    updates.activated_at = activated_at || null;
+  }
+  if (onboarding_started_at !== undefined) {
+    updates.onboarding_started_at = onboarding_started_at || null;
+  }
+
+  // Perform the update
+  const { data: updated, error: updateError } = await supabase
+    .from('company_products')
+    .update(updates)
+    .eq('id', company_product_id)
+    .select(`
+      *,
+      product:products(id, name, slug, icon, color),
+      tier:product_tiers(id, name),
+      current_stage:product_sales_stages(id, name, slug, stage_order)
+    `)
+    .single();
+
+  if (updateError) {
+    console.error('[UpdateCompanyProduct] Error:', updateError);
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  // Log history entries
+  for (const entry of historyEntries) {
+    await supabase.from('company_product_history').insert({
+      company_product_id,
+      ...entry,
+    });
+  }
+
+  console.log(`[UpdateCompanyProduct] Updated company_product ${company_product_id}, changes:`, Object.keys(updates));
+
+  return NextResponse.json({ companyProduct: updated });
+}
