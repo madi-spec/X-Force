@@ -368,7 +368,7 @@ export async function POST(
     // Update deal to terminal state
     // Try to update with conversion columns if they exist, otherwise just update stage
     const dealUpdate: Record<string, unknown> = {
-      stage: 'closed_won', // Terminal state
+      stage: 'closed_converted', // Terminal state - converted to new product pipeline
       closed_at: now.toISOString(),
       lost_reason: conversionNote,
       updated_at: now.toISOString(),
@@ -424,7 +424,7 @@ export async function POST(
       company_product_ids: newCompanyProductIds,
       products: convertedProducts,
       legacy_deal_status: {
-        status: 'closed_won',
+        status: 'closed_converted',
         conversion_status: 'converted',
         converted_at: now.toISOString(),
       },

@@ -11,6 +11,7 @@ const STAGE_VELOCITY_BENCHMARKS: Record<DealStage, number> = {
   negotiation: 7,
   closed_won: 0,
   closed_lost: 0,
+  closed_converted: 0,
 };
 
 // Weights for each factor (must sum to 100)

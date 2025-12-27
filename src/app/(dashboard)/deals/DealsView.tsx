@@ -279,7 +279,7 @@ export function DealsView({ initialDeals, currentUserId, users, companies }: Dea
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {deal.stage !== 'closed_won' && deal.stage !== 'closed_lost' && (
+                        {deal.stage !== 'closed_won' && deal.stage !== 'closed_lost' && deal.stage !== 'closed_converted' && (
                           <>
                             <button
                               onClick={() => setConvertingDeal(deal)}

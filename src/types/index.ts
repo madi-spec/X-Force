@@ -22,7 +22,8 @@ export type DealStage =
   | 'trial'
   | 'negotiation'
   | 'closed_won'
-  | 'closed_lost';
+  | 'closed_lost'
+  | 'closed_converted';
 
 export type DealType = 'new_business' | 'upsell' | 'cross_sell' | 'expansion' | 'renewal';
 
@@ -158,11 +159,19 @@ export interface Company {
   segment: Segment;
   industry: Industry;
   agent_count: number;
+  employee_count?: number | null;
+  employee_range?: string | null;
+  revenue_estimate?: string | null;
+  domain?: string | null;
   crm_platform: CRMPlatform;
-  address: Address | null;
+  address: Address | string | null;
   voice_customer: boolean;
   voice_customer_since: string | null;
   external_ids: ExternalIds | null;
+  // VFP Integration fields
+  vfp_customer_id?: string | null;  // Rev ID from KEEP spreadsheet (Revenue system)
+  ats_id?: string | null;           // ATS ID from billing spreadsheets (X-RAI, Summary Note, etc.)
+  vfp_support_contact?: string | null;
   created_at: string;
   updated_at: string;
   // Relations
@@ -261,11 +270,52 @@ export interface Contact {
   is_primary: boolean;
   last_contacted_at: string | null;
   created_at: string;
+  // AI-detected fields
+  relationship_facts?: RelationshipFact[];
+  communication_style?: CommunicationStyle | null;
+  ai_detected_at?: string | null;
+  ai_detection_source?: 'meeting' | 'email' | 'manual' | null;
+  ai_confidence?: number | null;
   // Relations
   company?: Company;
   // Legacy alias
   organization_id?: string;
   organization?: Company;
+}
+
+// Relationship Intelligence Types
+export type RelationshipFactType = 'personal' | 'preference' | 'family' | 'interest' | 'communication' | 'concern';
+
+export interface RelationshipFact {
+  type: RelationshipFactType;
+  fact: string;
+  source: string;
+  detected_at: string;
+  confidence: number;
+}
+
+export interface CommunicationStyle {
+  preferredChannel?: 'email' | 'phone' | 'meeting' | 'text';
+  responsePattern?: string;
+  bestTimeToReach?: string;
+  communicationTone?: 'formal' | 'casual' | 'technical';
+  lastUpdated?: string;
+}
+
+export interface ContactMeetingMention {
+  id: string;
+  contact_id: string;
+  transcription_id: string;
+  role_detected: string | null;
+  deal_role_detected: ContactRole;
+  sentiment_detected: 'positive' | 'neutral' | 'negative' | null;
+  key_quotes: string[];
+  facts_extracted: RelationshipFact[];
+  confidence: number | null;
+  created_at: string;
+  // Relations
+  contact?: Contact;
+  transcription?: MeetingTranscription;
 }
 
 // ============================================
@@ -497,6 +547,7 @@ export const PIPELINE_STAGES: PipelineStage[] = [
   { id: 'negotiation', name: 'Negotiation', order: 7, color: 'bg-yellow-500' },
   { id: 'closed_won', name: 'Closed Won', order: 8, color: 'bg-green-500' },
   { id: 'closed_lost', name: 'Closed Lost', order: 9, color: 'bg-red-500' },
+  { id: 'closed_converted', name: 'Closed Converted', order: 10, color: 'bg-emerald-500' },
 ];
 
 // ============================================
@@ -805,6 +856,19 @@ export interface MeetingStakeholder {
   role: string;
   sentiment: 'positive' | 'neutral' | 'negative';
   keyQuotes: string[];
+  // Enhanced contact detection fields
+  email?: string | null;
+  dealRole?: ContactRole;
+  confidence?: number;
+  personalFacts?: Array<{
+    type: 'personal' | 'preference' | 'family' | 'interest' | 'communication' | 'concern';
+    fact: string;
+    quote?: string;
+  }>;
+  communicationInsights?: {
+    preferredChannel?: 'email' | 'phone' | 'meeting' | 'text';
+    communicationTone?: 'formal' | 'casual' | 'technical';
+  };
 }
 
 export interface MeetingBuyingSignal {
@@ -905,3 +969,10 @@ export interface FirefliesSyncResult {
   skipped: number;
   errors: string[];
 }
+
+// ============================================
+// OPERATING LAYER (Re-exports)
+// ============================================
+
+export * from "./operatingLayer";
+

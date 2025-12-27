@@ -23,7 +23,7 @@ export function DealHeaderActions({
   const router = useRouter();
   const [showConvertWizard, setShowConvertWizard] = useState(false);
 
-  const isTerminalStage = currentStage === 'closed_won' || currentStage === 'closed_lost';
+  const isTerminalStage = currentStage === 'closed_won' || currentStage === 'closed_lost' || currentStage === 'closed_converted';
 
   return (
     <>
