@@ -15,12 +15,14 @@ import {
   ListTodo,
   Archive,
   Brain,
+  Ticket,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Command Center', href: '/ai', icon: Brain },
   { name: 'Daily Driver', href: '/daily', icon: ListTodo },
   { name: 'Communications', href: '/communications', icon: MessageSquare },
+  { name: 'Support Cases', href: '/cases', icon: Ticket },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { name: 'Deals', href: '/deals', icon: Zap },

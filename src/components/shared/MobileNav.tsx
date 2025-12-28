@@ -14,10 +14,12 @@ import {
   Settings,
   Zap,
   Target,
+  Ticket,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Command Center', href: '/command-center', icon: Target },
+  { name: 'Support Cases', href: '/cases', icon: Ticket },
   { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Contacts', href: '/contacts', icon: Users },

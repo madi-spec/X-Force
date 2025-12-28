@@ -1,11 +1,15 @@
 import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { ProductHeader } from '@/components/products/ProductHeader';
 import { ProductPipeline } from '@/components/products/ProductPipeline';
 import { ProductCustomers } from '@/components/products/ProductCustomers';
 import { ProductStats } from '@/components/products/ProductStats';
+import { ProcessPipeline } from '@/components/products/ProcessPipeline';
+import { HeartPulse } from 'lucide-react';
 
 type ViewType = 'pipeline' | 'in_sales' | 'active' | 'in_onboarding' | 'inactive' | 'customers';
+type ProcessType = 'sales' | 'onboarding' | 'engagement';
 
 // Product conversion mappings (legacy product slug -> target product slug)
 const PRODUCT_CONVERSIONS: Record<string, string> = {
@@ -14,13 +18,15 @@ const PRODUCT_CONVERSIONS: Record<string, string> = {
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; process?: string }>;
 }
 
 export default async function ProductDetailPage({ params, searchParams }: Props) {
   const supabase = await createClient();
   const { slug } = await params;
-  const rawView = (await searchParams).view || 'pipeline';
+  const sp = await searchParams;
+  const rawView = sp.view || 'pipeline';
+  const selectedProcess = (sp.process as ProcessType) || 'sales';
   // Normalize view - 'customers' is alias for 'active', 'pipeline' is alias for 'in_sales'
   const view: ViewType = rawView === 'customers' ? 'active' : rawView as ViewType;
 
@@ -39,6 +45,50 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   if (error || !product) {
     notFound();
   }
+
+  // Get lifecycle processes for this product
+  const { data: processes } = await supabase
+    .from('product_processes')
+    .select('id, name, process_type, version, status')
+    .eq('product_id', product.id)
+    .eq('status', 'published');
+
+  // Get stages for all processes
+  const processIds = processes?.map(p => p.id) || [];
+  const { data: processStages } = processIds.length > 0
+    ? await supabase
+        .from('product_process_stages')
+        .select('*')
+        .in('process_id', processIds)
+        .order('stage_order', { ascending: true })
+    : { data: [] };
+
+  // Get data from projection (company_product_read_model)
+  const { data: projectionData } = await supabase
+    .from('company_product_read_model')
+    .select(`
+      *,
+      company:companies(id, name, domain)
+    `)
+    .eq('product_id', product.id);
+
+  // Get counts by process type from projection
+  const processStats = {
+    sales: projectionData?.filter(p => p.current_process_type === 'sales').length || 0,
+    onboarding: projectionData?.filter(p => p.current_process_type === 'onboarding').length || 0,
+    engagement: projectionData?.filter(p => p.current_process_type === 'engagement').length || 0,
+  };
+
+  // Group projection data by stage for selected process
+  const selectedProcessData = processes?.find(p => p.process_type === selectedProcess);
+  const selectedProcessStages = processStages?.filter(s => s.process_id === selectedProcessData?.id) || [];
+  const projectionByStage = selectedProcessStages.map(stage => ({
+    ...stage,
+    companies: projectionData?.filter(p =>
+      p.current_process_type === selectedProcess &&
+      p.current_stage_id === stage.id
+    ) || [],
+  }));
 
   // Get conversion target if this is a legacy product
   let conversionTarget: { productId: string; productName: string } | undefined;
@@ -206,7 +256,65 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
 
       <ProductStats stats={stats} />
 
-      {/* View Toggle */}
+      {/* Lifecycle Process Switcher */}
+      {(processes?.length || 0) > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+            Lifecycle Process View
+          </h3>
+          <div className="flex gap-2">
+            <a
+              href={`/products/${slug}?view=pipeline&process=sales`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                selectedProcess === 'sales'
+                  ? 'bg-yellow-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-yellow-300" />
+              Sales ({processStats.sales})
+            </a>
+            <a
+              href={`/products/${slug}?view=pipeline&process=onboarding`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                selectedProcess === 'onboarding'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-blue-300" />
+              Onboarding ({processStats.onboarding})
+            </a>
+            <a
+              href={`/products/${slug}?view=pipeline&process=engagement`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                selectedProcess === 'engagement'
+                  ? 'bg-green-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-green-300" />
+              Engagement ({processStats.engagement})
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Engagement Board Link */}
+      <div className="mb-6">
+        <Link
+          href={`/products/${slug}/engagement`}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+        >
+          <HeartPulse className="h-4 w-4" />
+          <span className="font-medium">View Engagement Board</span>
+          <span className="text-xs bg-emerald-100 px-2 py-0.5 rounded-full">
+            {processStats.engagement} customers
+          </span>
+        </Link>
+      </div>
+
+      {/* View Toggle (legacy status-based views) */}
       <div className="flex gap-2 mb-6 flex-wrap">
         <a
           href={`/products/${slug}?view=in_sales`}
@@ -250,7 +358,19 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         </a>
       </div>
 
-      {getViewContent()}
+      {/* Process Pipeline View (if process is selected and has stages) */}
+      {view === 'pipeline' && projectionByStage.length > 0 && (
+        <div className="mb-6">
+          <ProcessPipeline
+            processType={selectedProcess}
+            stages={projectionByStage}
+            productSlug={slug}
+          />
+        </div>
+      )}
+
+      {/* Legacy Views */}
+      {view !== 'pipeline' && getViewContent()}
     </div>
   );
 }
