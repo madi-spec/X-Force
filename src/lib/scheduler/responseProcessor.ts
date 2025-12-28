@@ -9,6 +9,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { parseSchedulingResponse, generateSchedulingEmail, formatTimeSlotsForEmail } from './emailGeneration';
 import { adminSchedulingService } from './schedulingService';
 import { sendEmail } from '@/lib/microsoft/emailSync';
+import { createMeetingCalendarEvent, getMultiAttendeeAvailability } from './calendarIntegration';
+import { callAIJson } from '@/lib/ai/core/aiClient';
 import {
   SchedulingRequest,
   SchedulingAttendee,
@@ -16,6 +18,7 @@ import {
   SCHEDULING_STATUS,
   ACTION_TYPES,
   ConversationMessage,
+  MEETING_PLATFORMS,
 } from './types';
 
 // ============================================
@@ -73,7 +76,7 @@ export async function findMatchingSchedulingRequest(
         attendees:scheduling_attendees(*)
       `)
       .eq('email_thread_id', email.conversationId)
-      .not('status', 'in', `(${SCHEDULING_STATUS.COMPLETED},${SCHEDULING_STATUS.CANCELLED})`)
+      .not('status', 'in', `(${SCHEDULING_STATUS.COMPLETED},${SCHEDULING_STATUS.CANCELLED},${SCHEDULING_STATUS.CONFIRMED})`)
       .single();
 
     if (byThread) {
@@ -101,7 +104,8 @@ export async function findMatchingSchedulingRequest(
       if (
         request &&
         request.status !== SCHEDULING_STATUS.COMPLETED &&
-        request.status !== SCHEDULING_STATUS.CANCELLED
+        request.status !== SCHEDULING_STATUS.CANCELLED &&
+        request.status !== SCHEDULING_STATUS.CONFIRMED
       ) {
         // Check if email subject might relate to scheduling
         const schedulingKeywords = [
@@ -162,6 +166,19 @@ export async function processSchedulingResponse(
       actor: 'prospect',
       ai_reasoning: analysis.reasoning,
     });
+
+    // Add X-FORCE category to the inbound email
+    try {
+      const { getValidToken } = await import('@/lib/microsoft/auth');
+      const token = await getValidToken(schedulingRequest.created_by);
+      if (token && email.id) {
+        await addCategoryToEmail(token, email.id, 'X-FORCE');
+        console.log('[processSchedulingResponse] Added X-FORCE category to inbound email:', email.id);
+      }
+    } catch (categoryErr) {
+      console.warn('[processSchedulingResponse] Failed to add X-FORCE category to email:', categoryErr);
+      // Don't fail the whole process if category fails
+    }
 
     // Add to conversation history
     const newMessage: ConversationMessage = {
@@ -243,6 +260,71 @@ async function handleTimeAccepted(
     analysis.selectedTime = selectedTime;
   }
 
+  const selectedDate = new Date(analysis.selectedTime);
+
+  // Get internal attendee emails for availability check
+  const internalEmails = (request.attendees || [])
+    .filter((a: SchedulingAttendee) => a.side === 'internal')
+    .map((a: SchedulingAttendee) => a.email);
+
+  // Get external attendee for potential alternative times email
+  const externalAttendee = (request.attendees || []).find(
+    (a: SchedulingAttendee) => a.side === 'external'
+  );
+
+  // CRITICAL: Re-check availability in case the slot was booked since we proposed it
+  console.log('[handleTimeAccepted] Checking if selected time is still available:', selectedDate.toISOString());
+
+  const availabilityResult = await checkSlotAvailability(
+    request.created_by,
+    internalEmails,
+    selectedDate,
+    request.duration_minutes || 30
+  );
+
+  if (availabilityResult.error) {
+    console.warn('[handleTimeAccepted] Availability check failed, proceeding with booking:', availabilityResult.error);
+    // If availability check fails, proceed anyway (better to potentially double-book than fail silently)
+  } else if (!availabilityResult.available) {
+    // SLOT NO LONGER AVAILABLE - send alternative times
+    console.log('[handleTimeAccepted] Selected time no longer available! Conflicts:', availabilityResult.conflictingAttendees);
+
+    if (!externalAttendee) {
+      console.error('[handleTimeAccepted] No external attendee found for alternative times email');
+      return await fallbackToHumanReview(request, analysis, 'Selected time no longer available, no external attendee');
+    }
+
+    // Log the issue
+    await adminSchedulingService.logAction(request.id, {
+      action_type: ACTION_TYPES.STATUS_CHANGED,
+      message_content: `Prospect accepted ${selectedDate.toISOString()} but slot is no longer available (conflicts: ${availabilityResult.conflictingAttendees.join(', ')})`,
+      actor: 'ai',
+      ai_reasoning: 'Time was booked by another meeting since we proposed it. Sending alternative times.',
+    });
+
+    // Send alternative times
+    const alternativeResult = await sendAlternativeTimes(
+      request,
+      externalAttendee.email,
+      externalAttendee.name || 'there',
+      request.created_by,
+      selectedDate.toISOString()
+    );
+
+    if (alternativeResult.success) {
+      return {
+        processed: true,
+        schedulingRequestId: request.id,
+        action: 'accepted_time_unavailable_sent_alternatives',
+        newStatus: SCHEDULING_STATUS.AWAITING_RESPONSE,
+      };
+    } else {
+      return await fallbackToHumanReview(request, analysis, `Time unavailable, failed to send alternatives: ${alternativeResult.error}`);
+    }
+  }
+
+  console.log('[handleTimeAccepted] Time is still available, proceeding with booking');
+
   // Transition to confirming and record selected time
   const result = await adminSchedulingService.selectTime(
     request.id,
@@ -258,16 +340,40 @@ async function handleTimeAccepted(
     };
   }
 
-  return {
-    processed: true,
+  // Create calendar event automatically
+  const calendarResult = await createMeetingCalendarEvent({
     schedulingRequestId: request.id,
-    action: 'time_accepted',
-    newStatus: SCHEDULING_STATUS.CONFIRMING,
-  };
+    userId: request.created_by,
+    scheduledTime: selectedDate,
+    durationMinutes: request.duration_minutes,
+    title: request.title || undefined,
+    platform: request.meeting_platform || MEETING_PLATFORMS.TEAMS,
+    location: request.meeting_location || undefined,
+  });
+
+  if (calendarResult.success) {
+    console.log(`[ResponseProcessor] Calendar event created: ${calendarResult.eventId}`);
+    return {
+      processed: true,
+      schedulingRequestId: request.id,
+      action: 'time_accepted_and_booked',
+      newStatus: SCHEDULING_STATUS.CONFIRMED,
+    };
+  } else {
+    // Calendar event failed, but time was selected - flag for manual booking
+    console.warn(`[ResponseProcessor] Calendar event creation failed: ${calendarResult.error}`);
+    return {
+      processed: true,
+      schedulingRequestId: request.id,
+      action: 'time_accepted',
+      newStatus: SCHEDULING_STATUS.CONFIRMING,
+    };
+  }
 }
 
 /**
  * Handle when prospect proposes alternative times
+ * NOW WITH AUTOMATIC AVAILABILITY CHECK AND RESPONSE
  */
 async function handleCounterProposal(
   request: SchedulingRequest,
@@ -276,24 +382,7 @@ async function handleCounterProposal(
 ): Promise<ProcessingResult> {
   const supabase = createAdminClient();
 
-  // Transition to negotiating
-  await adminSchedulingService.transitionState(
-    request.id,
-    SCHEDULING_STATUS.NEGOTIATING,
-    {
-      actor: 'prospect',
-      reasoning: `Prospect proposed alternative times: ${analysis.counterProposedTimes?.join(', ')}`,
-    }
-  );
-
-  // Store the proposed times for user review
-  await supabase
-    .from('scheduling_requests')
-    .update({
-      next_action_type: 'review_counter_proposal',
-      next_action_at: new Date().toISOString(), // Immediate attention needed
-    })
-    .eq('id', request.id);
+  console.log('[handleCounterProposal] Processing counter-proposal:', analysis.counterProposedTimes);
 
   // Log the counter proposal
   await adminSchedulingService.logAction(request.id, {
@@ -303,10 +392,176 @@ async function handleCounterProposal(
     ai_reasoning: `Prospect suggested: ${analysis.counterProposedTimes?.join(', ')}`,
   });
 
+  // Get the external attendee (prospect)
+  const externalAttendee = (request.attendees || []).find(
+    (a: SchedulingAttendee) => a.side === 'external'
+  );
+
+  if (!externalAttendee) {
+    console.error('[handleCounterProposal] No external attendee found');
+    return await fallbackToHumanReview(request, analysis, 'No external attendee found');
+  }
+
+  // Get internal attendee emails for availability check
+  const internalEmails = (request.attendees || [])
+    .filter((a: SchedulingAttendee) => a.side === 'internal')
+    .map((a: SchedulingAttendee) => a.email);
+
+  // Try to parse the proposed time(s)
+  const proposedTimeDescriptions = analysis.counterProposedTimes || [];
+
+  if (proposedTimeDescriptions.length === 0) {
+    // No specific times mentioned - try to extract from email body
+    const timePatterns = [
+      /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:on\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)?(?:\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?)?)/gi,
+      /(monday|tuesday|wednesday|thursday|friday)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/gi,
+    ];
+
+    for (const pattern of timePatterns) {
+      const matches = email.body.match(pattern);
+      if (matches && matches.length > 0) {
+        proposedTimeDescriptions.push(...matches.slice(0, 3));
+        break;
+      }
+    }
+  }
+
+  if (proposedTimeDescriptions.length === 0) {
+    console.log('[handleCounterProposal] Could not extract proposed times from email');
+    return await fallbackToHumanReview(request, analysis, 'Could not parse proposed time');
+  }
+
+  // Parse the first proposed time using AI
+  const timeDescription = proposedTimeDescriptions[0];
+  console.log('[handleCounterProposal] Parsing time:', timeDescription);
+
+  const parsedTime = await parseProposedDateTime(timeDescription, email.body);
+  console.log('[handleCounterProposal] Parsed result:', parsedTime);
+
+  if (!parsedTime.isoTimestamp || parsedTime.confidence === 'low') {
+    console.log('[handleCounterProposal] Low confidence parse, falling back to human review');
+    return await fallbackToHumanReview(request, analysis, `Low confidence parsing: ${parsedTime.reasoning}`);
+  }
+
+  const proposedDate = new Date(parsedTime.isoTimestamp);
+
+  // Check availability for all internal attendees
+  console.log('[handleCounterProposal] Checking availability for:', proposedDate.toISOString());
+
+  const availabilityResult = await checkSlotAvailability(
+    request.created_by,
+    internalEmails,
+    proposedDate,
+    request.duration_minutes || 30
+  );
+
+  if (availabilityResult.error) {
+    console.error('[handleCounterProposal] Availability check error:', availabilityResult.error);
+    return await fallbackToHumanReview(request, analysis, `Availability check failed: ${availabilityResult.error}`);
+  }
+
+  if (availabilityResult.available) {
+    // TIME WORKS! Automatically confirm and book the meeting
+    console.log('[handleCounterProposal] Time is available! Auto-confirming...');
+
+    const bookResult = await confirmAndBookMeeting(
+      request,
+      proposedDate,
+      externalAttendee.email,
+      externalAttendee.name || 'there',
+      request.created_by
+    );
+
+    if (bookResult.success) {
+      await adminSchedulingService.logAction(request.id, {
+        action_type: ACTION_TYPES.STATUS_CHANGED,
+        message_content: `Automatically confirmed meeting for ${proposedDate.toISOString()}`,
+        actor: 'ai',
+        ai_reasoning: `Counter-proposal "${timeDescription}" parsed to ${proposedDate.toISOString()}, availability confirmed, meeting booked automatically.`,
+      });
+
+      return {
+        processed: true,
+        schedulingRequestId: request.id,
+        action: 'counter_proposal_auto_accepted',
+        newStatus: SCHEDULING_STATUS.CONFIRMED,
+      };
+    } else {
+      console.error('[handleCounterProposal] Failed to book meeting:', bookResult.error);
+      return await fallbackToHumanReview(request, analysis, `Booking failed: ${bookResult.error}`);
+    }
+  } else {
+    // TIME DOESN'T WORK - Send alternative times
+    console.log('[handleCounterProposal] Time not available. Conflicts:', availabilityResult.conflictingAttendees);
+
+    // Use the parsed timestamp with timezone, not the raw description
+    // This ensures correct timezone handling on UTC servers
+    const formattedRequestedTime = parsedTime.isoTimestamp || timeDescription;
+
+    const alternativeResult = await sendAlternativeTimes(
+      request,
+      externalAttendee.email,
+      externalAttendee.name || 'there',
+      request.created_by,
+      formattedRequestedTime
+    );
+
+    if (alternativeResult.success) {
+      await adminSchedulingService.logAction(request.id, {
+        action_type: ACTION_TYPES.EMAIL_SENT,
+        message_content: `Sent alternative times because "${timeDescription}" has conflicts`,
+        actor: 'ai',
+        ai_reasoning: `Counter-proposal conflicts with: ${availabilityResult.conflictingAttendees.join(', ')}. Sent alternative times automatically.`,
+      });
+
+      return {
+        processed: true,
+        schedulingRequestId: request.id,
+        action: 'counter_proposal_auto_declined_with_alternatives',
+        newStatus: SCHEDULING_STATUS.AWAITING_RESPONSE,
+      };
+    } else {
+      console.error('[handleCounterProposal] Failed to send alternatives:', alternativeResult.error);
+      return await fallbackToHumanReview(request, analysis, `Failed to send alternatives: ${alternativeResult.error}`);
+    }
+  }
+}
+
+/**
+ * Fallback to human review when automation can't proceed
+ */
+async function fallbackToHumanReview(
+  request: SchedulingRequest,
+  analysis: ResponseAnalysis,
+  reason: string
+): Promise<ProcessingResult> {
+  const supabase = createAdminClient();
+
+  console.log('[fallbackToHumanReview] Reason:', reason);
+
+  // Transition to negotiating
+  await adminSchedulingService.transitionState(
+    request.id,
+    SCHEDULING_STATUS.NEGOTIATING,
+    {
+      actor: 'ai',
+      reasoning: `Automation fallback: ${reason}. Prospect suggested: ${analysis.counterProposedTimes?.join(', ')}`,
+    }
+  );
+
+  // Flag for human review
+  await supabase
+    .from('scheduling_requests')
+    .update({
+      next_action_type: 'review_counter_proposal',
+      next_action_at: new Date().toISOString(),
+    })
+    .eq('id', request.id);
+
   return {
     processed: true,
     schedulingRequestId: request.id,
-    action: 'counter_proposal_received',
+    action: 'counter_proposal_needs_review',
     newStatus: SCHEDULING_STATUS.NEGOTIATING,
   };
 }
@@ -433,6 +688,609 @@ async function handleUnclearResponse(
     schedulingRequestId: request.id,
     action: 'unclear_needs_review',
   };
+}
+
+// ============================================
+// EMAIL HELPER WITH X-FORCE CATEGORY
+// ============================================
+
+/**
+ * Add a category to an existing email message
+ */
+async function addCategoryToEmail(
+  token: string,
+  messageId: string,
+  category: string
+): Promise<void> {
+  // First get existing categories
+  const getResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}?$select=categories`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!getResponse.ok) {
+    throw new Error(`Failed to get message: ${await getResponse.text()}`);
+  }
+
+  const message = await getResponse.json();
+  const existingCategories: string[] = message.categories || [];
+
+  // Add new category if not already present
+  if (!existingCategories.includes(category)) {
+    existingCategories.push(category);
+
+    const patchResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ categories: existingCategories }),
+      }
+    );
+
+    if (!patchResponse.ok) {
+      throw new Error(`Failed to update categories: ${await patchResponse.text()}`);
+    }
+  }
+}
+
+/**
+ * Send an email with the X-FORCE category badge
+ * Uses draft-then-send approach to add category before sending
+ */
+async function sendEmailWithCategory(
+  token: string,
+  message: {
+    subject: string;
+    body: { contentType: 'Text' | 'HTML'; content: string };
+    toRecipients: Array<{ emailAddress: { address: string; name?: string } }>;
+  }
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    // Step 1: Create a draft message
+    const draftResponse = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        subject: message.subject,
+        body: message.body,
+        toRecipients: message.toRecipients,
+        categories: ['X-FORCE'], // Add category when creating
+      }),
+    });
+
+    if (!draftResponse.ok) {
+      const errorText = await draftResponse.text();
+      return { success: false, error: `Failed to create draft: ${errorText}` };
+    }
+
+    const draft = await draftResponse.json();
+    const messageId = draft.id;
+
+    // Step 2: Send the draft
+    const sendResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}/send`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!sendResponse.ok && sendResponse.status !== 202) {
+      const errorText = await sendResponse.text();
+      return { success: false, error: `Failed to send: ${errorText}` };
+    }
+
+    console.log('[sendEmailWithCategory] Email sent with X-FORCE category:', messageId);
+    return { success: true, messageId };
+  } catch (err) {
+    console.error('[sendEmailWithCategory] Error:', err);
+    return { success: false, error: String(err) };
+  }
+}
+
+// ============================================
+// COUNTER-PROPOSAL AUTOMATION
+// ============================================
+
+/**
+ * Parse natural language time descriptions into ISO timestamps using AI
+ */
+async function parseProposedDateTime(
+  timeDescription: string,
+  emailBody: string
+): Promise<{ isoTimestamp: string | null; confidence: 'high' | 'medium' | 'low'; reasoning: string }> {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1; // 1-indexed
+  const todayFormatted = today.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  // Determine the year to use for future scheduling
+  const nextYear = currentYear + 1;
+
+  // Build explicit year rules based on current date
+  let yearGuidance = '';
+  if (currentMonth === 12) {
+    // December - any January/February/March date MUST be next year
+    yearGuidance = `CRITICAL: Today is ${todayFormatted}. We are in DECEMBER ${currentYear}.
+- ANY date in January, February, or March MUST use year ${nextYear} (NOT ${currentYear})
+- January ${currentYear} is IN THE PAST and invalid
+- January ${nextYear} is the NEXT January and correct
+- Example: "January 5" = January 5, ${nextYear}
+- Example: "Monday the 5th" in January = January 5, ${nextYear}`;
+  } else if (currentMonth >= 10) {
+    yearGuidance = `Since we're in ${today.toLocaleDateString('en-US', { month: 'long' })} ${currentYear}, if they mention January, February, or March without a year, use ${nextYear}.`;
+  } else {
+    yearGuidance = `Use ${currentYear} for dates that are still in the future.`;
+  }
+
+  const prompt = `Parse this proposed meeting time into an ISO timestamp.
+
+TODAY'S DATE: ${todayFormatted}
+CURRENT YEAR: ${currentYear}
+TIMEZONE: America/New_York (Eastern Time)
+
+TIME DESCRIPTION: "${timeDescription}"
+
+FULL EMAIL CONTEXT:
+${emailBody.substring(0, 500)}
+
+CRITICAL DATE PARSING RULES:
+
+RULE 1 - SPECIFIC DATE NUMBER TAKES PRIORITY:
+When someone says "[day] the [number]" (e.g., "Monday the 5th", "Tuesday the 14th"):
+- The NUMBER is the most important part - they mean the Xth day of a month
+- Find the NEAREST FUTURE date where the Xth falls on that day of week
+- Example: Today is Dec 27, 2025. "Monday the 5th" = January 5, ${nextYear} (because Jan 5, ${nextYear} is a Monday)
+- Do NOT interpret this as just "next Monday" - the person explicitly mentioned "the 5th"
+
+RULE 2 - YEAR DETERMINATION:
+- The meeting MUST be in the FUTURE. Never return a date in the past.
+- ${yearGuidance}
+- If we're in late December and they mention early January dates, use ${nextYear}.
+- ALWAYS double-check: Is the resulting date AFTER ${todayFormatted}? If not, add a year.
+
+RULE 3 - DAY/DATE MISMATCH:
+- If they say "Monday the 5th" and the 5th isn't actually a Monday in the nearest month, prioritize the DATE NUMBER over the day name
+- People often get day names wrong but rarely get date numbers wrong
+- Example: If they say "Tuesday the 5th" but Jan 5 is a Monday, assume they mean January 5 (they probably just mixed up the day)
+
+OTHER RULES:
+1. If no specific time is given, return null
+2. If the time is ambiguous (e.g., "next week"), return null with low confidence
+3. Times like "11am" should be interpreted in Eastern Time
+4. Return the time as an ISO 8601 timestamp (e.g., "${nextYear}-01-05T11:00:00-05:00")
+
+Return a JSON object with:
+- isoTimestamp: The ISO timestamp string, or null if unparseable
+- confidence: "high", "medium", or "low"
+- reasoning: Brief explanation including what year you chose and why`;
+
+  try {
+    const response = await callAIJson<{
+      isoTimestamp: string | null;
+      confidence: 'high' | 'medium' | 'low';
+      reasoning: string;
+    }>({
+      prompt,
+      systemPrompt: 'You are an expert at parsing natural language date/time expressions into precise timestamps. CRITICAL: When someone says "[day] the [number]" like "Monday the 5th", the DATE NUMBER is the key information - find the nearest future month where the Xth day matches (or is close to) that day of week. Do NOT just return "next Monday" - they specified a date number for a reason.',
+      schema: `{
+        "isoTimestamp": "ISO 8601 timestamp string or null",
+        "confidence": "high|medium|low",
+        "reasoning": "Brief explanation"
+      }`,
+      maxTokens: 500,
+      temperature: 0.1,
+    });
+
+    // Validate and fix the parsed date
+    if (response.data.isoTimestamp) {
+      const parsedDate = new Date(response.data.isoTimestamp);
+      const now = new Date();
+      const parsedMonth = parsedDate.getMonth() + 1; // 1-indexed
+      const parsedYear = parsedDate.getFullYear();
+
+      let needsYearFix = false;
+      let fixReason = '';
+
+      // Rule 1: Date must be in the future
+      if (parsedDate <= now) {
+        needsYearFix = true;
+        fixReason = 'date was in the past';
+      }
+
+      // Rule 2: If we're in December and AI returned a Jan/Feb/Mar date in current year, fix it
+      if (currentMonth === 12 && [1, 2, 3].includes(parsedMonth) && parsedYear === currentYear) {
+        needsYearFix = true;
+        fixReason = `January/February/March ${currentYear} is in the past - should be ${nextYear}`;
+      }
+
+      // Rule 3: If the date is more than 2 weeks in the past, it's definitely wrong
+      const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      if (parsedDate < twoWeeksAgo) {
+        needsYearFix = true;
+        fixReason = 'date is more than 2 weeks in the past';
+      }
+
+      if (needsYearFix) {
+        console.warn(`[parseProposedDateTime] Fixing year: ${fixReason}. Original: ${response.data.isoTimestamp}`);
+
+        // Parse the original timestamp and replace just the year, preserving the exact time
+        const originalTimestamp = response.data.isoTimestamp;
+        const yearMatch = originalTimestamp.match(/^(\d{4})/);
+        if (yearMatch) {
+          const oldYear = parseInt(yearMatch[1]);
+          const newYear = oldYear + 1;
+          // Simple string replacement to preserve the exact time and timezone
+          const correctedTimestamp = originalTimestamp.replace(/^\d{4}/, newYear.toString());
+          response.data.isoTimestamp = correctedTimestamp;
+          response.data.reasoning += ` (Auto-corrected: ${fixReason}, changed year from ${oldYear} to ${newYear})`;
+          console.log(`[parseProposedDateTime] Corrected to: ${response.data.isoTimestamp}`);
+        } else {
+          // Fallback: use Date object but be careful with timezone
+          parsedDate.setFullYear(parsedDate.getFullYear() + 1);
+          response.data.isoTimestamp = parsedDate.toISOString();
+          response.data.reasoning += ` (Auto-corrected: ${fixReason}, changed to ${parsedDate.getFullYear()})`;
+          console.log(`[parseProposedDateTime] Corrected to: ${response.data.isoTimestamp}`);
+        }
+      }
+    }
+
+    return response.data;
+  } catch (err) {
+    console.error('[parseProposedDateTime] AI parsing failed:', err);
+    return {
+      isoTimestamp: null,
+      confidence: 'low',
+      reasoning: `Failed to parse: ${err}`,
+    };
+  }
+}
+
+/**
+ * Check if a specific time slot is available for all required attendees
+ */
+async function checkSlotAvailability(
+  userId: string,
+  attendeeEmails: string[],
+  proposedTime: Date,
+  durationMinutes: number
+): Promise<{ available: boolean; conflictingAttendees: string[]; error?: string }> {
+  try {
+    const { getValidToken } = await import('@/lib/microsoft/auth');
+    const token = await getValidToken(userId);
+
+    if (!token) {
+      return { available: false, conflictingAttendees: [], error: 'No valid token' };
+    }
+
+    const startTime = proposedTime.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T').substring(0, 16) + ':00';
+    const endDate = new Date(proposedTime.getTime() + durationMinutes * 60 * 1000);
+    const endTime = endDate.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T').substring(0, 16) + ':00';
+
+    console.log(`[checkSlotAvailability] Checking ${startTime} to ${endTime} for ${attendeeEmails.join(', ')}`);
+
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/calendar/getSchedule', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        schedules: attendeeEmails,
+        startTime: { dateTime: startTime, timeZone: 'America/New_York' },
+        endTime: { dateTime: endTime, timeZone: 'America/New_York' },
+        availabilityViewInterval: durationMinutes,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[checkSlotAvailability] Graph API error:', errorText);
+      return { available: false, conflictingAttendees: [], error: errorText };
+    }
+
+    const data = await response.json();
+    const conflictingAttendees: string[] = [];
+
+    for (const schedule of data.value) {
+      // availabilityView: 0=free, 1=tentative, 2=busy, 3=OOO, 4=working elsewhere
+      const view = schedule.availabilityView || '';
+      const isFree = view === '0' || view === '' || view === '4';
+
+      if (!isFree) {
+        conflictingAttendees.push(schedule.scheduleId);
+      }
+    }
+
+    console.log(`[checkSlotAvailability] Result: ${conflictingAttendees.length === 0 ? 'AVAILABLE' : 'CONFLICTS: ' + conflictingAttendees.join(', ')}`);
+
+    return {
+      available: conflictingAttendees.length === 0,
+      conflictingAttendees,
+    };
+  } catch (err) {
+    console.error('[checkSlotAvailability] Error:', err);
+    return { available: false, conflictingAttendees: [], error: String(err) };
+  }
+}
+
+/**
+ * Send confirmation email and create calendar event
+ */
+async function confirmAndBookMeeting(
+  request: SchedulingRequest,
+  confirmedTime: Date,
+  prospectEmail: string,
+  prospectName: string,
+  userId: string
+): Promise<{ success: boolean; calendarEventId?: string; error?: string }> {
+  const supabase = createAdminClient();
+
+  try {
+    const { getValidToken } = await import('@/lib/microsoft/auth');
+    const token = await getValidToken(userId);
+
+    if (!token) {
+      return { success: false, error: 'No valid token' };
+    }
+
+    // Format the time for email
+    const formattedTime = confirmedTime.toLocaleString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+      timeZone: 'America/New_York',
+    });
+
+    // Generate confirmation email (for future use with AI-generated content)
+    const _generatedEmail = await generateSchedulingEmail({
+      emailType: 'confirmation',
+      request,
+      attendees: request.attendees || [],
+      senderName: 'Brent Allen',
+      senderTitle: 'Sales, X-RAI Labs',
+    });
+
+    // Send confirmation email with X-FORCE category
+    const emailResult = await sendEmailWithCategory(token, {
+      subject: `Confirmed: ${request.title} - ${formattedTime}`,
+      body: {
+        contentType: 'Text',
+        content: `Hi ${prospectName},\n\nGreat news! Our meeting is confirmed for ${formattedTime}.\n\nYou'll receive a calendar invite shortly with the Microsoft Teams link.\n\nLooking forward to speaking with you!\n\nBest,\nBrent Allen\nX-RAI Labs`,
+      },
+      toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
+    });
+
+    if (!emailResult.success) {
+      console.error('[confirmAndBookMeeting] Failed to send email:', emailResult.error);
+      return { success: false, error: `Email send failed: ${emailResult.error}` };
+    }
+
+    console.log('[confirmAndBookMeeting] Confirmation email sent with X-FORCE category');
+
+    // Create calendar event
+    const internalAttendees = (request.attendees || [])
+      .filter((a: SchedulingAttendee) => a.side === 'internal')
+      .map((a: SchedulingAttendee) => ({
+        emailAddress: { address: a.email, name: a.name },
+        type: 'required',
+      }));
+
+    const endTime = new Date(confirmedTime.getTime() + (request.duration_minutes || 30) * 60 * 1000);
+
+    // Format times for Graph API in Eastern Time
+    // Use sv-SE locale for ISO-like format (YYYY-MM-DD HH:mm:ss)
+    const formatForGraph = (date: Date): string => {
+      return date.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T');
+    };
+
+    const startDateTime = formatForGraph(confirmedTime);
+    const endDateTime = formatForGraph(endTime);
+
+    console.log('[confirmAndBookMeeting] Creating calendar event:', {
+      start: startDateTime,
+      end: endDateTime,
+      confirmedTimeISO: confirmedTime.toISOString(),
+    });
+
+    const calendarResponse = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'outlook.timezone="America/New_York"',
+      },
+      body: JSON.stringify({
+        subject: request.title,
+        body: {
+          contentType: 'Text',
+          content: `${request.title}\n\nAttendees: ${prospectName}, ${internalAttendees.map((a) => a.emailAddress.name || a.emailAddress.address).join(', ')}`,
+        },
+        start: {
+          dateTime: startDateTime,
+          timeZone: 'America/New_York',
+        },
+        end: {
+          dateTime: endDateTime,
+          timeZone: 'America/New_York',
+        },
+        attendees: [
+          ...internalAttendees,
+          { emailAddress: { address: prospectEmail, name: prospectName }, type: 'required' },
+        ],
+        isOnlineMeeting: true,
+        onlineMeetingProvider: 'teamsForBusiness',
+      }),
+    });
+
+    if (!calendarResponse.ok) {
+      const errorText = await calendarResponse.text();
+      console.error('[confirmAndBookMeeting] Failed to create calendar event:', errorText);
+      // Email was sent, so partial success - meeting confirmed but no calendar event
+      return { success: true, error: `Calendar event failed: ${errorText}` };
+    }
+
+    const calendarEvent = await calendarResponse.json();
+    console.log('[confirmAndBookMeeting] Calendar event created:', calendarEvent.id);
+
+    // Update scheduling request
+    const { error: updateError } = await supabase
+      .from('scheduling_requests')
+      .update({
+        status: SCHEDULING_STATUS.CONFIRMED,
+        scheduled_time: confirmedTime.toISOString(),
+        calendar_event_id: calendarEvent.id,
+        meeting_link: calendarEvent.onlineMeeting?.joinUrl,
+        last_action_at: new Date().toISOString(),
+        next_action_type: null,
+        next_action_at: null,
+      })
+      .eq('id', request.id);
+
+    if (updateError) {
+      console.error('[confirmAndBookMeeting] Failed to update request status:', updateError);
+      // Still return success since email and calendar were created
+    } else {
+      console.log('[confirmAndBookMeeting] Request status updated to CONFIRMED for:', request.id);
+    }
+
+    return { success: true, calendarEventId: calendarEvent.id };
+  } catch (err) {
+    console.error('[confirmAndBookMeeting] Error:', err);
+    return { success: false, error: String(err) };
+  }
+}
+
+/**
+ * Send email with alternative time suggestions when proposed time doesn't work
+ */
+async function sendAlternativeTimes(
+  request: SchedulingRequest,
+  prospectEmail: string,
+  prospectName: string,
+  userId: string,
+  proposedTimeDescription: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { getValidToken } = await import('@/lib/microsoft/auth');
+    const token = await getValidToken(userId);
+
+    if (!token) {
+      return { success: false, error: 'No valid token' };
+    }
+
+    // Get internal attendee emails
+    const internalEmails = (request.attendees || [])
+      .filter((a: SchedulingAttendee) => a.side === 'internal')
+      .map((a: SchedulingAttendee) => a.email);
+
+    // Find alternative slots
+    const slotsResult = await getMultiAttendeeAvailability(userId, internalEmails, {
+      daysAhead: 10,
+      slotDuration: request.duration_minutes || 30,
+      maxSlots: 4,
+    });
+
+    if (!slotsResult.slots || slotsResult.slots.length === 0) {
+      // No slots available - flag for human review
+      return { success: false, error: 'No alternative slots available' };
+    }
+
+    // Format slots for email
+    const formattedSlots = slotsResult.slots.map(slot => {
+      const date = new Date(slot.start);
+      return date.toLocaleString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+        timeZone: 'America/New_York',
+      });
+    });
+
+    // Format the proposed time nicely (in case it's an ISO string)
+    let formattedProposedTime = proposedTimeDescription;
+    if (proposedTimeDescription.match(/^\d{4}-\d{2}-\d{2}/)) {
+      // It's an ISO timestamp - format it nicely
+      try {
+        const proposedDate = new Date(proposedTimeDescription);
+        formattedProposedTime = proposedDate.toLocaleString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short',
+          timeZone: 'America/New_York',
+        });
+      } catch {
+        // Keep original if parsing fails
+      }
+    }
+
+    const emailBody = `Hi ${prospectName},
+
+Thank you for your response! Unfortunately, ${formattedProposedTime} doesn't work with our team's availability.
+
+Here are some alternative times that work for everyone:
+
+${formattedSlots.map((t, i) => `• ${t}`).join('\n')}
+
+Just reply with which time works best for you, and I'll get us scheduled right away.
+
+Best,
+Brent Allen
+X-RAI Labs`;
+
+    // Send alternative times email with X-FORCE category
+    const sendResult = await sendEmailWithCategory(token, {
+      subject: `Re: ${request.title} - Alternative Times`,
+      body: { contentType: 'Text', content: emailBody },
+      toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
+    });
+
+    if (!sendResult.success) {
+      return { success: false, error: `Email send failed: ${sendResult.error}` };
+    }
+
+    // Update the proposed times on the request
+    const supabase = createAdminClient();
+    await supabase
+      .from('scheduling_requests')
+      .update({
+        proposed_times: slotsResult.slots.map(s => s.start),
+        last_action_at: new Date().toISOString(),
+        status: SCHEDULING_STATUS.AWAITING_RESPONSE,
+        next_action_type: null, // Clear since automation handled it
+        next_action_at: null,
+      })
+      .eq('id', request.id);
+
+    console.log('[sendAlternativeTimes] Alternative times email sent');
+    return { success: true };
+  } catch (err) {
+    console.error('[sendAlternativeTimes] Error:', err);
+    return { success: false, error: String(err) };
+  }
 }
 
 // ============================================

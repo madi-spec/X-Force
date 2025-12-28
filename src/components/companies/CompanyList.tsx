@@ -13,7 +13,11 @@ interface CompanyWithRelations {
   segment: Segment;
   agent_count: number;
   voice_customer: boolean;
-  address?: { city?: string; state?: string } | null;
+  address?: string | null;
+  industry?: 'pest' | 'lawn' | 'both' | null;
+  vfp_customer_id?: string | null;
+  ats_id?: string | null;
+  vfp_support_contact?: string | null;
   contacts: Array<{ id: string; name: string; is_primary: boolean }>;
   deals: Array<{ id: string; name: string; stage: string; estimated_value: number }>;
   products: Array<{ id: string; name: string; category_id: string }>;
@@ -30,6 +34,31 @@ const segmentLabels: Record<string, string> = {
   pe_platform: 'PE Platform',
   franchisor: 'Franchisor',
 };
+
+const industryLabels: Record<string, { label: string; color: string }> = {
+  pest: { label: 'Pest', color: 'bg-amber-100 text-amber-700' },
+  lawn: { label: 'Lawn', color: 'bg-green-100 text-green-700' },
+  both: { label: 'Both', color: 'bg-purple-100 text-purple-700' },
+};
+
+// Helper to extract city/state from address string like "123 Main St  City, ST 12345"
+function parseAddress(address: string | null | undefined): { city?: string; state?: string; short?: string } | null {
+  if (!address || typeof address !== 'string') return null;
+
+  // Many addresses use double-space to separate street from city/state/zip
+  // e.g., "830 Kennesaw Ave NW  Marietta, GA 30060"
+  const parts = address.split(/\s{2,}/);
+  const cityStateZip = parts.length > 1 ? parts[parts.length - 1] : address;
+
+  // Match "City, ST 12345" or "City, ST" pattern
+  const match = cityStateZip.match(/^([^,]+),\s*([A-Z]{2})(?:\s+\d{5})?/);
+  if (match) {
+    return { city: match[1].trim(), state: match[2], short: `${match[1].trim()}, ${match[2]}` };
+  }
+
+  // Fallback: just return truncated address
+  return { short: address.length > 30 ? address.substring(0, 30) + '...' : address };
+}
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   cold_lead: { label: 'Cold Lead', color: 'bg-gray-100 text-gray-700' },
@@ -89,10 +118,6 @@ export function CompanyList({ companies }: CompanyListProps) {
 
   const getPipelineValue = (company: CompanyWithRelations) => {
     return getActiveDeals(company).reduce((sum, d) => sum + (d.estimated_value || 0), 0);
-  };
-
-  const getPrimaryContact = (company: CompanyWithRelations) => {
-    return company.contacts?.find(c => c.is_primary) || company.contacts?.[0];
   };
 
   const getUniqueProductCategories = (company: CompanyWithRelations) => {
@@ -185,13 +210,16 @@ export function CompanyList({ companies }: CompanyListProps) {
                 Company
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Location
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Products
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Pipeline
+                Success Rep
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Primary Contact
+                Pipeline
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
@@ -201,10 +229,11 @@ export function CompanyList({ companies }: CompanyListProps) {
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredCompanies.map((company) => {
               const status = statusConfig[company.status] || statusConfig.cold_lead;
-              const primaryContact = getPrimaryContact(company);
               const activeDeals = getActiveDeals(company);
               const pipelineValue = getPipelineValue(company);
               const productCategories = getUniqueProductCategories(company);
+              const parsedAddress = parseAddress(company.address);
+              const industry = company.industry ? industryLabels[company.industry] : null;
 
               return (
                 <tr key={company.id} className="hover:bg-gray-50 group">
@@ -222,20 +251,33 @@ export function CompanyList({ companies }: CompanyListProps) {
                             )}>
                               {status.label}
                             </span>
+                            {industry && (
+                              <span className={cn(
+                                'text-xs font-medium px-2 py-0.5 rounded-full',
+                                industry.color
+                              )}>
+                                {industry.label}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
                             <span>{segmentLabels[company.segment] || company.segment}</span>
-                            <span className="text-gray-300">•</span>
-                            <span className="flex items-center gap-1">
-                              <Users className="h-3.5 w-3.5" />
-                              {company.agent_count} agents
-                            </span>
-                            {company.address?.city && (
+                            {(company.vfp_customer_id || company.ats_id) && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <span className="text-gray-400">
+                                  {company.vfp_customer_id && `Rev #${company.vfp_customer_id}`}
+                                  {company.vfp_customer_id && company.ats_id && ' / '}
+                                  {company.ats_id && `ATS #${company.ats_id}`}
+                                </span>
+                              </>
+                            )}
+                            {company.agent_count > 0 && (
                               <>
                                 <span className="text-gray-300">•</span>
                                 <span className="flex items-center gap-1">
-                                  <MapPin className="h-3.5 w-3.5" />
-                                  {company.address.city}, {company.address.state}
+                                  <Users className="h-3.5 w-3.5" />
+                                  {company.agent_count}
                                 </span>
                               </>
                             )}
@@ -243,6 +285,16 @@ export function CompanyList({ companies }: CompanyListProps) {
                         </div>
                       </div>
                     </Link>
+                  </td>
+                  <td className="px-6 py-4">
+                    {parsedAddress?.short ? (
+                      <div className="flex items-center gap-1 text-sm text-gray-600" title={company.address || ''}>
+                        <MapPin className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                        <span>{parsedAddress.short}</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1.5">
@@ -269,6 +321,9 @@ export function CompanyList({ companies }: CompanyListProps) {
                       )}
                     </div>
                   </td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    {company.vfp_support_contact || '-'}
+                  </td>
                   <td className="px-6 py-4">
                     {activeDeals.length > 0 ? (
                       <div className="text-sm">
@@ -281,11 +336,8 @@ export function CompanyList({ companies }: CompanyListProps) {
                         </p>
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400">No active deals</span>
+                      <span className="text-sm text-gray-400">-</span>
                     )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {primaryContact ? primaryContact.name : '-'}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <Link
@@ -301,7 +353,7 @@ export function CompanyList({ companies }: CompanyListProps) {
             })}
             {filteredCompanies.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                   {companies.length === 0
                     ? 'No companies yet. Add your first company to get started.'
                     : 'No companies match your filters.'}

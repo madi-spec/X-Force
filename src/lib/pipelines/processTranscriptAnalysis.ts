@@ -10,6 +10,15 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { PriorityTier, TierTrigger } from '@/types/commandCenter';
+// Note: RI updates now happen via processIncomingCommunication when transcripts are synced
+import {
+  reconcileActionsForContact,
+  getOpenItemsForContact,
+  applyReconciliation,
+} from '@/lib/intelligence/reconcileActions';
+// Migrated to context-first pipeline
+import { buildFullRelationshipContext } from '@/lib/intelligence';
+import type { InteractionForReconciliation } from '@/types/commandCenter';
 
 // Types for transcript analysis structure
 interface Commitment {
@@ -31,18 +40,35 @@ interface BuyingSignal {
   strength: 'strong' | 'moderate' | 'weak';
 }
 
+interface Objection {
+  objection: string;
+  context?: string | null;
+  howAddressed?: string | null;
+  resolved?: boolean;
+}
+
 interface ExtractedInfo {
   budget?: string | null;
   timeline?: string | null;
   competitors?: string[];
   decisionProcess?: string | null;
+  painPoints?: string[];
+}
+
+interface Sentiment {
+  overall?: string;
+  interestLevel?: string;
+  urgency?: string;
 }
 
 interface TranscriptAnalysis {
+  summary?: string;
   ourCommitments?: Commitment[];
   actionItems?: ActionItem[];
   buyingSignals?: BuyingSignal[];
+  objections?: Objection[];
   extractedInfo?: ExtractedInfo;
+  sentiment?: Sentiment;
 }
 
 interface Transcript {
@@ -115,7 +141,7 @@ function parseTimeframe(when: string | null | undefined, meetingDate: string): D
  * Check if a CC item already exists for this transcript + trigger
  */
 async function itemExists(
-  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  supabase: ReturnType<typeof createAdminClient>,
   transcriptionId: string,
   tierTrigger: string,
   title: string
@@ -135,7 +161,7 @@ async function itemExists(
  * Create a command center item from transcript analysis
  */
 async function createItem(
-  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  supabase: ReturnType<typeof createAdminClient>,
   transcript: Transcript,
   item: {
     tier: PriorityTier;
@@ -169,7 +195,8 @@ async function createItem(
     commitment_text: item.commitmentText || null,
     urgency_score: item.urgencyScore || 0,
     status: 'pending',
-    source: 'calendar_sync',
+    source: 'transcription',
+    source_id: transcript.id,
     created_at: now,
     updated_at: now,
   });
@@ -179,7 +206,7 @@ async function createItem(
  * Process buying signals for Tier 2 items
  */
 async function processBuyingSignals(
-  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  supabase: ReturnType<typeof createAdminClient>,
   transcript: Transcript,
   analysis: TranscriptAnalysis
 ): Promise<number> {
@@ -276,7 +303,7 @@ async function processBuyingSignals(
  * Process our commitments for Tier 3 items
  */
 async function processCommitments(
-  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  supabase: ReturnType<typeof createAdminClient>,
   transcript: Transcript,
   analysis: TranscriptAnalysis
 ): Promise<number> {
@@ -372,6 +399,9 @@ export async function processTranscriptAnalysis(userId?: string): Promise<Pipeli
     try {
       if (!transcript.analysis) continue;
 
+      // Note: RI updates now happen via processIncomingCommunication when transcripts are synced
+      // See src/lib/sync/initialHistoricalSync.ts for the migration
+
       // Process buying signals -> Tier 2
       const tier2Created = await processBuyingSignals(supabase, transcript, transcript.analysis);
       result.tier2Items += tier2Created;
@@ -465,6 +495,9 @@ export async function processSingleTranscript(transcriptId: string): Promise<{
       analysis: transcript.analysis as TranscriptAnalysis,
     };
 
+    // Note: RI updates now happen via processIncomingCommunication when transcripts are synced
+    // See src/lib/sync/initialHistoricalSync.ts for the migration
+
     // Process buying signals -> Tier 2
     const tier2Created = await processBuyingSignals(supabase, typedTranscript, typedTranscript.analysis!);
 
@@ -472,6 +505,79 @@ export async function processSingleTranscript(transcriptId: string): Promise<{
     const tier3Created = await processCommitments(supabase, typedTranscript, typedTranscript.analysis!);
 
     const totalCreated = tier2Created + tier3Created;
+
+    // Run reconciliation to review all existing open items in light of this transcript
+    if (typedTranscript.contact_id || typedTranscript.company_id) {
+      try {
+        console.log(`[ProcessTranscript] Running reconciliation for transcript ${transcriptId}`);
+
+        // Build relationship context (migrated to buildFullRelationshipContext)
+        const relationshipContext = await buildFullRelationshipContext({
+          contactId: typedTranscript.contact_id,
+          companyId: typedTranscript.company_id,
+        });
+
+        // Build interaction for reconciliation
+        const analysis = typedTranscript.analysis!;
+        const requiredActions = [
+          ...(analysis.ourCommitments || []).map(c => ({
+            action: c.commitment,
+            owner: 'sales_rep' as const,
+            urgency: 'medium' as const,
+            reasoning: `Commitment made during meeting: ${typedTranscript.title}`,
+          })),
+          ...(analysis.actionItems || [])
+            .filter(ai => ai.owner === 'us')
+            .map(ai => ({
+              action: ai.task,
+              owner: 'sales_rep' as const,
+              urgency: ai.priority === 'high' ? 'high' as const : 'medium' as const,
+              reasoning: `Action item from meeting: ${typedTranscript.title}`,
+            })),
+        ];
+
+        const newInteraction: InteractionForReconciliation = {
+          type: 'transcript',
+          date: new Date(typedTranscript.meeting_date),
+          analysis: {
+            summary: analysis.summary || typedTranscript.title,
+            // Note: 'meeting' is not a valid CommunicationType, leaving undefined
+            sales_stage: analysis.sentiment?.urgency === 'high' ? 'closing' : 'discovery',
+            required_actions: requiredActions,
+          },
+        };
+
+        // Get existing open items
+        const existingItems = await getOpenItemsForContact(
+          typedTranscript.user_id,
+          typedTranscript.contact_id,
+          typedTranscript.company_id
+        );
+
+        // Run reconciliation
+        const reconcileResult = await reconcileActionsForContact(
+          typedTranscript.contact_id,
+          typedTranscript.company_id,
+          typedTranscript.user_id,
+          newInteraction,
+          existingItems,
+          relationshipContext
+        );
+
+        // Apply reconciliation decisions
+        const reconStats = await applyReconciliation(
+          typedTranscript.user_id,
+          typedTranscript.contact_id,
+          typedTranscript.company_id,
+          reconcileResult
+        );
+
+        console.log(`[ProcessTranscript] Reconciliation: ${reconStats.completed} completed, ${reconStats.updated} updated, ${reconStats.created} created`);
+      } catch (reconError) {
+        console.error('[ProcessTranscript] Reconciliation error:', reconError);
+        // Don't fail the whole process if reconciliation fails
+      }
+    }
 
     // Mark transcript as processed
     await supabase

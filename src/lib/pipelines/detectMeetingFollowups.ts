@@ -234,6 +234,7 @@ export async function detectMeetingFollowups(userId?: string): Promise<PipelineR
         target_name: primaryAttendee?.name || null,
         status: 'pending',
         source: 'calendar_sync',
+        source_id: meeting.meeting_id || meeting.id,
         created_at: now,
         updated_at: now,
       });

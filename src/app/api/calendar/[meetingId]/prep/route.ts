@@ -3,13 +3,16 @@
  *
  * GET /api/calendar/[meetingId]/prep
  * Returns meeting prep data with attendee intelligence and AI-generated content
+ *
+ * Enhanced to use full Relationship Intelligence context when available.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { callAIJson } from '@/lib/ai/core/aiClient';
-import { MeetingWithPrep, MeetingAttendee, MeetingPrepContent, PrepMaterial } from '@/types/commandCenter';
+import { MeetingWithPrep, MeetingAttendee, MeetingPrepContent, PrepMaterial, AttendeeWithContext } from '@/types/commandCenter';
+import { generateContextAwareMeetingPrep, MeetingInfo, hasRichContext } from '@/lib/intelligence/generateMeetingPrep';
 
 // ============================================
 // HELPERS
@@ -293,7 +296,48 @@ export async function GET(
     const dealData = meeting.deal;
     const deal = Array.isArray(dealData) ? dealData[0] as { id: string; name: string; stage: string; estimated_value?: number; health_score?: number } | undefined : dealData as { id: string; name: string; stage: string; estimated_value?: number; health_score?: number } | null;
 
-    // Get recent context (activities)
+    // Get times from metadata (stored by sync) or fall back to occurred_at
+    const startTime = meeting.metadata?.start_time || meeting.occurred_at;
+    const endTime = meeting.metadata?.end_time || null;
+
+    // Check if we have rich context for this meeting (Relationship Intelligence data)
+    const hasRelationshipContext = await hasRichContext(attendeeEmails);
+
+    // Prepare meeting info for context-aware prep
+    const meetingInfo: MeetingInfo = {
+      id: meetingId,
+      title: meeting.subject,
+      startTime: startTime,
+      endTime: endTime || new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString(),
+      duration_minutes: meeting.metadata?.duration_minutes || 60,
+      attendeeEmails,
+      dealId: meeting.deal_id,
+      companyId: meeting.company_id,
+      joinUrl: meeting.metadata?.join_url,
+    };
+
+    // Generate context-aware prep if we have relationship intelligence
+    let contextAwarePrep = null;
+    let attendeesWithContext: AttendeeWithContext[] = [];
+
+    if (hasRelationshipContext) {
+      try {
+        console.log('[MeetingPrep] Using context-aware prep with Relationship Intelligence');
+        const fullPrep = await generateContextAwareMeetingPrep(meetingInfo);
+        contextAwarePrep = fullPrep.prep;
+        attendeesWithContext = fullPrep.attendees.map(a => ({
+          email: a.email,
+          name: a.name,
+          title: a.title,
+          companyName: a.companyName,
+          hasRichContext: !!a.context,
+        }));
+      } catch (error) {
+        console.error('[MeetingPrep] Context-aware prep failed, falling back to basic:', error);
+      }
+    }
+
+    // Get recent context (activities) for basic prep fallback
     const { data: recentActivities } = await supabase
       .from('activities')
       .select('type, subject, description')
@@ -306,7 +350,7 @@ export async function GET(
       `[${a.type}] ${a.subject}${a.description ? `: ${a.description.substring(0, 100)}` : ''}`
     ) || [];
 
-    // Generate prep content
+    // Generate basic prep content (always, for backward compatibility)
     const prepContent = await generateMeetingPrep(
       meeting.subject,
       enrichedAttendees,
@@ -334,10 +378,6 @@ export async function GET(
         url: `/companies/${meeting.company_id}/intelligence`,
       });
     }
-
-    // Get times from metadata (stored by sync) or fall back to occurred_at
-    const startTime = meeting.metadata?.start_time || meeting.occurred_at;
-    const endTime = meeting.metadata?.end_time || null;
 
     // Save prep to database
     const prepRecord = {
@@ -375,7 +415,7 @@ export async function GET(
       meeting_external_id: meeting.metadata?.microsoft_id || meeting.metadata?.external_id,
       title: meeting.subject,
       start_time: startTime,
-      end_time: endTime,
+      end_time: endTime || startTime,
       join_url: meeting.metadata?.join_url,
       company_id: meeting.company_id,
       company_name: (() => {
@@ -390,6 +430,10 @@ export async function GET(
       deal_health: deal?.health_score,
       attendees: enrichedAttendees,
       prep: prepContent,
+      // Include context-aware prep if available
+      context_aware_prep: contextAwarePrep || undefined,
+      attendees_with_context: attendeesWithContext.length > 0 ? attendeesWithContext : undefined,
+      has_rich_context: hasRelationshipContext,
       prep_materials: prepMaterials,
       generated_at: new Date().toISOString(),
     };

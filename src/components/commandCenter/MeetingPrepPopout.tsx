@@ -21,8 +21,14 @@ import {
   Building2,
   Briefcase,
   User,
+  CheckCircle,
+  CircleDot,
+  Flag,
+  Lightbulb,
+  Zap,
+  Heart,
 } from 'lucide-react';
-import { TimeBlock, MeetingWithPrep, MeetingAttendee } from '@/types/commandCenter';
+import { TimeBlock, MeetingWithPrep, MeetingAttendee, ContextAwareMeetingPrep } from '@/types/commandCenter';
 
 // ============================================
 // TYPES
@@ -187,124 +193,324 @@ export function MeetingPrepPopout({
                     {meeting.duration_minutes} min
                   </p>
                 </div>
-                {meeting.is_external && (
-                  <span className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 rounded">
-                    External
+                {prep?.has_rich_context && (
+                  <span className="px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded flex items-center gap-1">
+                    <Zap className="h-3 w-3" />
+                    Rich Context
                   </span>
                 )}
               </div>
 
-              {/* Attendees */}
-              {prep?.attendees && prep.attendees.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Attendees
-                  </h4>
-                  <div className="space-y-2">
-                    {prep.attendees.map((attendee, i) => (
-                      <div
-                        key={i}
-                        className="p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-gray-400" />
-                            <span className="font-medium text-gray-900">
-                              {attendee.name || attendee.email}
-                            </span>
-                          </div>
-                          {attendee.role && attendee.role !== 'unknown' && (
-                            <span className={cn(
-                              'px-2 py-0.5 text-xs font-medium rounded',
-                              getRoleBadgeColor(attendee.role)
-                            )}>
-                              {getRoleLabel(attendee.role)}
-                            </span>
-                          )}
-                        </div>
-                        {attendee.title && (
-                          <p className="text-sm text-gray-500 mt-1 ml-6">
-                            {attendee.title}
-                          </p>
-                        )}
-                        {attendee.relationship_notes && (
-                          <p className="text-sm text-gray-600 mt-1 ml-6 italic">
-                            {attendee.relationship_notes}
-                          </p>
-                        )}
-                        {attendee.meeting_count && (
-                          <p className="text-xs text-gray-400 mt-1 ml-6">
-                            Met {attendee.meeting_count}x before
-                            {attendee.last_met_at && ` · Last: ${new Date(attendee.last_met_at).toLocaleDateString()}`}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Meeting Objective */}
-              {prep?.prep?.objective && (
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Target className="h-4 w-4" />
-                    Meeting Objective
-                  </h4>
-                  <p className="text-gray-700 bg-blue-50 border border-blue-100 rounded-lg p-3">
-                    {prep.prep.objective}
+              {/* Context-Aware Prep: Quick Context */}
+              {prep?.context_aware_prep?.quick_context && (
+                <div className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100 rounded-xl">
+                  <p className="text-gray-800 leading-relaxed">
+                    {prep.context_aware_prep.quick_context}
                   </p>
                 </div>
               )}
 
-              {/* Talking Points */}
-              {prep?.prep?.talking_points && prep.prep.talking_points.length > 0 && (
+              {/* Context-Aware Prep: Relationship Status */}
+              {prep?.context_aware_prep?.relationship_status && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Relationship Status
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {prep.context_aware_prep.relationship_status.deal_name && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Deal</p>
+                        <p className="font-medium text-gray-900 truncate">{prep.context_aware_prep.relationship_status.deal_name}</p>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.relationship_status.deal_stage && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Stage</p>
+                        <p className="font-medium text-gray-900 capitalize">{prep.context_aware_prep.relationship_status.deal_stage.replace(/_/g, ' ')}</p>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.relationship_status.deal_value && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Value</p>
+                        <p className="font-medium text-green-600">{formatValue(prep.context_aware_prep.relationship_status.deal_value)}</p>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.relationship_status.sentiment && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Sentiment</p>
+                        <p className="font-medium text-gray-900 capitalize">{prep.context_aware_prep.relationship_status.sentiment}</p>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.relationship_status.days_since_contact !== null && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Last Contact</p>
+                        <p className="font-medium text-gray-900">{prep.context_aware_prep.relationship_status.days_since_contact} days ago</p>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.relationship_status.total_interactions > 0 && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Interactions</p>
+                        <p className="font-medium text-gray-900">{prep.context_aware_prep.relationship_status.total_interactions} total</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Context-Aware Prep: Open Items */}
+              {prep?.context_aware_prep?.open_items && (
+                (prep.context_aware_prep.open_items.our_commitments_due.length > 0 ||
+                 prep.context_aware_prep.open_items.their_commitments_pending.length > 0 ||
+                 prep.context_aware_prep.open_items.unresolved_concerns.length > 0) && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Flag className="h-4 w-4" />
+                    Open Items
+                  </h4>
+                  <div className="space-y-3">
+                    {prep.context_aware_prep.open_items.our_commitments_due.length > 0 && (
+                      <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                        <p className="text-xs font-medium text-amber-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Our Commitments Due
+                        </p>
+                        <ul className="space-y-1">
+                          {prep.context_aware_prep.open_items.our_commitments_due.map((c, i) => (
+                            <li key={i} className="text-sm text-amber-800">• {c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.open_items.their_commitments_pending.length > 0 && (
+                      <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                        <p className="text-xs font-medium text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <CircleDot className="h-3.5 w-3.5" />
+                          Their Commitments Pending
+                        </p>
+                        <ul className="space-y-1">
+                          {prep.context_aware_prep.open_items.their_commitments_pending.map((c, i) => (
+                            <li key={i} className="text-sm text-blue-800">• {c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.open_items.unresolved_concerns.length > 0 && (
+                      <div className="p-3 bg-red-50 border border-red-100 rounded-lg">
+                        <p className="text-xs font-medium text-red-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          Unresolved Concerns
+                        </p>
+                        <ul className="space-y-1">
+                          {prep.context_aware_prep.open_items.unresolved_concerns.map((c, i) => (
+                            <li key={i} className="text-sm text-red-800">• {c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Context-Aware Prep: Talking Points */}
+              {prep?.context_aware_prep?.talking_points && prep.context_aware_prep.talking_points.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
                     <MessageSquare className="h-4 w-4" />
                     Talking Points
                   </h4>
-                  <ul className="list-disc ml-5 space-y-1 text-gray-700">
-                    {prep.prep.talking_points.map((point, i) => (
-                      <li key={i}>{point}</li>
+                  <ul className="space-y-2">
+                    {prep.context_aware_prep.talking_points.map((point, i) => (
+                      <li key={i} className="flex items-start gap-2 text-gray-700">
+                        <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center bg-purple-100 text-purple-600 rounded text-xs font-medium mt-0.5">
+                          {i + 1}
+                        </span>
+                        {point}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {/* Landmines */}
-              {prep?.prep?.landmines && prep.prep.landmines.length > 0 && (
+              {/* Context-Aware Prep: Watch Out */}
+              {prep?.context_aware_prep?.watch_out && prep.context_aware_prep.watch_out.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium text-red-700 uppercase tracking-wider mb-2 flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4" />
-                    Topics to Avoid
+                    Watch Out For
                   </h4>
                   <ul className="list-disc ml-5 space-y-1 text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
-                    {prep.prep.landmines.map((landmine, i) => (
-                      <li key={i}>{landmine}</li>
+                    {prep.context_aware_prep.watch_out.map((w, i) => (
+                      <li key={i}>{w}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {/* Questions to Ask */}
-              {prep?.prep?.questions_to_ask && prep.prep.questions_to_ask.length > 0 && (
+              {/* Context-Aware Prep: Suggested Goals */}
+              {prep?.context_aware_prep?.suggested_goals && prep.context_aware_prep.suggested_goals.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <HelpCircle className="h-4 w-4" />
-                    Questions to Ask
+                    <Target className="h-4 w-4" />
+                    Suggested Goals
                   </h4>
-                  <ul className="list-disc ml-5 space-y-1 text-gray-700">
-                    {prep.prep.questions_to_ask.map((q, i) => (
-                      <li key={i}>{q}</li>
+                  <ul className="space-y-2">
+                    {prep.context_aware_prep.suggested_goals.map((goal, i) => (
+                      <li key={i} className="flex items-center gap-2 text-gray-700">
+                        <Lightbulb className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                        {goal}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {/* Deal Context */}
-              {prep?.deal_name && (
+              {/* Context-Aware Prep: Personalization Notes */}
+              {prep?.context_aware_prep?.personalization && (
+                (prep.context_aware_prep.personalization.key_facts_to_reference.length > 0 ||
+                 prep.context_aware_prep.personalization.communication_style) && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Heart className="h-4 w-4" />
+                    Personalization Notes
+                  </h4>
+                  <div className="p-3 bg-pink-50 border border-pink-100 rounded-lg space-y-2">
+                    {prep.context_aware_prep.personalization.key_facts_to_reference.length > 0 && (
+                      <div>
+                        <p className="text-xs text-pink-600 uppercase tracking-wider mb-1">Key Facts to Reference</p>
+                        <ul className="space-y-1">
+                          {prep.context_aware_prep.personalization.key_facts_to_reference.map((f, i) => (
+                            <li key={i} className="text-sm text-pink-800">• {f}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {prep.context_aware_prep.personalization.communication_style && (
+                      <div>
+                        <p className="text-xs text-pink-600 uppercase tracking-wider mb-1">Communication Style</p>
+                        <p className="text-sm text-pink-800">{prep.context_aware_prep.personalization.communication_style}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Fallback: Basic Prep (when no context-aware prep) */}
+              {!prep?.context_aware_prep && (
+                <>
+                  {/* Attendees */}
+                  {prep?.attendees && prep.attendees.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Attendees
+                      </h4>
+                      <div className="space-y-2">
+                        {prep.attendees.map((attendee, i) => (
+                          <div
+                            key={i}
+                            className="p-3 bg-gray-50 rounded-lg"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-gray-400" />
+                                <span className="font-medium text-gray-900">
+                                  {attendee.name || attendee.email}
+                                </span>
+                              </div>
+                              {attendee.role && attendee.role !== 'unknown' && (
+                                <span className={cn(
+                                  'px-2 py-0.5 text-xs font-medium rounded',
+                                  getRoleBadgeColor(attendee.role)
+                                )}>
+                                  {getRoleLabel(attendee.role)}
+                                </span>
+                              )}
+                            </div>
+                            {attendee.title && (
+                              <p className="text-sm text-gray-500 mt-1 ml-6">
+                                {attendee.title}
+                              </p>
+                            )}
+                            {attendee.relationship_notes && (
+                              <p className="text-sm text-gray-600 mt-1 ml-6 italic">
+                                {attendee.relationship_notes}
+                              </p>
+                            )}
+                            {attendee.meeting_count && (
+                              <p className="text-xs text-gray-400 mt-1 ml-6">
+                                Met {attendee.meeting_count}x before
+                                {attendee.last_met_at && ` · Last: ${new Date(attendee.last_met_at).toLocaleDateString()}`}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Meeting Objective */}
+                  {prep?.prep?.objective && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <Target className="h-4 w-4" />
+                        Meeting Objective
+                      </h4>
+                      <p className="text-gray-700 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                        {prep.prep.objective}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Talking Points */}
+                  {prep?.prep?.talking_points && prep.prep.talking_points.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4" />
+                        Talking Points
+                      </h4>
+                      <ul className="list-disc ml-5 space-y-1 text-gray-700">
+                        {prep.prep.talking_points.map((point, i) => (
+                          <li key={i}>{point}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Landmines */}
+                  {prep?.prep?.landmines && prep.prep.landmines.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-red-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        Topics to Avoid
+                      </h4>
+                      <ul className="list-disc ml-5 space-y-1 text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
+                        {prep.prep.landmines.map((landmine, i) => (
+                          <li key={i}>{landmine}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Questions to Ask */}
+                  {prep?.prep?.questions_to_ask && prep.prep.questions_to_ask.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <HelpCircle className="h-4 w-4" />
+                        Questions to Ask
+                      </h4>
+                      <ul className="list-disc ml-5 space-y-1 text-gray-700">
+                        {prep.prep.questions_to_ask.map((q, i) => (
+                          <li key={i}>{q}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Deal Context (shown for both basic and context-aware prep) */}
+              {prep?.deal_name && !prep?.context_aware_prep && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
                     <Briefcase className="h-4 w-4" />

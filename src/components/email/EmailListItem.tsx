@@ -13,6 +13,20 @@ interface EmailListItemProps {
   onStarToggle: () => void;
 }
 
+// Helper to safely get string value
+function safeString(val: unknown): string {
+  if (typeof val === 'string') return val;
+  if (val && typeof val === 'object') {
+    if ('name' in val && typeof (val as { name: unknown }).name === 'string') {
+      return (val as { name: string }).name;
+    }
+    if ('address' in val && typeof (val as { address: unknown }).address === 'string') {
+      return (val as { address: string }).address;
+    }
+  }
+  return '';
+}
+
 export function EmailListItem({
   email,
   isSelected,
@@ -23,13 +37,13 @@ export function EmailListItem({
 }: EmailListItemProps) {
   const isInbound = email.metadata.direction === 'inbound';
   const senderName = isInbound
-    ? (email.metadata.from?.name || email.metadata.from?.address || 'Unknown')
-    : (email.metadata.to?.[0]?.name || email.metadata.to?.[0]?.address || 'Unknown');
+    ? (safeString(email.metadata.from?.name) || safeString(email.metadata.from?.address) || 'Unknown')
+    : (safeString(email.metadata.to?.[0]?.name) || safeString(email.metadata.to?.[0]?.address) || 'Unknown');
   const senderEmail = isInbound
-    ? email.metadata.from?.address
-    : email.metadata.to?.[0]?.address;
+    ? safeString(email.metadata.from?.address)
+    : safeString(email.metadata.to?.[0]?.address);
 
-  const displayName = email.contact?.name || senderName;
+  const displayName = safeString(email.contact?.name) || senderName;
   const isUnread = !email.isRead;
 
   // Truncate body for preview

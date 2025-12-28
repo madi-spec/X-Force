@@ -4,6 +4,7 @@ import { syncAllFolderEmails } from '@/lib/microsoft/emailSync';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
 import { processUnanalyzedEmails } from '@/lib/email';
 import { processSchedulingEmails } from '@/lib/scheduler/responseProcessor';
+import { renewExpiringSubscriptions } from '@/app/api/webhooks/microsoft/subscribe/route';
 
 /**
  * Background cron job to sync Microsoft 365 data for all active connections
@@ -116,6 +117,17 @@ export async function GET(request: Request) {
   const totalSchedulingResponses = results.reduce((sum, r) => sum + r.schedulingResponsesProcessed, 0);
   const totalErrors = results.reduce((sum, r) => sum + r.errors.length, 0);
 
+  // Renew any expiring webhook subscriptions
+  let subscriptionRenewals = { renewed: 0, failed: 0, errors: [] as string[] };
+  try {
+    subscriptionRenewals = await renewExpiringSubscriptions();
+    if (subscriptionRenewals.renewed > 0 || subscriptionRenewals.failed > 0) {
+      console.log(`[Cron] Webhook subscriptions: ${subscriptionRenewals.renewed} renewed, ${subscriptionRenewals.failed} failed`);
+    }
+  } catch (renewErr) {
+    console.error('[Cron] Failed to renew subscriptions:', renewErr);
+  }
+
   console.log(`Microsoft sync completed: ${totalEmails} emails, ${totalEvents} events, ${totalAnalyzed} analyzed, ${totalSchedulingResponses} scheduling responses, ${totalErrors} errors`);
 
   return NextResponse.json({
@@ -125,6 +137,8 @@ export async function GET(request: Request) {
     totalEventsImported: totalEvents,
     totalEmailsAnalyzed: totalAnalyzed,
     totalSchedulingResponsesProcessed: totalSchedulingResponses,
+    subscriptionsRenewed: subscriptionRenewals.renewed,
+    subscriptionRenewalsFailed: subscriptionRenewals.failed,
     totalErrors,
     details: results,
   });

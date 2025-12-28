@@ -59,34 +59,37 @@ export async function archiveConversation(
 
   const previousStatus = conversation.status;
 
-  // Move emails in Outlook (unless user-managed)
+  // Move emails in Outlook and add X-FORCE category (unless user-managed)
   if (!conversation.user_managed) {
     try {
       const folders = await getOutlookFolders(userId);
+      const token = await getValidToken(userId);
 
-      if (folders?.folder_mode === 'move' && folders.processed_folder_id) {
-        const token = await getValidToken(userId);
-        if (token) {
-          const graph = new MicrosoftGraphClient(token);
+      if (token) {
+        const graph = new MicrosoftGraphClient(token);
 
-          // Get messages for this conversation
-          const { data: messages } = await supabase
-            .from('email_messages')
-            .select('message_id')
-            .eq('conversation_ref', conversationId);
+        // Get messages for this conversation
+        const { data: messages } = await supabase
+          .from('email_messages')
+          .select('message_id')
+          .eq('conversation_ref', conversationId);
 
-          // Move each message
-          for (const msg of messages || []) {
-            try {
+        for (const msg of messages || []) {
+          try {
+            // Add X-FORCE category to mark as processed
+            await graph.addCategoryToMessage(msg.message_id, 'X-FORCE');
+
+            // Move message if folder mode is enabled
+            if (folders?.folder_mode === 'move' && folders.processed_folder_id) {
               await graph.moveMessage(msg.message_id, folders.processed_folder_id);
-            } catch {
-              // Continue even if some moves fail
             }
+          } catch {
+            // Continue even if some operations fail
           }
         }
       }
     } catch {
-      // Don't fail the archive if Outlook move fails
+      // Don't fail the archive if Outlook operations fail
     }
   }
 
@@ -190,7 +193,7 @@ export async function snoozeConversation(
 
   const { data: conversation } = await supabase
     .from('email_conversations')
-    .select('status')
+    .select('status, user_managed')
     .eq('id', conversationId)
     .eq('user_id', userId)
     .single();
@@ -200,6 +203,30 @@ export async function snoozeConversation(
   }
 
   const previousStatus = conversation.status;
+
+  // Add X-FORCE category to emails (unless user-managed)
+  if (!conversation.user_managed) {
+    try {
+      const token = await getValidToken(userId);
+      if (token) {
+        const graph = new MicrosoftGraphClient(token);
+        const { data: messages } = await supabase
+          .from('email_messages')
+          .select('message_id')
+          .eq('conversation_ref', conversationId);
+
+        for (const msg of messages || []) {
+          try {
+            await graph.addCategoryToMessage(msg.message_id, 'X-FORCE');
+          } catch {
+            // Continue even if tagging fails
+          }
+        }
+      }
+    } catch {
+      // Don't fail snooze if tagging fails
+    }
+  }
 
   const { error } = await supabase
     .from('email_conversations')
@@ -365,13 +392,37 @@ export async function ignoreConversation(
 
   const { data: conversation } = await supabase
     .from('email_conversations')
-    .select('status')
+    .select('status, user_managed')
     .eq('id', conversationId)
     .eq('user_id', userId)
     .single();
 
   if (!conversation) {
     return { success: false, error: 'Conversation not found' };
+  }
+
+  // Add X-FORCE category to emails (unless user-managed)
+  if (!conversation.user_managed) {
+    try {
+      const token = await getValidToken(userId);
+      if (token) {
+        const graph = new MicrosoftGraphClient(token);
+        const { data: messages } = await supabase
+          .from('email_messages')
+          .select('message_id')
+          .eq('conversation_ref', conversationId);
+
+        for (const msg of messages || []) {
+          try {
+            await graph.addCategoryToMessage(msg.message_id, 'X-FORCE');
+          } catch {
+            // Continue even if tagging fails
+          }
+        }
+      }
+    } catch {
+      // Don't fail ignore if tagging fails
+    }
   }
 
   const { error } = await supabase

@@ -156,14 +156,16 @@ export function RecommendationsPanel({
                   </p>
                   <p className="text-xs text-gray-500 mt-1">{rec.reasoning}</p>
 
-                  {/* Show data details */}
-                  {rec.data && (
+                  {rec.type === 'stage_change' && rec.data?.stage ? (
                     <div className="mt-2 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded inline-block">
-                      {rec.type === 'stage_change' && `New stage: ${rec.data.stage}`}
-                      {rec.type === 'deal_value' &&
-                        `New value: $${(rec.data.value as number).toLocaleString()}`}
+                      New stage: {String(rec.data.stage)}
                     </div>
-                  )}
+                  ) : null}
+                  {rec.type === 'deal_value' && rec.data?.value != null ? (
+                    <div className="mt-2 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded inline-block">
+                      New value: ${Number(rec.data.value).toLocaleString()}
+                    </div>
+                  ) : null}
 
                   {/* Error message */}
                   {error && (

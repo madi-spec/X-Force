@@ -14,6 +14,11 @@ export function CompanyForm({ company }: CompanyFormProps) {
   const supabase = createClient();
   const isEditing = !!company;
 
+  // Initialize address - if company.address is a string, use empty form fields
+  const initialAddress = company?.address && typeof company.address === 'object'
+    ? company.address
+    : { street: '', city: '', state: '', zip: '' };
+
   const [formData, setFormData] = useState({
     name: company?.name || '',
     status: company?.status || 'cold_lead' as CompanyStatus,
@@ -22,12 +27,7 @@ export function CompanyForm({ company }: CompanyFormProps) {
     agent_count: company?.agent_count || 0,
     crm_platform: company?.crm_platform || null as CRMPlatform,
     voice_customer: company?.voice_customer || false,
-    address: company?.address || {
-      street: '',
-      city: '',
-      state: '',
-      zip: '',
-    },
+    address: initialAddress,
   });
 
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,7 @@ export function CompanyForm({ company }: CompanyFormProps) {
 
     const payload = {
       ...formData,
-      address: formData.address.street ? formData.address : null,
+      address: typeof formData.address === 'object' && formData.address?.street ? formData.address : null,
     };
 
     let result;

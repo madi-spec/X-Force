@@ -14,3 +14,5 @@ export { EmailComposerPopout } from './EmailComposerPopout';
 export { MeetingPrepPopout } from './MeetingPrepPopout';
 export { LinkDealPopout } from './LinkDealPopout';
 export { LinkCompanyPopout } from './LinkCompanyPopout';
+export { EmailDraftModal } from './EmailDraftModal';
+export { AddContextModal } from './AddContextModal';

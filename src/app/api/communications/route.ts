@@ -9,12 +9,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { extractEmailsFromBody } from '@/lib/communicationHub/matching/matchEmailToCompany';
 
 export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
   const { searchParams } = new URL(request.url);
 
   // Filters
+  const id = searchParams.get('id'); // Direct communication ID
   const companyId = searchParams.get('company_id');
   const contactId = searchParams.get('contact_id');
   const dealId = searchParams.get('deal_id');
@@ -39,8 +41,14 @@ export async function GET(request: NextRequest) {
     `, { count: 'exact' })
     .order('occurred_at', { ascending: false });
 
+  // Filter out excluded communications
+  query = query.is('excluded_at', null);
+
   // Apply filters
-  if (companyId) {
+  if (id) {
+    // Direct fetch by communication ID
+    query = query.eq('id', id);
+  } else if (companyId) {
     query = query.eq('company_id', companyId);
   } else if (senderEmail) {
     // For unlinked emails: filter by company_id is null
@@ -62,14 +70,36 @@ export async function GET(request: NextRequest) {
   let { data, error, count } = await query;
 
   // For senderEmail filter, filter results in JS and apply pagination
+  // Also search for email in body content (for forwarded/internal emails about prospects)
   if (senderEmail && data) {
     const emailLower = senderEmail.toLowerCase();
+    const emailDomain = emailLower.split('@')[1];
+
     data = data.filter(comm => {
+      // Check participants
       const theirEmails = (comm.their_participants as Array<{ email?: string }> || [])
         .map(p => p.email?.toLowerCase());
       const ourEmails = (comm.our_participants as Array<{ email?: string }> || [])
         .map(p => p.email?.toLowerCase());
-      return theirEmails.includes(emailLower) || ourEmails.includes(emailLower);
+
+      if (theirEmails.includes(emailLower) || ourEmails.includes(emailLower)) {
+        return true;
+      }
+
+      // Check if any participant has same domain
+      const allEmails = [...theirEmails, ...ourEmails].filter(Boolean) as string[];
+      if (allEmails.some(e => e.endsWith(`@${emailDomain}`))) {
+        return true;
+      }
+
+      // Check body content for the email or domain
+      const content = comm.full_content || comm.content_preview || '';
+      const bodyEmails = extractEmailsFromBody(content);
+      if (bodyEmails.some(e => e === emailLower || e.endsWith(`@${emailDomain}`))) {
+        return true;
+      }
+
+      return false;
     });
     count = data.length;
     data = data.slice(offset, offset + limit);

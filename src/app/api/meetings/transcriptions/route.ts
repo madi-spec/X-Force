@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { analyzeMeetingTranscription } from '@/lib/ai/meetingAnalysisService';
+import { processDetectedContacts } from '@/lib/ai/contactDetectionService';
+import { captureMeetingLearnings } from '@/lib/ai/memory';
 
 // POST - Upload transcription and trigger AI analysis
 export async function POST(request: NextRequest) {
@@ -135,9 +137,47 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Auto-detect and create/update contacts from stakeholders
+    if (companyId && analysis.stakeholders && analysis.stakeholders.length > 0) {
+      try {
+        const contactResult = await processDetectedContacts(
+          transcription.id,
+          companyId,
+          analysis.stakeholders,
+          title,
+          meetingDate
+        );
+        console.log(
+          `[ContactDetection] Created: ${contactResult.created.length}, Updated: ${contactResult.updated.length}, Skipped: ${contactResult.skipped.length}`
+        );
+      } catch (contactError) {
+        // Non-blocking - don't fail the request if contact detection fails
+        console.error('Error detecting contacts:', contactError);
+      }
+    }
+
+    // Capture learnings to account memory
+    let memoryCapture = null;
+    if (companyId) {
+      try {
+        memoryCapture = await captureMeetingLearnings(
+          companyId,
+          transcription.id,
+          analysis
+        );
+        console.log(
+          `[MemoryCapture] Auto-applied: ${memoryCapture.autoApplied.length}, Suggested: ${memoryCapture.suggestions.length}`
+        );
+      } catch (memoryError) {
+        // Non-blocking - don't fail the request if memory capture fails
+        console.error('Error capturing memory:', memoryError);
+      }
+    }
+
     return NextResponse.json({
       transcriptionId: transcription.id,
       analysis,
+      memoryCapture,
     });
   } catch (error) {
     console.error('Error processing transcription:', error);

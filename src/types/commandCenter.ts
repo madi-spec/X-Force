@@ -10,13 +10,23 @@ export type PriorityTier = 1 | 2 | 3 | 4 | 5;
 export type TierTrigger =
   // Tier 1: RESPOND NOW
   | 'demo_request'
+  | 'free_trial_form'  // Signed trial authorization - HIGH priority
   | 'pricing_request'
   | 'meeting_request'
   | 'direct_question'
   | 'email_reply'
   | 'email_needs_response'
+  | 'email_unanswered'
+  | 'inbound_request'
   | 'form_submission'
   | 'calendly_booking'
+  | 'ready_to_proceed'
+  | 'unknown_sender'   // New inbound from unknown sender - needs triage
+  // Tier 1 Aliases (AI may return these)
+  | 'trial_request'
+  | 'pricing_inquiry'
+  | 'demo_inquiry'
+  | 'inbound_lead'
   // Tier 2: DON'T LOSE THIS
   | 'deadline_critical'
   | 'deadline_approaching'
@@ -26,13 +36,26 @@ export type TierTrigger =
   | 'proposal_hot'
   | 'champion_dark'
   | 'going_stale'
-  | 'urgency_keywords'
+  | 'urgency_signal'
+  | 'objection_raised'
+  | 'technical_question'
+  // Tier 2 Aliases (AI may return these)
+  | 'objection'
+  | 'competitor'
+  | 'risk_signal'
   // Tier 3: KEEP YOUR WORD
   | 'transcript_commitment'
   | 'meeting_follow_up'
+  | 'post_meeting_followup'
   | 'action_item_due'
   | 'promise_made'
+  | 'promise_due'
+  | 'our_commitment_overdue'
   | 'action_item'
+  // Tier 3 Aliases (AI may return these)
+  | 'meeting_commitment'
+  | 'follow_up'
+  | 'deliverable_promised'
   // Tier 4: MOVE BIG DEALS
   | 'high_value'
   | 'strategic_account'
@@ -41,11 +64,21 @@ export type TierTrigger =
   | 'big_deal_attention'
   | 'concern_unresolved'
   | 'their_commitment_overdue'
+  | 'orphaned_opportunity' // Contact with engagement but no company/deal linked
   // Tier 5: BUILD PIPELINE
   | 'internal_request'
   | 'cold_lead_reengage'
   | 'new_contact_no_outreach'
-  | 'research_needed';
+  | 'research_needed'
+  | 'follow_up_general'
+  // Tier 5 Aliases (AI may return these)
+  | 'general'
+  | 'informational'
+  | 'nurture'
+  | 'needs_ai_classification'
+  | 'new_introduction'
+  | 'introduction'
+  | 'other';
 
 export type TierSlaStatus = 'on_track' | 'warning' | 'breached';
 
@@ -117,6 +150,11 @@ export type ActionType =
   | 'email_send_draft'
   | 'email_compose'
   | 'email_respond'
+  | 'respond_email'       // Unified: needs reply
+  | 'send_followup'       // Unified: stalled flags
+  | 'schedule_meeting'    // Unified: meeting approval
+  | 'close_deal'          // Unified: ready to close
+  | 'review_flag'         // Unified: general flag review
   | 'meeting_prep'
   | 'meeting_follow_up'
   | 'proposal_review'
@@ -132,7 +170,8 @@ export type ItemSource =
   | 'system'
   | 'manual'
   | 'email_sync'
-  | 'email_ai_analysis'  // AI-analyzed inbound emails with buying signals/concerns
+  | 'email_inbound'       // Inbound email requiring response
+  | 'email_ai_analysis'   // AI-analyzed inbound emails with buying signals/concerns
   | 'calendar_sync'
   | 'signal_detection'
   | 'ai_recommendation'
@@ -140,7 +179,11 @@ export type ItemSource =
   | 'crm_sync'
   | 'slack'
   | 'form_submission'
-  | 'calendly';
+  | 'calendly'
+  // Unified sources (from Daily Driver)
+  | 'communication'       // Unified: needs reply
+  | 'attention_flag'      // Unified: flags requiring action
+  | 'company_product';    // Unified: ready to close
 
 export type TimeBlockType = 'available' | 'meeting' | 'prep' | 'buffer';
 
@@ -223,6 +266,14 @@ export interface CommandCenterItem {
   requires_human_review?: boolean | null;
   human_leverage_brief?: Record<string, unknown> | null;
 
+  // Already Handled Detection
+  already_handled?: boolean | null;
+  handled_reason?: string | null;
+  handled_at?: string | null;
+  can_complete?: boolean | null;  // True only if handled AND properly linked
+  needs_linking?: boolean | null; // True if handled but missing company/deal
+  linking_message?: string | null; // What's missing: "Not linked to deal", etc.
+
   // Status
   status: ItemStatus;
   started_at?: string | null;
@@ -252,6 +303,11 @@ export interface CommandCenterItem {
   // Source tracking
   source: ItemSource;
   source_id?: string | null;
+  source_hash?: string | null;
+  email_id?: string | null;
+
+  // Workflow steps (checklist for multi-action items)
+  workflow_steps?: WorkflowStep[] | null;
 
   created_at: string;
   updated_at: string;
@@ -259,7 +315,20 @@ export interface CommandCenterItem {
   // Relations (optional, for joined queries)
   deal?: { id: string; name: string; stage: string; estimated_value?: number } | null;
   company?: { id: string; name: string } | null;
-  contact?: { id: string; name: string; email?: string } | null;
+  contact?: { id: string; name: string; email?: string; title?: string; role?: string } | null;
+}
+
+// ============================================
+// WORKFLOW STEP
+// ============================================
+
+export interface WorkflowStep {
+  id: string;
+  title: string;
+  owner: 'sales_rep' | 'operations' | 'technical' | 'management';
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  completed: boolean;
+  completed_at: string | null;
 }
 
 // ============================================
@@ -418,12 +487,31 @@ export interface GetDailyPlanResponse {
   // All items (for backward compatibility)
   items: CommandCenterItem[];
 
-  // Tier-grouped items (new)
-  tier1_items: CommandCenterItem[];  // RESPOND NOW
-  tier2_items: CommandCenterItem[];  // DON'T LOSE THIS
-  tier3_items: CommandCenterItem[];  // KEEP YOUR WORD
-  tier4_items: CommandCenterItem[];  // MOVE BIG DEALS
-  tier5_items: CommandCenterItem[];  // BUILD PIPELINE
+  // Tier-grouped items (legacy, mapped from attention levels)
+  tier1_items: CommandCenterItem[];  // RESPOND NOW (now)
+  tier2_items: CommandCenterItem[];  // DON'T LOSE THIS (soon high severity)
+  tier3_items: CommandCenterItem[];  // KEEP YOUR WORD (soon medium severity)
+  tier4_items: CommandCenterItem[];  // MOVE BIG DEALS (monitor high severity)
+  tier5_items: CommandCenterItem[];  // BUILD PIPELINE (monitor)
+
+  // NEW: Attention level grouping (Daily Driver style)
+  byAttentionLevel?: {
+    now: CommandCenterItem[];      // Needs immediate action
+    soon: CommandCenterItem[];     // Action needed this week
+    monitor: CommandCenterItem[];  // Keep an eye on
+  };
+
+  // NEW: Section counts for UI display
+  counts?: {
+    needsReply: number;
+    needsHuman: number;
+    stalled: number;
+    readyToClose: number;
+    total: number;
+    now: number;
+    soon: number;
+    monitor: number;
+  };
 
   // Legacy (deprecated, use tier groups)
   current_item?: CommandCenterItem | null;
@@ -445,6 +533,17 @@ export interface GetDailyPlanResponse {
       tier3: number;
       tier4: number;
       tier5: number;
+    };
+    attention_counts?: {
+      now: number;
+      soon: number;
+      monitor: number;
+    };
+    source_counts?: {
+      needsReply: number;
+      needsHuman: number;
+      stalled: number;
+      readyToClose: number;
     };
   };
 }
@@ -536,6 +635,46 @@ export const ACTION_TYPE_CONFIGS: Record<ActionType, ActionTypeConfig> = {
     color: 'bg-blue-100 text-blue-700',
     defaultDuration: 8,
     primaryCTA: 'Reply',
+  },
+  respond_email: {
+    type: 'respond_email',
+    label: 'Reply',
+    icon: 'Reply',
+    color: 'bg-blue-100 text-blue-700',
+    defaultDuration: 10,
+    primaryCTA: 'Reply',
+  },
+  send_followup: {
+    type: 'send_followup',
+    label: 'Follow Up',
+    icon: 'MessageCircle',
+    color: 'bg-amber-100 text-amber-700',
+    defaultDuration: 10,
+    primaryCTA: 'Send Follow-up',
+  },
+  schedule_meeting: {
+    type: 'schedule_meeting',
+    label: 'Schedule Meeting',
+    icon: 'Calendar',
+    color: 'bg-purple-100 text-purple-700',
+    defaultDuration: 5,
+    primaryCTA: 'Schedule',
+  },
+  close_deal: {
+    type: 'close_deal',
+    label: 'Close',
+    icon: 'Trophy',
+    color: 'bg-green-100 text-green-700',
+    defaultDuration: 30,
+    primaryCTA: 'Close Deal',
+  },
+  review_flag: {
+    type: 'review_flag',
+    label: 'Review',
+    icon: 'Flag',
+    color: 'bg-orange-100 text-orange-700',
+    defaultDuration: 15,
+    primaryCTA: 'Resolve',
   },
   meeting_prep: {
     type: 'meeting_prep',
@@ -758,4 +897,100 @@ export interface EnrichedCommandCenterItem extends CommandCenterItem {
   email_draft?: EmailDraft;
   schedule_suggestions?: ScheduleSuggestions;
   available_actions?: AvailableAction[];
+}
+
+// ============================================
+// RECONCILIATION TYPES
+// ============================================
+
+// Reconciliation decision types
+export type ReconciliationDecision = 'keep' | 'complete' | 'update' | 'combine';
+
+// Decision for a single existing item
+export interface ReconciliationItemDecision {
+  id: string;
+  decision: ReconciliationDecision;
+  reason: string;
+  updates?: Partial<CommandCenterItem>;
+  combine_into?: string;
+}
+
+// New item to create from reconciliation
+export interface NewCommandCenterItem {
+  title: string;
+  description?: string;
+  tier: PriorityTier;
+  tier_trigger: TierTrigger;
+  why_now: string;
+  owner: ActionOwner;
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  action_type?: ActionType;
+  contact_id?: string;
+  company_id?: string;
+  deal_id?: string;
+  conversation_id?: string;
+  meeting_id?: string;
+}
+
+// Full reconciliation result
+export interface ReconciliationResult {
+  reasoning: string;
+  existing_items: ReconciliationItemDecision[];
+  new_items: NewCommandCenterItem[];
+  summary: string;
+}
+
+// ============================================
+// PLAYBOOK-INFORMED TYPES
+// ============================================
+
+// Action owners (who should do this)
+export type ActionOwner = 'sales_rep' | 'operations' | 'technical' | 'management';
+
+// Communication types from sales playbook
+export type CommunicationType =
+  | 'demo_request'
+  | 'free_trial_form'
+  | 'pricing_request'
+  | 'technical_question'
+  | 'follow_up'
+  | 'objection'
+  | 'ready_to_proceed'
+  | 'internal_notification'
+  | 'other';
+
+// Sales stages
+export type SalesStage =
+  | 'initial_interest'
+  | 'discovery'
+  | 'trial'
+  | 'proposal'
+  | 'closing'
+  | 'closed';
+
+// Workflow types
+export type WorkflowType =
+  | 'single_response'
+  | 'multi_step_internal'
+  | 'waiting_on_customer'
+  | 'no_action_needed';
+
+// Required action from playbook analysis
+export interface RequiredAction {
+  action: string;
+  owner: ActionOwner;
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+// Interaction for reconciliation
+export interface InteractionForReconciliation {
+  type: 'email_inbound' | 'email_outbound' | 'transcript';
+  analysis: {
+    summary: string;
+    communication_type?: CommunicationType;
+    required_actions?: RequiredAction[];
+    sales_stage?: SalesStage;
+  };
+  date: Date;
 }

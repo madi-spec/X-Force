@@ -69,7 +69,12 @@ export async function GET(request: NextRequest) {
  *   phone?: string,
  *   title?: string,
  *   role?: string,
- *   company_id: string
+ *   company_id: string,
+ *   linkedin_url?: string,
+ *   seniority?: string,
+ *   department?: string,
+ *   source?: string,
+ *   notes?: string
  * }
  */
 export async function POST(request: NextRequest) {
@@ -82,7 +87,19 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient();
   const body = await request.json();
-  const { name, email, phone, title, role, company_id } = body;
+  const {
+    name,
+    email,
+    phone,
+    title,
+    role,
+    company_id,
+    linkedin_url,
+    seniority,
+    department,
+    source,
+    notes,
+  } = body;
 
   if (!name) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
@@ -92,17 +109,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'company_id is required' }, { status: 400 });
   }
 
-  // Check if contact already exists by email
+  // Check if contact already exists by email or name at this company
   if (email) {
     const { data: existing } = await supabase
       .from('contacts')
       .select('id, name, email')
       .eq('email', email.toLowerCase())
+      .eq('company_id', company_id)
       .limit(1);
 
     if (existing && existing.length > 0) {
       return NextResponse.json({
-        error: 'Contact with this email already exists',
+        error: 'Contact with this email already exists at this company',
+        existing: existing[0],
+      }, { status: 409 });
+    }
+  } else {
+    // Check by name if no email
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id, name, email')
+      .eq('company_id', company_id)
+      .ilike('name', name)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      return NextResponse.json({
+        error: 'Contact with this name already exists at this company',
         existing: existing[0],
       }, { status: 409 });
     }
@@ -117,6 +150,11 @@ export async function POST(request: NextRequest) {
       title: title || null,
       role: role || null,
       company_id,
+      linkedin_url: linkedin_url || null,
+      seniority: seniority || null,
+      department: department || null,
+      source: source || null,
+      notes: notes || null,
     })
     .select(`
       id,
@@ -126,6 +164,9 @@ export async function POST(request: NextRequest) {
       title,
       role,
       company_id,
+      linkedin_url,
+      seniority,
+      department,
       company:companies(id, name)
     `)
     .single();
@@ -135,5 +176,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create contact' }, { status: 500 });
   }
 
-  return NextResponse.json({ contact });
+  return NextResponse.json(contact);
 }

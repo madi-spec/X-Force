@@ -1,14 +1,28 @@
 /**
  * Tier Detection System for Command Center
  *
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║  🚫 CRITICAL ARCHITECTURAL RULE: NEVER USE KEYWORD MATCHING                  ║
+ * ║                                                                              ║
+ * ║  ❌ FORBIDDEN: const keywords = ['trial', 'demo']; text.includes(keyword)   ║
+ * ║  ❌ FORBIDDEN: if (text.match(/demo|pricing/i)) { tier = 1 }                 ║
+ * ║  ❌ FORBIDDEN: TIER1_TRIGGERS = [{ keywords: ['demo', 'trial'] }]            ║
+ * ║                                                                              ║
+ * ║  ✅ CORRECT: AI analyzes → returns communicationType → playbook lookup       ║
+ * ║  ✅ CORRECT: tier = COMMUNICATION_TYPE_TIERS[item.tier_trigger].tier         ║
+ * ║                                                                              ║
+ * ║  The tier_trigger field stores the AI-determined communicationType.          ║
+ * ║  This module ONLY does playbook lookups, NEVER keyword detection.            ║
+ * ║                                                                              ║
+ * ║  See: /docs/X-FORCE-ARCHITECTURAL-RULES.md                                   ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
  * The Five Tiers (in strict hierarchy):
  * 1. RESPOND NOW - Someone is waiting (minutes matter)
  * 2. DON'T LOSE THIS - Deadline/competition (hours matter)
  * 3. KEEP YOUR WORD - You promised something (same day)
  * 4. MOVE BIG DEALS - High value, needs attention (this week)
  * 5. BUILD PIPELINE - Important but not urgent
- *
- * Items NEVER promote between tiers. A stale Tier 4 stays Tier 4.
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -20,42 +34,350 @@ import type {
 } from '@/types/commandCenter';
 
 // ============================================
-// TIER 1: RESPOND NOW
+// COMMUNICATION TYPE → TIER MAPPING
+// From Sales Playbook
 // ============================================
 
-interface Tier1TriggerConfig {
-  keywords?: string[];
-  condition?: string;
-  source?: string;
+interface TierConfig {
+  tier: PriorityTier;
   sla_minutes: number;
+  why_now_template: string;
 }
 
-const TIER1_TRIGGERS: Record<string, Tier1TriggerConfig> = {
+/**
+ * Maps communication types to their tier and SLA
+ * This is the single source of truth for tier classification
+ * Based on Sales Playbook definitions
+ */
+export const COMMUNICATION_TYPE_TIERS: Record<string, TierConfig> = {
+  // Tier 1: RESPOND NOW - Someone is waiting
   demo_request: {
-    keywords: ['demo', 'trial', 'free trial', 'see a demo', 'schedule a demo', 'product demo'],
+    tier: 1,
     sla_minutes: 15,
+    why_now_template: 'Demo request received {duration} ago.',
+  },
+  free_trial_form: {
+    tier: 1,
+    sla_minutes: 15,
+    why_now_template: 'Signed trial form received {duration} ago — ready to start.',
   },
   pricing_request: {
-    keywords: ['pricing', 'price', 'cost', 'quote', 'how much', 'rates', 'fees'],
+    tier: 1,
     sla_minutes: 120,
+    why_now_template: 'Pricing inquiry received {duration} ago.',
+  },
+  meeting_request: {
+    tier: 1,
+    sla_minutes: 60,
+    why_now_template: 'Meeting request waiting {duration}.',
   },
   direct_question: {
-    keywords: ['?'],
+    tier: 1,
     sla_minutes: 240,
+    why_now_template: 'Question awaiting response for {duration}.',
   },
   email_reply: {
-    condition: 'is_reply',
+    tier: 1,
     sla_minutes: 240,
+    why_now_template: 'They replied {duration} ago. Keep momentum.',
+  },
+  email_needs_response: {
+    tier: 1,
+    sla_minutes: 240,
+    why_now_template: 'Email needs response — waiting {duration}.',
+  },
+  email_unanswered: {
+    tier: 1,
+    sla_minutes: 240,
+    why_now_template: 'Unanswered email for {duration}.',
+  },
+  inbound_request: {
+    tier: 1,
+    sla_minutes: 60,
+    why_now_template: 'Inbound request waiting {duration}.',
   },
   form_submission: {
-    source: 'form_submission',
+    tier: 1,
     sla_minutes: 15,
+    why_now_template: 'Form submitted {duration} ago.',
   },
   calendly_booking: {
-    source: 'calendly',
+    tier: 1,
     sla_minutes: 15,
+    why_now_template: 'New booking {duration} ago.',
+  },
+  ready_to_proceed: {
+    tier: 1,
+    sla_minutes: 30,
+    why_now_template: 'They said "ready to proceed" {duration} ago. Act now.',
+  },
+  unknown_sender: {
+    tier: 1,
+    sla_minutes: 60,
+    why_now_template: 'New inbound from unknown sender {duration} ago — triage needed.',
+  },
+  // === TIER 1 ALIASES (AI may return these) ===
+  trial_request: {
+    tier: 1,
+    sla_minutes: 15,
+    why_now_template: 'Trial request received {duration} ago — ready to start.',
+  },
+  pricing_inquiry: {
+    tier: 1,
+    sla_minutes: 120,
+    why_now_template: 'Pricing inquiry received {duration} ago.',
+  },
+  demo_inquiry: {
+    tier: 1,
+    sla_minutes: 15,
+    why_now_template: 'Demo inquiry received {duration} ago.',
+  },
+  inbound_lead: {
+    tier: 1,
+    sla_minutes: 60,
+    why_now_template: 'New inbound lead {duration} ago.',
+  },
+
+  // Tier 2: DON'T LOSE THIS - Deadline/competition pressure
+  deadline_critical: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Close date within 7 days.',
+  },
+  deadline_approaching: {
+    tier: 2,
+    sla_minutes: 1440,
+    why_now_template: 'Close date within 14 days.',
+  },
+  competitive_risk: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Competitor mentioned — you\'re in a race.',
+  },
+  buying_signal: {
+    tier: 2,
+    sla_minutes: 240,
+    why_now_template: 'Strong buying signal detected.',
+  },
+  budget_discussed: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Budget discussion happened — momentum is high.',
+  },
+  proposal_hot: {
+    tier: 2,
+    sla_minutes: 240,
+    why_now_template: 'Proposal viewed multiple times recently.',
+  },
+  champion_dark: {
+    tier: 2,
+    sla_minutes: 1440,
+    why_now_template: 'Champion hasn\'t replied — your inside access is at risk.',
+  },
+  going_stale: {
+    tier: 2,
+    sla_minutes: 1440,
+    why_now_template: 'Deal going quiet — re-engage now.',
+  },
+  urgency_signal: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Urgency signals detected by AI.',
+  },
+  objection_raised: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Objection raised — address quickly.',
+  },
+  technical_question: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Technical question needs answer.',
+  },
+  // === TIER 2 ALIASES (AI may return these) ===
+  objection: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Objection raised — address quickly.',
+  },
+  competitor: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Competitor mentioned — you\'re in a race.',
+  },
+  risk_signal: {
+    tier: 2,
+    sla_minutes: 480,
+    why_now_template: 'Deal risk detected.',
+  },
+
+  // Tier 3: KEEP YOUR WORD - You promised something
+  transcript_commitment: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'You committed to this in the call.',
+  },
+  meeting_follow_up: {
+    tier: 3,
+    sla_minutes: 480,
+    why_now_template: 'Meeting ended — follow-up expected.',
+  },
+  post_meeting_followup: {
+    tier: 3,
+    sla_minutes: 480,
+    why_now_template: 'Post-meeting follow-up due.',
+  },
+  action_item_due: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'Action item due.',
+  },
+  promise_made: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'You promised this.',
+  },
+  promise_due: {
+    tier: 3,
+    sla_minutes: 480,
+    why_now_template: 'Promise is due.',
+  },
+  our_commitment_overdue: {
+    tier: 3,
+    sla_minutes: 0,
+    why_now_template: 'Your commitment is overdue.',
+  },
+  action_item: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'Action item needs attention.',
+  },
+  // === TIER 3 ALIASES (AI may return these) ===
+  meeting_commitment: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'Commitment from meeting needs follow-through.',
+  },
+  follow_up: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'Follow-up promised.',
+  },
+  deliverable_promised: {
+    tier: 3,
+    sla_minutes: 1440,
+    why_now_template: 'Deliverable was promised.',
+  },
+
+  // Tier 4: MOVE BIG DEALS - High value opportunities
+  high_value: {
+    tier: 4,
+    sla_minutes: 2880,
+    why_now_template: 'High-value opportunity worth attention.',
+  },
+  strategic_account: {
+    tier: 4,
+    sla_minutes: 2880,
+    why_now_template: 'Strategic account needs attention.',
+  },
+  csuite_contact: {
+    tier: 4,
+    sla_minutes: 2880,
+    why_now_template: 'C-suite contact involved.',
+  },
+  deal_stale: {
+    tier: 4,
+    sla_minutes: 2880,
+    why_now_template: 'Deal has gone quiet.',
+  },
+  big_deal_attention: {
+    tier: 4,
+    sla_minutes: 2880,
+    why_now_template: 'Big deal needs proactive attention.',
+  },
+  concern_unresolved: {
+    tier: 4,
+    sla_minutes: 1440,
+    why_now_template: 'Concern still unresolved.',
+  },
+  their_commitment_overdue: {
+    tier: 4,
+    sla_minutes: 1440,
+    why_now_template: 'Their commitment is overdue — follow up.',
+  },
+  orphaned_opportunity: {
+    tier: 4,
+    sla_minutes: 2880,
+    why_now_template: 'Engaged contact not linked to deal.',
+  },
+
+  // Tier 5: BUILD PIPELINE - Important but not urgent
+  internal_request: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'Internal request.',
+  },
+  cold_lead_reengage: {
+    tier: 5,
+    sla_minutes: 10080,
+    why_now_template: 'Cold lead worth re-engaging.',
+  },
+  new_contact_no_outreach: {
+    tier: 5,
+    sla_minutes: 10080,
+    why_now_template: 'New contact — no outreach yet.',
+  },
+  research_needed: {
+    tier: 5,
+    sla_minutes: 10080,
+    why_now_template: 'Research needed.',
+  },
+  follow_up_general: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'General follow-up.',
+  },
+  // === TIER 5 ALIASES (AI may return these) ===
+  general: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'General communication — no urgency.',
+  },
+  informational: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'Informational — no action required.',
+  },
+  nurture: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'Nurture touch — build relationship.',
+  },
+  needs_ai_classification: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'Needs review.',
+  },
+  new_introduction: {
+    tier: 5,
+    sla_minutes: 1440,
+    why_now_template: 'New introduction — respond professionally.',
+  },
+  introduction: {
+    tier: 5,
+    sla_minutes: 1440,
+    why_now_template: 'Introduction email — respond professionally.',
+  },
+  other: {
+    tier: 5,
+    sla_minutes: 4320,
+    why_now_template: 'Review and respond as needed.',
   },
 };
+
+// ============================================
+// TIER RESULT
+// ============================================
 
 export interface TierResult {
   tier: PriorityTier;
@@ -70,86 +392,105 @@ export interface TierResult {
   why_now: string | null;
 }
 
+// ============================================
+// MAIN CLASSIFICATION FUNCTION
+// ============================================
+
 /**
- * Detect if an item should be Tier 1: RESPOND NOW
+ * Classify a command center item into a tier.
+ *
+ * Uses the item's tier_trigger (set by AI analysis) to look up the tier.
+ * Falls back to context-based detection for items without tier_trigger.
  */
-export async function detectTier1(
+export async function classifyItem(
   item: CommandCenterItem,
-  emailContent?: { subject?: string; body?: string; is_reply?: boolean; received_at?: string }
-): Promise<TierResult | null> {
-  // Check for form submission or calendly
-  if (item.source === 'form_submission' || item.source === 'calendly') {
-    const config = TIER1_TRIGGERS[item.source];
-    const receivedAt = item.created_at;
-    const minutesWaiting = Math.floor(
-      (Date.now() - new Date(receivedAt).getTime()) / (1000 * 60)
-    );
-
-    return {
-      tier: 1,
-      trigger: item.source as TierTrigger,
-      sla_minutes: config.sla_minutes,
-      sla_status: getSlaStatus(minutesWaiting, config.sla_minutes),
-      received_at: receivedAt,
-      why_now: `Form submitted ${formatDuration(minutesWaiting)} ago.`,
-    };
+  context?: {
+    deal?: DealContext & { value_percentile?: number };
+    champion?: ContactContext;
+    engagement?: EngagementContext;
+    commitment?: CommitmentContext;
+    meetingEndedHoursAgo?: number;
+    followUpSent?: boolean;
+    isStrategicAccount?: boolean;
+    hasCsuiteContact?: boolean;
   }
+): Promise<TierResult> {
+  const ctx = context || {};
 
-  // Check for inbound email
-  if (emailContent) {
-    const content = ((emailContent.subject || '') + ' ' + (emailContent.body || '')).toLowerCase();
-    const receivedAt = emailContent.received_at || item.created_at;
-    const minutesWaiting = Math.floor(
-      (Date.now() - new Date(receivedAt).getTime()) / (1000 * 60)
-    );
+  // If item already has a tier_trigger, use the mapping
+  if (item.tier_trigger) {
+    const config = COMMUNICATION_TYPE_TIERS[item.tier_trigger];
+    if (config) {
+      const receivedAt = item.received_at || item.created_at;
+      const minutesWaiting = Math.floor(
+        (Date.now() - new Date(receivedAt).getTime()) / (1000 * 60)
+      );
 
-    // Check each trigger in priority order
-    for (const [triggerName, config] of Object.entries(TIER1_TRIGGERS)) {
-      if (config.keywords?.some(k => content.includes(k.toLowerCase()))) {
-        let whyNow: string;
-
-        if (triggerName === 'demo_request') {
-          whyNow = `They asked for a demo ${formatDuration(minutesWaiting)} ago.`;
-        } else if (triggerName === 'pricing_request') {
-          whyNow = `They asked about pricing ${formatDuration(minutesWaiting)} ago.`;
-        } else if (triggerName === 'direct_question') {
-          const question = extractQuestion(content);
-          whyNow = question
-            ? `They asked: "${question}" — ${formatDuration(minutesWaiting)} waiting.`
-            : `They asked a question ${formatDuration(minutesWaiting)} ago.`;
-        } else {
-          whyNow = `Waiting for response ${formatDuration(minutesWaiting)}.`;
-        }
-
-        return {
-          tier: 1,
-          trigger: triggerName as TierTrigger,
-          sla_minutes: config.sla_minutes,
-          sla_status: getSlaStatus(minutesWaiting, config.sla_minutes),
-          received_at: receivedAt,
-          why_now: whyNow,
-        };
-      }
-    }
-
-    // Check for reply
-    if (emailContent.is_reply) {
       return {
-        tier: 1,
-        trigger: 'email_reply',
-        sla_minutes: TIER1_TRIGGERS.email_reply.sla_minutes,
-        sla_status: getSlaStatus(minutesWaiting, TIER1_TRIGGERS.email_reply.sla_minutes),
+        tier: config.tier,
+        trigger: item.tier_trigger,
+        sla_minutes: config.sla_minutes,
+        sla_status: getSlaStatus(minutesWaiting, config.sla_minutes),
         received_at: receivedAt,
-        why_now: `They replied ${formatDuration(minutesWaiting)} ago. Keep momentum.`,
+        why_now: config.why_now_template.replace('{duration}', formatDuration(minutesWaiting)),
       };
     }
   }
 
-  return null;
+  // Fallback: Use context-based detection for items without tier_trigger
+
+  // Check for source-based tier 1 items (form_submission, calendly)
+  if (item.source === 'form_submission' || item.source === 'calendly') {
+    const config = COMMUNICATION_TYPE_TIERS[item.source];
+    if (config) {
+      const receivedAt = item.created_at;
+      const minutesWaiting = Math.floor(
+        (Date.now() - new Date(receivedAt).getTime()) / (1000 * 60)
+      );
+
+      return {
+        tier: config.tier,
+        trigger: item.source as TierTrigger,
+        sla_minutes: config.sla_minutes,
+        sla_status: getSlaStatus(minutesWaiting, config.sla_minutes),
+        received_at: receivedAt,
+        why_now: config.why_now_template.replace('{duration}', formatDuration(minutesWaiting)),
+      };
+    }
+  }
+
+  // Try Tier 2 based on deal context
+  const tier2 = await detectTier2FromContext(item, ctx.deal, ctx.champion, ctx.engagement);
+  if (tier2) return tier2;
+
+  // Try Tier 3 based on commitments
+  const tier3 = await detectTier3FromContext(
+    item,
+    ctx.commitment,
+    ctx.meetingEndedHoursAgo,
+    ctx.followUpSent
+  );
+  if (tier3) return tier3;
+
+  // Try Tier 4 based on deal value
+  const tier4 = await detectTier4FromContext(
+    item,
+    ctx.deal,
+    ctx.isStrategicAccount,
+    ctx.hasCsuiteContact
+  );
+  if (tier4) return tier4;
+
+  // Default: Tier 5 with generic trigger
+  return {
+    tier: 5,
+    trigger: 'research_needed',
+    why_now: null,
+  };
 }
 
 // ============================================
-// TIER 2: DON'T LOSE THIS
+// CONTEXT-BASED DETECTION (No Keywords)
 // ============================================
 
 interface DealContext {
@@ -173,87 +514,6 @@ interface EngagementContext {
   proposal_views_48h?: number;
 }
 
-/**
- * Detect if an item should be Tier 2: DON'T LOSE THIS
- */
-export async function detectTier2(
-  item: CommandCenterItem,
-  deal?: DealContext,
-  champion?: ContactContext,
-  engagement?: EngagementContext,
-  urgencyKeywordsInNotes?: boolean
-): Promise<TierResult | null> {
-  if (!deal) return null;
-
-  const triggers: TierTrigger[] = [];
-  let urgency_score = 0;
-  let why_now: string | null = null;
-
-  // Deadline within 14 days
-  if (deal.expected_close_date) {
-    const days = daysUntil(deal.expected_close_date);
-    if (days <= 7 && days >= 0) {
-      triggers.push('deadline_critical');
-      urgency_score += 30;
-      why_now = `Close date is ${formatDate(deal.expected_close_date)} — ${days} days left.`;
-    } else if (days <= 14 && days > 7) {
-      triggers.push('deadline_approaching');
-      urgency_score += 20;
-      why_now = `Close date is ${formatDate(deal.expected_close_date)} — ${days} days out.`;
-    }
-  }
-
-  // Competitor mentioned
-  if (deal.competitors && deal.competitors.length > 0) {
-    triggers.push('competitive_risk');
-    urgency_score += 25;
-    if (!why_now) {
-      why_now = `They're evaluating ${deal.competitors[0]}. You're in a race.`;
-    }
-  }
-
-  // Proposal viewed 3+ times in 48h
-  if (engagement?.proposal_views_48h && engagement.proposal_views_48h >= 3) {
-    triggers.push('proposal_hot');
-    urgency_score += 20;
-    if (!why_now) {
-      why_now = `They viewed your proposal ${engagement.proposal_views_48h}x in 48 hours.`;
-    }
-  }
-
-  // Champion dark (2 emails, no reply, 7+ days)
-  if (
-    champion &&
-    (champion.emails_without_reply || 0) >= 2 &&
-    (champion.days_since_reply || 0) >= 7
-  ) {
-    triggers.push('champion_dark');
-    urgency_score += 25;
-    if (!why_now) {
-      why_now = `${champion.name} hasn't replied to ${champion.emails_without_reply} emails. Your inside access is at risk.`;
-    }
-  }
-
-  // Urgency keywords in notes
-  if (urgencyKeywordsInNotes) {
-    triggers.push('urgency_keywords');
-    urgency_score += 15;
-  }
-
-  if (triggers.length === 0) return null;
-
-  return {
-    tier: 2,
-    trigger: triggers[0],
-    urgency_score,
-    why_now,
-  };
-}
-
-// ============================================
-// TIER 3: KEEP YOUR WORD
-// ============================================
-
 interface CommitmentContext {
   commitment: string;
   when?: string;
@@ -262,9 +522,76 @@ interface CommitmentContext {
 }
 
 /**
- * Detect if an item should be Tier 3: KEEP YOUR WORD
+ * Detect Tier 2 from deal/engagement context
  */
-export async function detectTier3(
+async function detectTier2FromContext(
+  item: CommandCenterItem,
+  deal?: DealContext,
+  champion?: ContactContext,
+  engagement?: EngagementContext
+): Promise<TierResult | null> {
+  if (!deal) return null;
+
+  let urgency_score = 0;
+  let trigger: TierTrigger | null = null;
+  let why_now: string | null = null;
+
+  // Deadline within 7 days
+  if (deal.expected_close_date) {
+    const days = daysUntil(deal.expected_close_date);
+    if (days <= 7 && days >= 0) {
+      trigger = 'deadline_critical';
+      urgency_score += 30;
+      why_now = `Close date is ${formatDate(deal.expected_close_date)} — ${days} days left.`;
+    } else if (days <= 14 && days > 7) {
+      trigger = 'deadline_approaching';
+      urgency_score += 20;
+      why_now = `Close date is ${formatDate(deal.expected_close_date)} — ${days} days out.`;
+    }
+  }
+
+  // Competitor mentioned
+  if (!trigger && deal.competitors && deal.competitors.length > 0) {
+    trigger = 'competitive_risk';
+    urgency_score += 25;
+    why_now = `They're evaluating ${deal.competitors[0]}. You're in a race.`;
+  }
+
+  // Proposal viewed 3+ times in 48h
+  if (!trigger && engagement?.proposal_views_48h && engagement.proposal_views_48h >= 3) {
+    trigger = 'proposal_hot';
+    urgency_score += 20;
+    why_now = `They viewed your proposal ${engagement.proposal_views_48h}x in 48 hours.`;
+  }
+
+  // Champion dark
+  if (
+    !trigger &&
+    champion &&
+    (champion.emails_without_reply || 0) >= 2 &&
+    (champion.days_since_reply || 0) >= 7
+  ) {
+    trigger = 'champion_dark';
+    urgency_score += 25;
+    why_now = `${champion.name} hasn't replied to ${champion.emails_without_reply} emails. Your inside access is at risk.`;
+  }
+
+  if (!trigger) return null;
+
+  const config = COMMUNICATION_TYPE_TIERS[trigger];
+  return {
+    tier: 2,
+    trigger,
+    urgency_score,
+    sla_minutes: config?.sla_minutes,
+    why_now,
+  };
+}
+
+/**
+ * Detect Tier 3 from commitment context
+ */
+async function detectTier3FromContext(
   item: CommandCenterItem,
   commitment?: CommitmentContext,
   meetingEndedHoursAgo?: number,
@@ -280,11 +607,12 @@ export async function detectTier3(
       trigger: 'transcript_commitment',
       promise_date: promiseDate,
       commitment_text: commitment.commitment,
+      sla_minutes: COMMUNICATION_TYPE_TIERS['transcript_commitment']?.sla_minutes,
       why_now: `You said "${commitment.commitment}" — ${overdueText || 'pending'}.`,
     };
   }
 
-  // Meeting follow-up (meeting ended 4+ hours ago, no follow-up sent)
+  // Meeting follow-up
   if (
     item.source === 'calendar_sync' &&
     item.action_type === 'meeting_follow_up' &&
@@ -295,7 +623,8 @@ export async function detectTier3(
     return {
       tier: 3,
       trigger: 'meeting_follow_up',
-      promise_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24h implicit deadline
+      promise_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      sla_minutes: COMMUNICATION_TYPE_TIERS['meeting_follow_up']?.sla_minutes,
       why_now: `Call ended ${meetingEndedHoursAgo} hours ago. They expect follow-up.`,
     };
   }
@@ -303,14 +632,10 @@ export async function detectTier3(
   return null;
 }
 
-// ============================================
-// TIER 4: MOVE BIG DEALS
-// ============================================
-
 /**
- * Detect if an item should be Tier 4: MOVE BIG DEALS
+ * Detect Tier 4 from deal value context
  */
-export async function detectTier4(
+async function detectTier4FromContext(
   item: CommandCenterItem,
   deal?: DealContext & { value_percentile?: number },
   isStrategicAccount?: boolean,
@@ -321,35 +646,35 @@ export async function detectTier4(
   }
 
   let value_score = 0;
-  const triggers: TierTrigger[] = [];
+  let trigger: TierTrigger | null = null;
 
   // Top 20% deal by value
   if (deal.value_percentile && deal.value_percentile >= 80) {
     value_score += 30;
-    triggers.push('high_value');
+    trigger = 'high_value';
   } else if (deal.value_percentile && deal.value_percentile >= 60) {
     value_score += 15;
   }
 
   // Strategic account
-  if (isStrategicAccount) {
+  if (!trigger && isStrategicAccount) {
     value_score += 20;
-    triggers.push('strategic_account');
+    trigger = 'strategic_account';
   }
 
   // C-suite contact
-  if (hasCsuiteContact) {
+  if (!trigger && hasCsuiteContact) {
     value_score += 15;
-    triggers.push('csuite_contact');
+    trigger = 'csuite_contact';
   }
 
-  // Going stale (10+ days no activity)
-  if (deal.days_since_activity && deal.days_since_activity >= 10) {
+  // Going stale
+  if (!trigger && deal.days_since_activity && deal.days_since_activity >= 10) {
     value_score += 10;
-    triggers.push('deal_stale');
+    trigger = 'deal_stale';
   }
 
-  if (value_score < 15) return null;
+  if (value_score < 15 || !trigger) return null;
 
   let why_now: string | null = null;
   if (deal.days_since_activity && deal.days_since_activity >= 10) {
@@ -358,77 +683,19 @@ export async function detectTier4(
     why_now = `${formatCurrency(deal.value)} opportunity worth attention.`;
   }
 
+  const config = COMMUNICATION_TYPE_TIERS[trigger];
   return {
     tier: 4,
-    trigger: triggers[0] || 'high_value',
+    trigger,
     value_score,
+    sla_minutes: config?.sla_minutes,
     why_now,
   };
 }
 
 // ============================================
-// MAIN CLASSIFICATION FUNCTION
+// CLASSIFY ALL ITEMS
 // ============================================
-
-/**
- * Classify a command center item into a tier
- */
-export async function classifyItem(
-  item: CommandCenterItem,
-  context?: {
-    emailContent?: { subject?: string; body?: string; is_reply?: boolean; received_at?: string };
-    deal?: DealContext & { value_percentile?: number };
-    champion?: ContactContext;
-    engagement?: EngagementContext;
-    commitment?: CommitmentContext;
-    urgencyKeywordsInNotes?: boolean;
-    meetingEndedHoursAgo?: number;
-    followUpSent?: boolean;
-    isStrategicAccount?: boolean;
-    hasCsuiteContact?: boolean;
-  }
-): Promise<TierResult> {
-  const ctx = context || {};
-
-  // Try Tier 1
-  const tier1 = await detectTier1(item, ctx.emailContent);
-  if (tier1) return tier1;
-
-  // Try Tier 2
-  const tier2 = await detectTier2(
-    item,
-    ctx.deal,
-    ctx.champion,
-    ctx.engagement,
-    ctx.urgencyKeywordsInNotes
-  );
-  if (tier2) return tier2;
-
-  // Try Tier 3
-  const tier3 = await detectTier3(
-    item,
-    ctx.commitment,
-    ctx.meetingEndedHoursAgo,
-    ctx.followUpSent
-  );
-  if (tier3) return tier3;
-
-  // Try Tier 4
-  const tier4 = await detectTier4(
-    item,
-    ctx.deal,
-    ctx.isStrategicAccount,
-    ctx.hasCsuiteContact
-  );
-  if (tier4) return tier4;
-
-  // Default: Tier 5
-  return {
-    tier: 5,
-    trigger: 'deal_stale', // Generic
-    why_now: null,
-  };
-}
 
 /**
  * Classify all pending items for a user
@@ -437,7 +704,7 @@ export async function classifyItem(
 export async function classifyAllItems(userId: string): Promise<number> {
   const supabase = createAdminClient();
 
-  // Get all pending items
+  // Get all pending items that need classification (no tier set yet)
   const { data: items, error } = await supabase
     .from('command_center_items')
     .select(`
@@ -453,6 +720,8 @@ export async function classifyAllItems(userId: string): Promise<number> {
     console.error('[TierDetection] Error fetching items:', error);
     return 0;
   }
+
+  let classified = 0;
 
   for (const item of items) {
     // Build context from joined data
@@ -490,7 +759,7 @@ export async function classifyAllItems(userId: string): Promise<number> {
     });
 
     // Update item
-    await supabase
+    const { error: updateError } = await supabase
       .from('command_center_items')
       .update({
         tier: result.tier,
@@ -505,9 +774,13 @@ export async function classifyAllItems(userId: string): Promise<number> {
         why_now: result.why_now,
       })
       .eq('id', item.id);
+
+    if (!updateError) {
+      classified++;
+    }
   }
 
-  return items.length;
+  return classified;
 }
 
 // ============================================
@@ -518,14 +791,12 @@ export async function classifyAllItems(userId: string): Promise<number> {
  * Sort Tier 1 items: SLA breach severity, then recency
  */
 export function sortTier1(a: CommandCenterItem, b: CommandCenterItem): number {
-  // Breached first, then warning, then on_track
   const statusOrder = { breached: 0, warning: 1, on_track: 2 };
   const aStatus = statusOrder[a.sla_status || 'on_track'];
   const bStatus = statusOrder[b.sla_status || 'on_track'];
 
   if (aStatus !== bStatus) return aStatus - bStatus;
 
-  // Then by recency (most recent first)
   const aReceived = new Date(a.received_at || a.created_at).getTime();
   const bReceived = new Date(b.received_at || b.created_at).getTime();
   return bReceived - aReceived;
@@ -605,31 +876,12 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function extractQuestion(content: string): string | null {
-  // Find the first sentence that ends with ?
-  const sentences = content.split(/[.!?]+/);
-  for (let i = 0; i < sentences.length; i++) {
-    if (content.indexOf(sentences[i]) !== -1) {
-      const idx = content.indexOf(sentences[i]) + sentences[i].length;
-      if (content[idx] === '?') {
-        const question = sentences[i].trim();
-        // Return if it's a reasonable length
-        if (question.length > 10 && question.length < 100) {
-          return question + '?';
-        }
-      }
-    }
-  }
-  return null;
-}
-
 function parsePromiseDate(when?: string, meetingDate?: string): string | null {
   if (!when) return null;
 
   const lower = when.toLowerCase();
   const baseDate = meetingDate ? new Date(meetingDate) : new Date();
 
-  // Handle common patterns
   if (lower.includes('today')) {
     return baseDate.toISOString();
   }
@@ -638,7 +890,6 @@ function parsePromiseDate(when?: string, meetingDate?: string): string | null {
     return baseDate.toISOString();
   }
   if (lower.includes('end of week') || lower.includes('eow') || lower.includes('by friday')) {
-    // Find next Friday
     const daysUntilFriday = (5 - baseDate.getDay() + 7) % 7 || 7;
     baseDate.setDate(baseDate.getDate() + daysUntilFriday);
     return baseDate.toISOString();
@@ -687,4 +938,11 @@ function isCsuite(title?: string): boolean {
     lower.includes('owner') ||
     lower.includes('founder')
   );
+}
+
+/**
+ * Get tier configuration for a trigger type
+ */
+export function getTierForTrigger(trigger: TierTrigger): TierConfig | undefined {
+  return COMMUNICATION_TYPE_TIERS[trigger];
 }

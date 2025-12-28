@@ -19,6 +19,15 @@ import {
   Zap,
   Eye,
   CalendarClock,
+  MessageSquareReply,
+  Reply,
+  FileText,
+  Video,
+  UserX,
+  MoreHorizontal,
+  Building2,
+  Calendar,
+  Package,
 } from 'lucide-react';
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
@@ -32,6 +41,12 @@ import {
   SEVERITY_LEVELS,
   ATTENTION_LEVELS,
 } from '@/types/operatingLayer';
+import { TranscriptPreviewModal } from '@/components/commandCenter/TranscriptPreviewModal';
+import { ComposeModal } from '@/components/inbox/ComposeModal';
+import { CommunicationPreviewModal } from './CommunicationPreviewModal';
+import { AssignCompanyModal } from './AssignCompanyModal';
+import { ScheduleMeetingModal } from './ScheduleMeetingModal';
+import { ManageProductsModal } from './ManageProductsModal';
 
 // ============================================
 // DRAFT MODAL TYPES
@@ -45,10 +60,12 @@ interface DraftData {
     company_name: string;
     contact_name: string | null;
     contact_email: string | null;
-    product_name: string | null;
-    stage_name: string | null;
-    flag_type: AttentionFlagType;
-    reason: string;
+    product_name?: string | null;
+    stage_name?: string | null;
+    flag_type?: AttentionFlagType;
+    reason?: string;
+    original_subject?: string | null;
+    original_preview?: string | null;
   };
 }
 
@@ -58,6 +75,7 @@ interface DraftModalState {
   data: DraftData | null;
   error: string | null;
   flagId: string | null;
+  communicationId: string | null; // For communication draft replies
 }
 
 // ============================================
@@ -186,6 +204,87 @@ function SnoozeDropdown({ flagId, onSnooze, disabled }: SnoozeDropdownProps) {
 }
 
 // ============================================
+// ACTION DROPDOWN
+// ============================================
+
+interface ActionDropdownProps {
+  item: DailyDriverItem;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onAssignCompany: () => void;
+  onScheduleMeeting: () => void;
+  onManageProducts: () => void;
+}
+
+function ActionDropdown({
+  item,
+  isOpen,
+  onToggle,
+  onClose,
+  onAssignCompany,
+  onScheduleMeeting,
+  onManageProducts,
+}: ActionDropdownProps) {
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        className={cn(
+          'inline-flex items-center justify-center w-7 h-7 rounded',
+          'text-gray-400 hover:text-gray-600 hover:bg-gray-100',
+          'transition-colors',
+          isOpen && 'bg-gray-100 text-gray-600'
+        )}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {isOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            onClick={onClose}
+          />
+          <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+            <button
+              onClick={() => {
+                onAssignCompany();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Building2 className="h-4 w-4 text-gray-400" />
+              {item.company_id ? 'Change Company' : 'Assign Company'}
+            </button>
+            <button
+              onClick={() => {
+                onScheduleMeeting();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Calendar className="h-4 w-4 text-gray-400" />
+              Schedule Meeting
+            </button>
+            <button
+              onClick={() => {
+                onManageProducts();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Package className="h-4 w-4 text-gray-400" />
+              Manage Products
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // DRAFT FOLLOW-UP MODAL
 // ============================================
 
@@ -195,11 +294,15 @@ interface DraftModalProps {
   onMarkSent: (flagId: string, data: { channel: string; to: string; subject: string; body: string; next_step_days: number }) => Promise<void>;
   onResolve: (flagId: string) => Promise<void>;
   onSendEmail: (flagId: string, data: { to: string; subject: string; body: string }) => Promise<void>;
+  onMarkCommunicationResponded?: (communicationId: string) => Promise<void>;
 }
 
-function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail }: DraftModalProps) {
+function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMarkCommunicationResponded }: DraftModalProps) {
   const [copiedField, setCopiedField] = useState<'subject' | 'body' | 'all' | null>(null);
-  const [actionLoading, setActionLoading] = useState<'markSent' | 'resolve' | 'send' | null>(null);
+  const [actionLoading, setActionLoading] = useState<'markSent' | 'resolve' | 'send' | 'markResponded' | null>(null);
+
+  // Determine if this is a communication draft (no flagId, has communicationId)
+  const isCommunicationDraft = !state.flagId && !!state.communicationId;
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Editable fields
@@ -227,11 +330,13 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail }: Draf
   }, [state.data, state.isOpen]);
 
   const handleSendEmail = async () => {
-    if (!state.flagId || !editedTo || !editedSubject || !editedBody) return;
+    if (!editedTo || !editedSubject || !editedBody) return;
+    // For communication drafts, flagId is null - pass empty string to trigger special handling
+    if (!state.flagId && !state.communicationId) return;
     setActionLoading('send');
     setActionError(null);
     try {
-      await onSendEmail(state.flagId, {
+      await onSendEmail(state.flagId || '', {
         to: editedTo,
         subject: editedSubject,
         body: editedBody,
@@ -270,6 +375,20 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail }: Draf
       await onResolve(state.flagId);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to resolve');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // For communication drafts: mark as responded without sending
+  const handleMarkResponded = async () => {
+    if (!state.communicationId || !onMarkCommunicationResponded) return;
+    setActionLoading('markResponded');
+    setActionError(null);
+    try {
+      await onMarkCommunicationResponded(state.communicationId);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to mark as responded');
     } finally {
       setActionLoading(null);
     }
@@ -508,51 +627,82 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail }: Draf
                     )}
                   </button>
 
-                  {/* Mark Sent (for manual send outside CRM) */}
-                  <button
-                    onClick={handleMarkSent}
-                    disabled={actionLoading !== null}
-                    className={cn(
-                      'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
-                      'bg-gray-100 text-gray-700 hover:bg-gray-200',
-                      'dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
-                      'disabled:opacity-50 disabled:cursor-not-allowed',
-                      'transition-colors'
-                    )}
-                  >
-                    {actionLoading === 'markSent' ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="h-4 w-4" />
-                        Mark Sent
-                      </>
-                    )}
-                  </button>
+                  {/* Mark Sent (for flags - manual send outside CRM) */}
+                  {!isCommunicationDraft && (
+                    <button
+                      onClick={handleMarkSent}
+                      disabled={actionLoading !== null}
+                      className={cn(
+                        'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
+                        'bg-gray-100 text-gray-700 hover:bg-gray-200',
+                        'dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                        'transition-colors'
+                      )}
+                    >
+                      {actionLoading === 'markSent' ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Mark Sent
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Mark Responded (for communication drafts - mark as done without sending) */}
+                  {isCommunicationDraft && (
+                    <button
+                      onClick={handleMarkResponded}
+                      disabled={actionLoading !== null}
+                      className={cn(
+                        'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
+                        'bg-gray-100 text-gray-700 hover:bg-gray-200',
+                        'dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                        'transition-colors'
+                      )}
+                    >
+                      {actionLoading === 'markResponded' ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Mark Done
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Resolve without scheduling */}
-                  <button
-                    onClick={handleResolveOnly}
-                    disabled={actionLoading !== null}
-                    className={cn(
-                      'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
-                      'text-gray-500 hover:text-gray-700 hover:bg-gray-100',
-                      'dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800',
-                      'disabled:opacity-50 disabled:cursor-not-allowed',
-                      'transition-colors'
-                    )}
-                  >
-                    {actionLoading === 'resolve' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      'Resolve Only'
-                    )}
-                  </button>
+                  {/* Resolve without scheduling (for flags only) */}
+                  {!isCommunicationDraft && (
+                    <button
+                      onClick={handleResolveOnly}
+                      disabled={actionLoading !== null}
+                      className={cn(
+                        'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
+                        'text-gray-500 hover:text-gray-700 hover:bg-gray-100',
+                        'dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                        'transition-colors'
+                      )}
+                    >
+                      {actionLoading === 'resolve' ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        'Resolve Only'
+                      )}
+                    </button>
+                  )}
 
                   {/* Send Email (primary) */}
                   <button
@@ -783,7 +933,69 @@ export function DailyDriverView() {
     data: null,
     error: null,
     flagId: null,
+    communicationId: null,
   });
+
+  // Source preview modal state (for viewing the triggering email/transcript)
+  const [sourcePreview, setSourcePreview] = useState<{
+    isOpen: boolean;
+    type: 'email' | 'transcript' | null;
+    id: string | null;
+  }>({
+    isOpen: false,
+    type: null,
+    id: null,
+  });
+
+  // Compose modal state (for Reply button)
+  const [composeModal, setComposeModal] = useState<{
+    isOpen: boolean;
+    toEmail?: string;
+    toName?: string;
+    subject?: string;
+    contactId?: string;
+    companyId?: string;
+  }>({
+    isOpen: false,
+  });
+
+  // Action modals state
+  const [assignCompanyModal, setAssignCompanyModal] = useState<{
+    isOpen: boolean;
+    currentCompanyId: string | null;
+    currentCompanyName: string | null;
+    communicationId?: string;
+  }>({
+    isOpen: false,
+    currentCompanyId: null,
+    currentCompanyName: null,
+  });
+
+  const [scheduleMeetingModal, setScheduleMeetingModal] = useState<{
+    isOpen: boolean;
+    companyId: string;
+    companyName: string;
+    contactName?: string | null;
+    contactEmail?: string | null;
+    sourceCommunicationId?: string | null;
+  }>({
+    isOpen: false,
+    companyId: '',
+    companyName: '',
+  });
+
+  const [manageProductsModal, setManageProductsModal] = useState<{
+    isOpen: boolean;
+    companyId: string;
+    companyName: string;
+  }>({
+    isOpen: false,
+    companyId: '',
+    companyName: '',
+  });
+
+  // Action dropdown state (which item has dropdown open)
+  const [openActionDropdown, setOpenActionDropdown] = useState<string | null>(null);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -846,6 +1058,7 @@ export function DailyDriverView() {
       data: null,
       error: null,
       flagId,
+      communicationId: null,
     });
 
     try {
@@ -888,7 +1101,56 @@ export function DailyDriverView() {
       data: null,
       error: null,
       flagId: null,
+      communicationId: null,
     });
+  };
+
+  // Draft reply handler for communications (needs reply items)
+  const handleDraftReply = async (communicationId: string) => {
+    setDraftModal({
+      isOpen: true,
+      isLoading: true,
+      data: null,
+      error: null,
+      flagId: null,
+      communicationId,
+    });
+
+    try {
+      const res = await fetch(`/api/communications/${communicationId}/draft-reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to generate draft');
+      }
+
+      setDraftModal((prev) => ({
+        ...prev,
+        isLoading: false,
+        data: {
+          subject: json.draft.subject,
+          body: json.draft.body,
+          channel: json.draft.channel,
+          context: {
+            company_name: json.context.company_name,
+            contact_name: json.context.contact_name,
+            contact_email: json.context.contact_email,
+            original_subject: json.context.original_subject,
+            original_preview: json.context.original_preview,
+          },
+        },
+      }));
+    } catch (err) {
+      setDraftModal((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to generate draft',
+      }));
+    }
   };
 
   // Mark sent + resolve handler (for modal)
@@ -934,6 +1196,32 @@ export function DailyDriverView() {
     flagId: string,
     data: { to: string; subject: string; body: string }
   ) => {
+    // Check if this is a communication draft (not a flag draft)
+    if (draftModal.communicationId && !flagId) {
+      // Handle communication draft send
+      const res = await fetch('/api/communications/send-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communicationId: draftModal.communicationId,
+          ...data,
+        }),
+      });
+
+      const responseData = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(responseData.error || 'Failed to send email');
+      }
+
+      // Success - close modal, refresh list, show toast
+      closeDraftModal();
+      toast.success('Reply sent successfully');
+      fetchData();
+      return;
+    }
+
+    // Handle flag draft send (original behavior)
     const res = await fetch(`/api/attention-flags/${flagId}/send-email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -949,6 +1237,83 @@ export function DailyDriverView() {
     // Success - close modal, refresh list, show toast
     closeDraftModal();
     toast.success('Email sent and flag resolved');
+    fetchData();
+  };
+
+  // Mark communication as responded handler (for draft modal)
+  const handleMarkCommunicationResponded = async (communicationId: string) => {
+    const res = await fetch(`/api/communications/${communicationId}/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ responded_at: new Date().toISOString() }),
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to mark as responded');
+    }
+
+    // Success - close modal, refresh list, show toast
+    closeDraftModal();
+    toast.success('Marked as responded');
+    fetchData();
+  };
+
+  // Open source preview modal (for viewing the email/transcript that triggered a flag)
+  const openSourcePreview = (item: DailyDriverItem) => {
+    // Determine source type and ID
+    if (item.source_type === 'communication' && item.source_id) {
+      // For communication sources, we use the source_id as conversation ID
+      setSourcePreview({
+        isOpen: true,
+        type: 'email',
+        id: item.source_id,
+      });
+    } else if (item.communication_id) {
+      // For needsReply items, use communication_id
+      setSourcePreview({
+        isOpen: true,
+        type: 'email',
+        id: item.communication_id,
+      });
+    } else if (item.flag_type === 'NO_NEXT_STEP_AFTER_MEETING' && item.source_id) {
+      // For transcript-related flags
+      setSourcePreview({
+        isOpen: true,
+        type: 'transcript',
+        id: item.source_id,
+      });
+    }
+  };
+
+  // Close source preview modal
+  const closeSourcePreview = () => {
+    setSourcePreview({
+      isOpen: false,
+      type: null,
+      id: null,
+    });
+  };
+
+  // Open compose modal for reply
+  const openComposeForReply = (item: DailyDriverItem) => {
+    setComposeModal({
+      isOpen: true,
+      toEmail: item.contact_email || undefined,
+      toName: item.contact_name || undefined,
+      subject: item.communication_subject ? `Re: ${item.communication_subject}` : undefined,
+      contactId: item.contact_id || undefined,
+      companyId: item.company_id,
+    });
+  };
+
+  // Close compose modal
+  const closeComposeModal = () => {
+    setComposeModal({ isOpen: false });
+  };
+
+  // Handle compose sent successfully
+  const handleComposeSent = () => {
+    toast.success('Reply sent successfully');
     fetchData();
   };
 
@@ -974,6 +1339,20 @@ Next Steps:
     const flagId = item.attention_flag_id;
     const actionState = flagId ? actionStates[flagId] : undefined;
     const isActionLoading = actionState === 'loading';
+
+    // Determine if we have a viewable source
+    const hasViewableSource =
+      (item.source_type === 'communication' && item.source_id) ||
+      item.communication_id ||
+      (item.flag_type === 'NO_NEXT_STEP_AFTER_MEETING' && item.source_id);
+
+    // Get source icon
+    const getSourceIcon = () => {
+      if (item.flag_type === 'NO_NEXT_STEP_AFTER_MEETING') {
+        return <Video className="h-3 w-3" />;
+      }
+      return <Mail className="h-3 w-3" />;
+    };
 
     return (
       <div className="flex items-start gap-4">
@@ -1018,17 +1397,22 @@ Next Steps:
             )}
           </div>
 
-          {/* Reason + recommended action */}
-          <div className="mt-1 space-y-0.5">
-            {item.reason && (
-              <p className="text-sm text-gray-600 line-clamp-1">{item.reason}</p>
-            )}
-            {item.recommended_action && (
-              <p className="text-xs text-gray-500 line-clamp-1">
-                <span className="font-medium">Action:</span> {item.recommended_action}
-              </p>
-            )}
-          </div>
+          {/* Reason - more prominent with background */}
+          {item.reason && (
+            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800 dark:text-amber-200">{item.reason}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Recommended action */}
+          {item.recommended_action && (
+            <p className="mt-1.5 text-xs text-gray-500 line-clamp-1">
+              <span className="font-medium">Recommended:</span> {item.recommended_action}
+            </p>
+          )}
 
           {/* Timestamp */}
           <p className="mt-1 text-xs text-gray-400">
@@ -1038,6 +1422,21 @@ Next Steps:
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* View Source button */}
+          {hasViewableSource && (
+            <button
+              onClick={() => openSourcePreview(item)}
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
+                'bg-purple-100 text-purple-700 hover:bg-purple-200',
+                'transition-colors'
+              )}
+            >
+              {getSourceIcon()}
+              View Source
+            </button>
+          )}
+
           {flagId && (
             <>
               <button
@@ -1073,6 +1472,38 @@ Next Steps:
             <ExternalLink className="h-3 w-3" />
             Open
           </Link>
+
+          <ActionDropdown
+            item={item}
+            isOpen={openActionDropdown === item.id}
+            onToggle={() => setOpenActionDropdown(openActionDropdown === item.id ? null : item.id)}
+            onClose={() => setOpenActionDropdown(null)}
+            onAssignCompany={() => {
+              setAssignCompanyModal({
+                isOpen: true,
+                currentCompanyId: item.company_id,
+                currentCompanyName: item.company_name,
+                communicationId: item.communication_id || undefined,
+              });
+            }}
+            onScheduleMeeting={() => {
+              setScheduleMeetingModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+                contactName: item.contact_name,
+                contactEmail: item.contact_email,
+                sourceCommunicationId: item.communication_id || null,
+              });
+            }}
+            onManageProducts={() => {
+              setManageProductsModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+              });
+            }}
+          />
         </div>
       </div>
     );
@@ -1084,6 +1515,20 @@ Next Steps:
     const actionState = flagId ? actionStates[flagId] : undefined;
     const isActionLoading = actionState === 'loading';
     const isDraftLoading = draftModal.isLoading && draftModal.flagId === flagId;
+
+    // Determine if we have a viewable source
+    const hasViewableSource =
+      (item.source_type === 'communication' && item.source_id) ||
+      item.communication_id ||
+      (item.flag_type === 'NO_NEXT_STEP_AFTER_MEETING' && item.source_id);
+
+    // Get source icon
+    const getSourceIcon = () => {
+      if (item.flag_type === 'NO_NEXT_STEP_AFTER_MEETING') {
+        return <Video className="h-3 w-3" />;
+      }
+      return <Mail className="h-3 w-3" />;
+    };
 
     return (
       <div className="flex items-start gap-4">
@@ -1128,17 +1573,22 @@ Next Steps:
             )}
           </div>
 
-          {/* Reason + recommended action */}
-          <div className="mt-1 space-y-0.5">
-            {item.reason && (
-              <p className="text-sm text-gray-600 line-clamp-1">{item.reason}</p>
-            )}
-            {item.recommended_action && (
-              <p className="text-xs text-gray-500 line-clamp-1">
-                <span className="font-medium">Action:</span> {item.recommended_action}
-              </p>
-            )}
-          </div>
+          {/* Reason - more prominent with background */}
+          {item.reason && (
+            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800 dark:text-amber-200">{item.reason}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Recommended action */}
+          {item.recommended_action && (
+            <p className="mt-1.5 text-xs text-gray-500 line-clamp-1">
+              <span className="font-medium">Recommended:</span> {item.recommended_action}
+            </p>
+          )}
 
           {/* Timestamp */}
           <p className="mt-1 text-xs text-gray-400">
@@ -1148,6 +1598,21 @@ Next Steps:
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* View Source button */}
+          {hasViewableSource && (
+            <button
+              onClick={() => openSourcePreview(item)}
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
+                'bg-purple-100 text-purple-700 hover:bg-purple-200',
+                'transition-colors'
+              )}
+            >
+              {getSourceIcon()}
+              View Source
+            </button>
+          )}
+
           {flagId && (
             <>
               {/* Draft Follow-up button */}
@@ -1202,6 +1667,38 @@ Next Steps:
             <ExternalLink className="h-3 w-3" />
             Open
           </Link>
+
+          <ActionDropdown
+            item={item}
+            isOpen={openActionDropdown === item.id}
+            onToggle={() => setOpenActionDropdown(openActionDropdown === item.id ? null : item.id)}
+            onClose={() => setOpenActionDropdown(null)}
+            onAssignCompany={() => {
+              setAssignCompanyModal({
+                isOpen: true,
+                currentCompanyId: item.company_id,
+                currentCompanyName: item.company_name,
+                communicationId: item.communication_id || undefined,
+              });
+            }}
+            onScheduleMeeting={() => {
+              setScheduleMeetingModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+                contactName: item.contact_name,
+                contactEmail: item.contact_email,
+                sourceCommunicationId: item.communication_id || null,
+              });
+            }}
+            onManageProducts={() => {
+              setManageProductsModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+              });
+            }}
+          />
         </div>
       </div>
     );
@@ -1306,13 +1803,274 @@ Next Steps:
             <ExternalLink className="h-3 w-3" />
             Open
           </Link>
+
+          <ActionDropdown
+            item={item}
+            isOpen={openActionDropdown === item.id}
+            onToggle={() => setOpenActionDropdown(openActionDropdown === item.id ? null : item.id)}
+            onClose={() => setOpenActionDropdown(null)}
+            onAssignCompany={() => {
+              setAssignCompanyModal({
+                isOpen: true,
+                currentCompanyId: item.company_id,
+                currentCompanyName: item.company_name,
+                communicationId: item.communication_id || undefined,
+              });
+            }}
+            onScheduleMeeting={() => {
+              setScheduleMeetingModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+                contactName: item.contact_name,
+                contactEmail: item.contact_email,
+                sourceCommunicationId: item.communication_id || null,
+              });
+            }}
+            onManageProducts={() => {
+              setManageProductsModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+              });
+            }}
+          />
         </div>
       </div>
     );
   };
 
+  // Render a needs reply row (from response queue)
+  const renderNeedsReplyRow = (item: DailyDriverItem) => {
+    const isOverdue = item.response_due_by && new Date(item.response_due_by) < new Date();
+    const hasEmail = item.contact_email && item.contact_email.includes('@');
+    const isDraftLoading = draftModal.isLoading && draftModal.communicationId === item.communication_id;
+
+    return (
+      <div className="flex items-start justify-between gap-4">
+        {/* Left: Communication info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <Reply className="h-4 w-4 text-blue-500 flex-shrink-0" />
+            <Link
+              href={`/companies/${item.company_id}`}
+              className="text-sm font-medium text-gray-900 hover:text-blue-600 truncate"
+            >
+              {item.company_name}
+            </Link>
+            {item.contact_name && (
+              <span className="text-xs text-gray-500">
+                from {item.contact_name}
+              </span>
+            )}
+            {isOverdue && (
+              <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700">
+                Overdue
+              </span>
+            )}
+          </div>
+
+          {item.communication_subject && (
+            <p className="text-sm text-gray-700 mb-1 truncate">
+              Re: {item.communication_subject}
+            </p>
+          )}
+
+          {item.communication_preview && (
+            <p className="text-xs text-gray-500 line-clamp-2">
+              {item.communication_preview}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3 mt-2">
+            {item.contact_email && (
+              <span className="text-xs text-gray-500">
+                {item.contact_email}
+              </span>
+            )}
+            {!hasEmail && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                <UserX className="h-3 w-3" />
+                No email on file - check source
+              </span>
+            )}
+            {item.response_due_by && (
+              <span className={cn(
+                'text-xs',
+                isOverdue ? 'text-red-600 font-medium' : 'text-gray-500'
+              )}>
+                Due: {formatRelativeTime(item.response_due_by)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* View Source button - view the original email */}
+          {item.communication_id && (
+            <button
+              onClick={() => openSourcePreview(item)}
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
+                'bg-purple-100 text-purple-700 hover:bg-purple-200',
+                'transition-colors'
+              )}
+            >
+              <Mail className="h-3 w-3" />
+              View Email
+            </button>
+          )}
+
+          {/* Draft Reply button - generates AI draft */}
+          {item.communication_id && (
+            <button
+              onClick={() => handleDraftReply(item.communication_id!)}
+              disabled={isDraftLoading}
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
+                'bg-blue-100 text-blue-700 hover:bg-blue-200',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+                'transition-colors'
+              )}
+            >
+              {isDraftLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <FileText className="h-3 w-3" />
+              )}
+              Draft Reply
+            </button>
+          )}
+
+          {/* Reply button - always active, opens compose modal */}
+          <button
+            onClick={() => openComposeForReply(item)}
+            className={cn(
+              'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded',
+              'bg-blue-600 text-white hover:bg-blue-700',
+              'transition-colors'
+            )}
+          >
+            <Send className="h-3 w-3" />
+            Reply
+          </button>
+
+          {item.communication_id && (
+            <button
+              onClick={() => handleMarkResponded(item)}
+              disabled={actionStates[item.id] === 'loading'}
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
+                actionStates[item.id] === 'success'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+                'disabled:opacity-50',
+                'transition-colors'
+              )}
+            >
+              {actionStates[item.id] === 'loading' ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : actionStates[item.id] === 'success' ? (
+                <Check className="h-3 w-3" />
+              ) : (
+                <Check className="h-3 w-3" />
+              )}
+              {actionStates[item.id] === 'success' ? 'Done' : 'Mark Done'}
+            </button>
+          )}
+
+          <Link
+            href={`/companies/${item.company_id}`}
+            className={cn(
+              'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
+              'bg-gray-100 text-gray-700 hover:bg-gray-200',
+              'transition-colors'
+            )}
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open
+          </Link>
+
+          <ActionDropdown
+            item={item}
+            isOpen={openActionDropdown === item.id}
+            onToggle={() => setOpenActionDropdown(openActionDropdown === item.id ? null : item.id)}
+            onClose={() => setOpenActionDropdown(null)}
+            onAssignCompany={() => {
+              setAssignCompanyModal({
+                isOpen: true,
+                currentCompanyId: item.company_id,
+                currentCompanyName: item.company_name,
+                communicationId: item.communication_id || undefined,
+              });
+            }}
+            onScheduleMeeting={() => {
+              setScheduleMeetingModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+                contactName: item.contact_name,
+                contactEmail: item.contact_email,
+                sourceCommunicationId: item.communication_id || null,
+              });
+            }}
+            onManageProducts={() => {
+              setManageProductsModal({
+                isOpen: true,
+                companyId: item.company_id,
+                companyName: item.company_name,
+              });
+            }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // Handle marking a communication as responded
+  const handleMarkResponded = async (item: DailyDriverItem) => {
+    if (!item.communication_id) return;
+
+    setActionStates((prev) => ({ ...prev, [item.id]: 'loading' }));
+
+    try {
+      const res = await fetch(`/api/communications/${item.communication_id}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responded_at: new Date().toISOString() }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to mark as responded');
+      }
+
+      setActionStates((prev) => ({ ...prev, [item.id]: 'success' }));
+      toast.success('Marked as responded');
+
+      // Refresh data
+      setTimeout(() => {
+        fetchData();
+        setActionStates((prev) => {
+          const newState = { ...prev };
+          delete newState[item.id];
+          return newState;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('Error marking as responded:', error);
+      setActionStates((prev) => ({ ...prev, [item.id]: 'error' }));
+      toast.error('Failed to mark as responded');
+    }
+  };
+
   // Unified item renderer - determines which style to use based on item type
   const renderUnifiedItem = (item: DailyDriverItem) => {
+    // Check if it's a needs reply item (from response queue)
+    if (item.communication_id) {
+      return renderNeedsReplyRow(item);
+    }
+
     // Check if it's a ready-to-close item (has close_confidence or close_ready, no flag)
     if (!item.attention_flag_id && (item.close_confidence !== null || item.close_ready)) {
       return renderCloseRow(item);
@@ -1377,6 +2135,12 @@ Next Steps:
             <span className="text-amber-600">{data.counts.soon} soon</span>
             <span className="mx-1.5">·</span>
             <span className="text-gray-400">{data.counts.monitor} monitor</span>
+            {data.counts.needsReply > 0 && (
+              <>
+                <span className="mx-2">|</span>
+                <span className="text-blue-600">{data.counts.needsReply} replies needed</span>
+              </>
+            )}
           </p>
         </div>
         <button
@@ -1425,6 +2189,84 @@ Next Steps:
         onMarkSent={handleMarkSent}
         onResolve={handleResolveFromModal}
         onSendEmail={handleSendEmailFromModal}
+        onMarkCommunicationResponded={handleMarkCommunicationResponded}
+      />
+
+      {/* Source Preview Modals */}
+      {sourcePreview.type === 'email' && sourcePreview.id && (
+        <CommunicationPreviewModal
+          isOpen={sourcePreview.isOpen}
+          onClose={closeSourcePreview}
+          communicationId={sourcePreview.id}
+          onReply={(email, subject) => {
+            closeSourcePreview();
+            setComposeModal({
+              isOpen: true,
+              toEmail: email,
+              subject: subject ? `Re: ${subject}` : undefined,
+            });
+          }}
+        />
+      )}
+
+      {sourcePreview.type === 'transcript' && sourcePreview.id && (
+        <TranscriptPreviewModal
+          isOpen={sourcePreview.isOpen}
+          onClose={closeSourcePreview}
+          meetingId={sourcePreview.id}
+        />
+      )}
+
+      {/* Compose Modal for Reply */}
+      <ComposeModal
+        isOpen={composeModal.isOpen}
+        onClose={closeComposeModal}
+        onSent={handleComposeSent}
+        toEmail={composeModal.toEmail}
+        toName={composeModal.toName}
+        subject={composeModal.subject}
+        contactId={composeModal.contactId}
+        companyId={composeModal.companyId}
+      />
+
+      {/* Assign Company Modal */}
+      <AssignCompanyModal
+        isOpen={assignCompanyModal.isOpen}
+        onClose={() => setAssignCompanyModal({ isOpen: false, currentCompanyId: null, currentCompanyName: null })}
+        currentCompanyId={assignCompanyModal.currentCompanyId}
+        currentCompanyName={assignCompanyModal.currentCompanyName}
+        communicationId={assignCompanyModal.communicationId}
+        onAssigned={(companyId, companyName) => {
+          toast.success(`Assigned to ${companyName}`);
+          fetchData();
+        }}
+      />
+
+      {/* Schedule Meeting Modal */}
+      <ScheduleMeetingModal
+        isOpen={scheduleMeetingModal.isOpen}
+        onClose={() => setScheduleMeetingModal({ isOpen: false, companyId: '', companyName: '' })}
+        companyId={scheduleMeetingModal.companyId}
+        companyName={scheduleMeetingModal.companyName}
+        contactName={scheduleMeetingModal.contactName}
+        contactEmail={scheduleMeetingModal.contactEmail}
+        sourceCommunicationId={scheduleMeetingModal.sourceCommunicationId}
+        onScheduled={() => {
+          toast.success('Scheduling request created');
+          fetchData();
+        }}
+      />
+
+      {/* Manage Products Modal */}
+      <ManageProductsModal
+        isOpen={manageProductsModal.isOpen}
+        onClose={() => setManageProductsModal({ isOpen: false, companyId: '', companyName: '' })}
+        companyId={manageProductsModal.companyId}
+        companyName={manageProductsModal.companyName}
+        onUpdated={() => {
+          toast.success('Products updated');
+          fetchData();
+        }}
       />
     </div>
   );

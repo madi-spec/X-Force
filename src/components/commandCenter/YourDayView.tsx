@@ -25,6 +25,13 @@ import { EmailComposerPopout } from './EmailComposerPopout';
 import { MeetingPrepPopout } from './MeetingPrepPopout';
 import { LinkDealPopout } from './LinkDealPopout';
 import { LinkCompanyPopout } from './LinkCompanyPopout';
+import { EmailDraftModal } from './EmailDraftModal';
+import { EmailPreviewModal } from './EmailPreviewModal';
+import { TranscriptPreviewModal } from './TranscriptPreviewModal';
+import { AddContextModal } from './AddContextModal';
+import { ManualReplyPopout } from './ManualReplyPopout';
+import { QuickBookModal } from '@/components/scheduler/QuickBookModal';
+import type { EmailDraft } from '@/types/commandCenter';
 import {
   DailyPlan,
   CommandCenterItem,
@@ -34,6 +41,47 @@ import {
   TIER_CONFIGS,
   PriorityTier,
 } from '@/types/commandCenter';
+import { AttentionLevel } from '@/types/operatingLayer';
+
+// ============================================
+// ATTENTION LEVEL CONFIGURATION
+// ============================================
+
+interface AttentionLevelConfig {
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+}
+
+const ATTENTION_LEVEL_CONFIGS: Record<AttentionLevel, AttentionLevelConfig> = {
+  now: {
+    name: 'Act Now',
+    description: 'Someone is waiting on you',
+    icon: '🔴',
+    color: 'text-red-700',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-200',
+  },
+  soon: {
+    name: 'This Week',
+    description: 'Action needed soon',
+    icon: '🟡',
+    color: 'text-amber-700',
+    bgColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+  },
+  monitor: {
+    name: 'Keep Watching',
+    description: 'Monitor for changes',
+    icon: '🔵',
+    color: 'text-blue-700',
+    bgColor: 'bg-blue-50',
+    borderColor: 'border-blue-200',
+  },
+};
 
 // ============================================
 // TYPES
@@ -111,10 +159,20 @@ export function YourDayView({ className }: YourDayViewProps) {
 
   // Popout state
   const [schedulerItemId, setSchedulerItemId] = useState<string | null>(null);
+  const [quickBookItemId, setQuickBookItemId] = useState<string | null>(null);
   const [emailItemId, setEmailItemId] = useState<string | null>(null);
+  const [manualReplyItemId, setManualReplyItemId] = useState<string | null>(null);
   const [meetingPrepId, setMeetingPrepId] = useState<string | null>(null);
   const [linkDealItemId, setLinkDealItemId] = useState<string | null>(null);
   const [linkCompanyItemId, setLinkCompanyItemId] = useState<string | null>(null);
+
+  // Modal state for rich context features
+  const [draftModalItem, setDraftModalItem] = useState<{ id: string; draft: EmailDraft; targetName?: string; targetEmail?: string } | null>(null);
+  const [addContextItemId, setAddContextItemId] = useState<string | null>(null);
+
+  // Source preview modal state
+  const [emailPreviewId, setEmailPreviewId] = useState<string | null>(null);
+  const [transcriptPreviewId, setTranscriptPreviewId] = useState<string | null>(null);
 
   // Fetch data
   const fetchData = useCallback(async (showRefreshing = false) => {
@@ -189,6 +247,48 @@ export function YourDayView({ className }: YourDayViewProps) {
     await fetchData();
   };
 
+  // Handler for viewing email draft
+  const handleViewDraft = (id: string, draft: EmailDraft) => {
+    const item = items.find(i => i.id === id);
+    setDraftModalItem({
+      id,
+      draft,
+      targetName: item?.target_name || undefined,
+      targetEmail: item?.contact?.email || undefined,
+    });
+  };
+
+  // Handler for adding context
+  const handleAddContext = async (params: { note: string; contextType: string; triggerReanalysis: boolean }) => {
+    if (!addContextItemId) return;
+
+    const item = items.find(i => i.id === addContextItemId);
+    if (!item) return;
+
+    // Add the note via the relationship notes API
+    if (item.contact_id) {
+      await fetch(`/api/relationships/${item.contact_id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          note: params.note,
+          contextType: params.contextType,
+        }),
+      });
+    }
+
+    // If reanalysis requested, trigger it
+    if (params.triggerReanalysis && item.source_id) {
+      await fetch(`/api/command-center/${addContextItemId}/reanalyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: params.note }),
+      });
+    }
+
+    await fetchData();
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -231,7 +331,10 @@ export function YourDayView({ className }: YourDayViewProps) {
   const {
     plan,
     items,
-    // New tier-grouped items
+    // Attention level grouping (new)
+    byAttentionLevel,
+    counts,
+    // Tier-grouped items (legacy, for backward compatibility)
     tier1_items = [],
     tier2_items = [],
     tier3_items = [],
@@ -246,18 +349,29 @@ export function YourDayView({ className }: YourDayViewProps) {
     is_work_day
   } = data;
 
+  // Use attention levels if available, otherwise fall back to tier grouping
+  const nowItems = byAttentionLevel?.now || tier1_items;
+  const soonItems = byAttentionLevel?.soon || [...tier2_items, ...tier3_items];
+  const monitorItems = byAttentionLevel?.monitor || [...tier4_items, ...tier5_items];
+
   // Filter out completed items for display
   const pendingItems = items.filter((i) => !completedIds.has(i.id));
   const laterItems = pendingItems.slice(6); // Items after top 6
 
-  // Filter completed from tier items
+  // Filter completed from attention level items
+  const nowPending = nowItems.filter(i => !completedIds.has(i.id));
+  const soonPending = soonItems.filter(i => !completedIds.has(i.id));
+  const monitorPending = monitorItems.filter(i => !completedIds.has(i.id));
+
+  // Legacy tier filtering for backward compatibility
   const tier1Pending = tier1_items.filter(i => !completedIds.has(i.id));
   const tier2Pending = tier2_items.filter(i => !completedIds.has(i.id));
   const tier3Pending = tier3_items.filter(i => !completedIds.has(i.id));
   const tier4Pending = tier4_items.filter(i => !completedIds.has(i.id));
   const tier5Pending = tier5_items.filter(i => !completedIds.has(i.id));
 
-  // Determine if we have urgent items (Tier 1)
+  // Determine if we have urgent items
+  const hasNowItems = nowPending.length > 0;
   const hasTier1Items = tier1Pending.length > 0;
 
   // Check if after work hours - show Day Complete view
@@ -517,7 +631,7 @@ export function YourDayView({ className }: YourDayViewProps) {
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
-        {/* Left Column - Priority Tier Sections */}
+        {/* Left Column - Attention Level Sections */}
         <div className="space-y-6">
           {/* All Caught Up state */}
           {pendingItems.length === 0 && (
@@ -530,95 +644,81 @@ export function YourDayView({ className }: YourDayViewProps) {
             </div>
           )}
 
-          {/* TIER 1: RESPOND NOW - Red, dominates when present */}
-          {tier1Pending.length > 0 && (
-            <TierSection
-              tier={1}
-              items={tier1Pending}
+          {/* ACT NOW - Red, dominates when present */}
+          {nowPending.length > 0 && (
+            <AttentionLevelSection
+              level="now"
+              items={nowPending}
               isHighlighted={true}
               onStart={handleStart}
               onComplete={handleComplete}
               onSnooze={handleSnooze}
               onDismiss={handleDismiss}
               onSchedule={(id) => setSchedulerItemId(id)}
+              onAISchedule={(id) => setSchedulerItemId(id)}
+              onQuickBook={(id) => setQuickBookItemId(id)}
               onEmail={(id) => setEmailItemId(id)}
+              onAIDraftEmail={(id) => setEmailItemId(id)}
+              onManualReply={(id) => setManualReplyItemId(id)}
               onLinkDeal={(id) => setLinkDealItemId(id)}
               onLinkCompany={(id) => setLinkCompanyItemId(id)}
+              onViewDraft={handleViewDraft}
+              onAddContext={(id) => setAddContextItemId(id)}
+              onViewEmail={(id) => setEmailPreviewId(id)}
+              onViewTranscript={(id) => setTranscriptPreviewId(id)}
             />
           )}
 
-          {/* TIER 2: DON'T LOSE THIS - Orange */}
-          {tier2Pending.length > 0 && (
-            <div className={cn(hasTier1Items && 'opacity-50')}>
-              <TierSection
-                tier={2}
-                items={tier2Pending}
-                collapsed={hasTier1Items}
+          {/* THIS WEEK - Yellow/Amber */}
+          {soonPending.length > 0 && (
+            <div className={cn(hasNowItems && 'opacity-60')}>
+              <AttentionLevelSection
+                level="soon"
+                items={soonPending}
+                collapsed={hasNowItems}
                 onStart={handleStart}
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
                 onDismiss={handleDismiss}
                 onSchedule={(id) => setSchedulerItemId(id)}
+                onAISchedule={(id) => setSchedulerItemId(id)}
+                onQuickBook={(id) => setQuickBookItemId(id)}
                 onEmail={(id) => setEmailItemId(id)}
+                onAIDraftEmail={(id) => setEmailItemId(id)}
+                onManualReply={(id) => setManualReplyItemId(id)}
                 onLinkDeal={(id) => setLinkDealItemId(id)}
                 onLinkCompany={(id) => setLinkCompanyItemId(id)}
+                onViewDraft={handleViewDraft}
+                onAddContext={(id) => setAddContextItemId(id)}
+                onViewEmail={(id) => setEmailPreviewId(id)}
+                onViewTranscript={(id) => setTranscriptPreviewId(id)}
               />
             </div>
           )}
 
-          {/* TIER 3: KEEP YOUR WORD - Yellow */}
-          {tier3Pending.length > 0 && (
-            <div className={cn(hasTier1Items && 'opacity-50')}>
-              <TierSection
-                tier={3}
-                items={tier3Pending}
-                collapsed={hasTier1Items}
-                onStart={handleStart}
-                onComplete={handleComplete}
-                onSnooze={handleSnooze}
-                onDismiss={handleDismiss}
-                onSchedule={(id) => setSchedulerItemId(id)}
-                onEmail={(id) => setEmailItemId(id)}
-                onLinkDeal={(id) => setLinkDealItemId(id)}
-                onLinkCompany={(id) => setLinkCompanyItemId(id)}
-              />
-            </div>
-          )}
-
-          {/* TIER 4: MOVE BIG DEALS - Green */}
-          {tier4Pending.length > 0 && (
-            <div className={cn(hasTier1Items && 'opacity-50')}>
-              <TierSection
-                tier={4}
-                items={tier4Pending}
-                collapsed={hasTier1Items}
-                onStart={handleStart}
-                onComplete={handleComplete}
-                onSnooze={handleSnooze}
-                onDismiss={handleDismiss}
-                onSchedule={(id) => setSchedulerItemId(id)}
-                onEmail={(id) => setEmailItemId(id)}
-                onLinkDeal={(id) => setLinkDealItemId(id)}
-                onLinkCompany={(id) => setLinkCompanyItemId(id)}
-              />
-            </div>
-          )}
-
-          {/* TIER 5: BUILD PIPELINE - Blue, collapsed by default */}
-          {tier5Pending.length > 0 && (
-            <div className={cn(hasTier1Items && 'opacity-50')}>
-              <TierSection
-                tier={5}
-                items={tier5Pending}
+          {/* KEEP WATCHING - Blue, collapsed by default */}
+          {monitorPending.length > 0 && (
+            <div className={cn(hasNowItems && 'opacity-60')}>
+              <AttentionLevelSection
+                level="monitor"
+                items={monitorPending}
                 collapsed={true}
                 onStart={handleStart}
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
                 onDismiss={handleDismiss}
                 onSchedule={(id) => setSchedulerItemId(id)}
+                onAISchedule={(id) => setSchedulerItemId(id)}
+                onQuickBook={(id) => setQuickBookItemId(id)}
                 onEmail={(id) => setEmailItemId(id)}
+                onAIDraftEmail={(id) => setEmailItemId(id)}
+                onManualReply={(id) => setManualReplyItemId(id)}
                 onLinkDeal={(id) => setLinkDealItemId(id)}
                 onLinkCompany={(id) => setLinkCompanyItemId(id)}
+                onViewDraft={handleViewDraft}
+                onAddContext={(id) => setAddContextItemId(id)}
+                onViewEmail={(id) => setEmailPreviewId(id)}
+                onViewTranscript={(id) => setTranscriptPreviewId(id)}
               />
             </div>
           )}
@@ -705,7 +805,26 @@ export function YourDayView({ className }: YourDayViewProps) {
         );
       })()}
 
-      {/* Email Composer Popout */}
+      {/* Quick Book Modal */}
+      {quickBookItemId && (() => {
+        const item = items.find(i => i.id === quickBookItemId);
+        if (!item) return null;
+        return (
+          <QuickBookModal
+            isOpen={true}
+            onClose={() => setQuickBookItemId(null)}
+            onSuccess={() => {
+              setQuickBookItemId(null);
+              fetchData();
+            }}
+            companyId={item.company_id || undefined}
+            contactName={item.target_name || item.contact?.name}
+            contactEmail={item.contact?.email}
+          />
+        );
+      })()}
+
+      {/* Email Composer Popout (AI Draft) */}
       {emailItemId && (() => {
         const item = items.find(i => i.id === emailItemId);
         if (!item) return null;
@@ -715,6 +834,22 @@ export function YourDayView({ className }: YourDayViewProps) {
             onClose={() => setEmailItemId(null)}
             onSent={() => {
               setEmailItemId(null);
+              fetchData();
+            }}
+          />
+        );
+      })()}
+
+      {/* Manual Reply Popout */}
+      {manualReplyItemId && (() => {
+        const item = items.find(i => i.id === manualReplyItemId);
+        if (!item) return null;
+        return (
+          <ManualReplyPopout
+            item={item as EnrichedCommandCenterItem}
+            onClose={() => setManualReplyItemId(null)}
+            onSent={() => {
+              setManualReplyItemId(null);
               fetchData();
             }}
           />
@@ -766,6 +901,71 @@ export function YourDayView({ className }: YourDayViewProps) {
           />
         );
       })()}
+
+      {/* Email Draft Modal */}
+      {draftModalItem && (
+        <EmailDraftModal
+          isOpen={true}
+          onClose={() => setDraftModalItem(null)}
+          draft={draftModalItem.draft}
+          recipientName={draftModalItem.targetName}
+          recipientEmail={draftModalItem.targetEmail}
+          onCopyToComposer={(subject, body) => {
+            // Open the email composer with the draft
+            setEmailItemId(draftModalItem.id);
+            setDraftModalItem(null);
+          }}
+        />
+      )}
+
+      {/* Add Context Modal */}
+      {addContextItemId && (() => {
+        const item = items.find(i => i.id === addContextItemId);
+        if (!item) return null;
+        return (
+          <AddContextModal
+            isOpen={true}
+            onClose={() => setAddContextItemId(null)}
+            itemId={addContextItemId}
+            contactId={item.contact_id}
+            companyId={item.company_id}
+            targetName={item.target_name || undefined}
+            companyName={item.company_name || undefined}
+            onSubmit={handleAddContext}
+          />
+        );
+      })()}
+
+      {/* Email Preview Modal */}
+      {emailPreviewId && (
+        <EmailPreviewModal
+          isOpen={true}
+          onClose={() => setEmailPreviewId(null)}
+          conversationId={emailPreviewId}
+          onOpenInInbox={() => {
+            window.location.href = `/inbox?id=${emailPreviewId}`;
+          }}
+          onReply={() => {
+            // Find the item with this conversation_id and open email composer
+            const item = items.find(i => i.conversation_id === emailPreviewId);
+            if (item) {
+              setEmailItemId(item.id);
+            }
+          }}
+        />
+      )}
+
+      {/* Transcript Preview Modal */}
+      {transcriptPreviewId && (
+        <TranscriptPreviewModal
+          isOpen={true}
+          onClose={() => setTranscriptPreviewId(null)}
+          meetingId={transcriptPreviewId}
+          onOpenFullTranscript={() => {
+            window.location.href = `/calendar?event=${transcriptPreviewId}`;
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -848,7 +1048,197 @@ function formatTimeRange(start: string, end: string): string {
 }
 
 // ============================================
-// TIER SECTION COMPONENT
+// ATTENTION LEVEL SECTION COMPONENT
+// ============================================
+
+interface AttentionLevelSectionProps {
+  level: AttentionLevel;
+  items: CommandCenterItem[];
+  isHighlighted?: boolean;
+  collapsed?: boolean;
+  onStart: (id: string) => Promise<void>;
+  onComplete: (id: string) => Promise<void>;
+  onSnooze: (id: string, until: string) => Promise<void>;
+  onDismiss: (id: string, reason?: string) => Promise<void>;
+  onSchedule: (id: string) => void;
+  onAISchedule: (id: string) => void;
+  onQuickBook: (id: string) => void;
+  onEmail: (id: string) => void;
+  onAIDraftEmail: (id: string) => void;
+  onManualReply: (id: string) => void;
+  onLinkDeal: (id: string) => void;
+  onLinkCompany: (id: string) => void;
+  onViewDraft?: (id: string, draft: EmailDraft) => void;
+  onAddContext?: (id: string) => void;
+  onViewEmail?: (conversationId: string) => void;
+  onViewTranscript?: (meetingId: string) => void;
+}
+
+function AttentionLevelSection({
+  level,
+  items,
+  isHighlighted = false,
+  collapsed: initialCollapsed = false,
+  onStart,
+  onComplete,
+  onSnooze,
+  onDismiss,
+  onSchedule,
+  onAISchedule,
+  onQuickBook,
+  onEmail,
+  onAIDraftEmail,
+  onManualReply,
+  onLinkDeal,
+  onLinkCompany,
+  onViewDraft,
+  onAddContext,
+  onViewEmail,
+  onViewTranscript,
+}: AttentionLevelSectionProps) {
+  const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
+  const config = ATTENTION_LEVEL_CONFIGS[level];
+
+  // For "now" level, show urgent banner
+  if (level === 'now' && items.length > 0) {
+    return (
+      <div className={cn('rounded-xl border-l-4', config.bgColor, 'border-l-red-500 p-4')}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{config.icon}</span>
+            <h3 className={cn('font-semibold', config.color)}>
+              {items.length} {items.length === 1 ? 'item needs' : 'items need'} attention now
+            </h3>
+          </div>
+          <span className="text-xs text-red-600 font-medium">
+            {config.description}
+          </span>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => (
+            <ActionCard
+              key={item.id}
+              item={item as any}
+              isCurrentItem={index === 0}
+              onStart={onStart}
+              onComplete={onComplete}
+              onSnooze={onSnooze}
+              onDismiss={onDismiss}
+              onSchedule={onSchedule}
+              onAISchedule={onAISchedule}
+              onQuickBook={onQuickBook}
+              onEmail={onEmail}
+              onAIDraftEmail={onAIDraftEmail}
+              onManualReply={onManualReply}
+              onLinkDeal={onLinkDeal}
+              onLinkCompany={onLinkCompany}
+              onViewDraft={onViewDraft}
+              onAddContext={onAddContext}
+              onViewEmail={onViewEmail}
+              onViewTranscript={onViewTranscript}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('rounded-xl border', config.bgColor, config.borderColor)}>
+      {/* Header - clickable to expand/collapse */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className={cn(
+          'w-full flex items-center justify-between p-3 rounded-t-xl transition-colors',
+          level === 'soon' ? 'bg-amber-100' : 'bg-blue-100'
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{config.icon}</span>
+          <h3 className={cn('text-sm font-semibold uppercase tracking-wider', config.color)}>
+            {config.name}
+          </h3>
+          <span className={cn('text-xs', config.color, 'opacity-70')}>
+            ({items.length})
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cn('text-xs', config.color, 'opacity-60')}>
+            {config.description}
+          </span>
+          {isCollapsed ? (
+            <ChevronDown className={cn('h-4 w-4', config.color)} />
+          ) : (
+            <ChevronUp className={cn('h-4 w-4', config.color)} />
+          )}
+        </div>
+      </button>
+
+      {/* Items */}
+      {!isCollapsed && (
+        <div className="p-3 space-y-3">
+          {items.slice(0, 10).map((item, index) => (
+            <ActionCard
+              key={item.id}
+              item={item as any}
+              isCurrentItem={index === 0 && isHighlighted}
+              onStart={onStart}
+              onComplete={onComplete}
+              onSnooze={onSnooze}
+              onDismiss={onDismiss}
+              onSchedule={onSchedule}
+              onAISchedule={onAISchedule}
+              onQuickBook={onQuickBook}
+              onEmail={onEmail}
+              onAIDraftEmail={onAIDraftEmail}
+              onManualReply={onManualReply}
+              onLinkDeal={onLinkDeal}
+              onLinkCompany={onLinkCompany}
+              onViewDraft={onViewDraft}
+              onAddContext={onAddContext}
+              onViewEmail={onViewEmail}
+              onViewTranscript={onViewTranscript}
+            />
+          ))}
+          {items.length > 10 && (
+            <div className="text-center py-2">
+              <span className={cn('text-xs', config.color)}>
+                +{items.length - 10} more items
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Collapsed preview */}
+      {isCollapsed && items.length > 0 && (
+        <div className="px-3 pb-3">
+          <div className="flex flex-wrap gap-2">
+            {items.slice(0, 3).map((item) => (
+              <span
+                key={item.id}
+                className={cn(
+                  'text-xs px-2 py-1 rounded-full bg-white/50',
+                  config.color
+                )}
+              >
+                {item.company_name || item.target_name || item.title.slice(0, 20)}
+              </span>
+            ))}
+            {items.length > 3 && (
+              <span className={cn('text-xs px-2 py-1', config.color, 'opacity-60')}>
+                +{items.length - 3} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// TIER SECTION COMPONENT (Legacy)
 // ============================================
 
 interface TierSectionProps {
@@ -864,6 +1254,10 @@ interface TierSectionProps {
   onEmail: (id: string) => void;
   onLinkDeal: (id: string) => void;
   onLinkCompany: (id: string) => void;
+  onViewDraft?: (id: string, draft: EmailDraft) => void;
+  onAddContext?: (id: string) => void;
+  onViewEmail?: (conversationId: string) => void;
+  onViewTranscript?: (meetingId: string) => void;
 }
 
 function TierSection({
@@ -879,6 +1273,10 @@ function TierSection({
   onEmail,
   onLinkDeal,
   onLinkCompany,
+  onViewDraft,
+  onAddContext,
+  onViewEmail,
+  onViewTranscript,
 }: TierSectionProps) {
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
   const config = TIER_CONFIGS[tier];
@@ -949,7 +1347,7 @@ function TierSection({
           {items.map((item, index) => (
             <ActionCard
               key={item.id}
-              item={item}
+              item={item as any}
               isCurrentItem={index === 0}
               onStart={onStart}
               onComplete={onComplete}
@@ -959,6 +1357,10 @@ function TierSection({
               onEmail={onEmail}
               onLinkDeal={onLinkDeal}
               onLinkCompany={onLinkCompany}
+              onViewDraft={onViewDraft}
+              onAddContext={onAddContext}
+              onViewEmail={onViewEmail}
+              onViewTranscript={onViewTranscript}
             />
           ))}
         </div>
@@ -1003,7 +1405,7 @@ function TierSection({
           {items.slice(0, 5).map((item, index) => (
             <ActionCard
               key={item.id}
-              item={item}
+              item={item as any}
               isCurrentItem={index === 0 && isHighlighted}
               onStart={onStart}
               onComplete={onComplete}
@@ -1013,6 +1415,10 @@ function TierSection({
               onEmail={onEmail}
               onLinkDeal={onLinkDeal}
               onLinkCompany={onLinkCompany}
+              onViewDraft={onViewDraft}
+              onAddContext={onAddContext}
+              onViewEmail={onViewEmail}
+              onViewTranscript={onViewTranscript}
             />
           ))}
           {items.length > 5 && (

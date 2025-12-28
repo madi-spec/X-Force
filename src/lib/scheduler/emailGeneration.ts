@@ -147,6 +147,19 @@ For time proposals:
 - Offer 3-4 options spanning different days/times
 - Present in an easy-to-scan format
 
+CRITICAL DATE HANDLING - READ CAREFULLY:
+- The current date and year is provided in the prompt - USE IT EXACTLY
+- The proposed times show VERIFIED day/date pairs - they are CORRECT
+- When you write the email, use the EXACT same dates provided
+- Do NOT add 1 to dates. Do NOT "fix" dates. Trust the input.
+
+CRITICAL YEAR HANDLING:
+- Look at TODAY'S DATE in the prompt. Use THAT year in any seasonal greetings.
+- If today is December 2025, write "end of 2025", NOT "end of 2024"
+- If today is January 2026, write "start of 2026" or "new year", NOT "2025"
+- NEVER guess the year - ALWAYS check the TODAY'S DATE provided in the prompt
+- Around the holidays, be especially careful: "Hope you're having a great holiday season" is safer than referencing a specific year incorrectly.
+
 IMPORTANT: Generate actual email content, not placeholders. Use the provided context to personalize.`;
 
 function buildEmailPrompt(
@@ -211,8 +224,27 @@ ${dealContext.nextSteps?.length ? `- Next Steps:\n  ${dealContext.nextSteps.map(
 
   // 6. Proposed times if applicable
   if (proposedTimes && proposedTimes.length > 0) {
+    // Include today's date so AI knows what "this week" vs "next week" means
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const todayFormatted = today.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'America/New_York',
+    });
+
     sections.push(`## Proposed Times
-${proposedTimes.map((t) => `- ${t.formatted}`).join('\n')}`);
+
+⚠️ IMPORTANT - TODAY IS: ${todayFormatted}
+⚠️ THE CURRENT YEAR IS: ${currentYear}
+⚠️ If writing a seasonal greeting, use "${currentYear}" (e.g., "end of ${currentYear}" or "hope ${currentYear} is treating you well")
+
+Use these EXACT times in the email (copy them verbatim as bullet points):
+${proposedTimes.map((t) => `• ${t.formatted}`).join('\n')}
+
+These are pre-formatted and verified. Copy them exactly as shown above.`);
   }
 
   // 7. Conversation history for context
@@ -451,7 +483,36 @@ export async function parseSchedulingResponse(
   sentiment: 'positive' | 'neutral' | 'negative';
   reasoning: string;
 }> {
+  // Build date context for year awareness
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const nextYear = currentYear + 1;
+  const currentMonth = today.getMonth() + 1;
+  const todayFormatted = today.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  // Year guidance for when we're in late year
+  let yearGuidance = '';
+  if (currentMonth === 12) {
+    yearGuidance = `
+CRITICAL DATE RULES (Today is ${todayFormatted}):
+- We are in DECEMBER ${currentYear}. Any mention of January, February, or March means ${nextYear}.
+- When someone says "Monday the 5th" or similar, find the future date where the 5th falls on (or near) that day
+- January 5, ${nextYear} is a Monday - so "Monday the 5th" = ${nextYear}-01-05
+- NEVER return dates in ${currentYear} for January/February/March - those months have already passed
+- All timestamps must be in the FUTURE`;
+  } else if (currentMonth >= 10) {
+    yearGuidance = `Note: Today is ${todayFormatted}. If they mention January/February/March, use ${nextYear}.`;
+  }
+
   const prompt = `Analyze this email response to a meeting scheduling request.
+
+TODAY'S DATE: ${todayFormatted}
+${yearGuidance}
 
 ## Proposed Times
 ${proposedTimes.map((t, i) => `${i + 1}. ${t}`).join('\n')}
@@ -463,7 +524,9 @@ ${emailBody}
 Determine:
 1. Intent: Are they accepting a time, declining, proposing alternatives, asking a question, or unclear?
 2. If accepting: Which specific time did they select?
-3. If counter-proposing: What times are they suggesting?
+3. If counter-proposing: What times are they suggesting? Return these as ISO timestamps (e.g., "${nextYear}-01-06T11:00:00")
+   - IMPORTANT: When they say "Monday the 5th" - the NUMBER 5th is the key, find the month where the 5th is (near) a Monday
+   - If they say "11am on Monday the 5th" and January 5, ${nextYear} is a Monday, return "${nextYear}-01-05T11:00:00"
 4. If questioning: What is their question?
 5. Overall sentiment toward the meeting`;
 

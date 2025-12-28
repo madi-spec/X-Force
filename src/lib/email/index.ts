@@ -7,3 +7,4 @@
 export * from './enrichEmailContext';
 export * from './analyzeEmail';
 export * from './processInboundEmail';
+export * from './noiseDetection';

@@ -79,8 +79,20 @@ export async function GET(
 
     const isStale = await isIntelligenceStale(companyId);
 
+    // Ensure deep intelligence fields have defaults if not present in DB
+    const enrichedIntelligence = {
+      ...intelligence,
+      company_profile: intelligence.company_profile || null,
+      review_pain_points: intelligence.review_pain_points || [],
+      marketing_profile: intelligence.marketing_profile || null,
+      visible_employees: intelligence.visible_employees || [],
+      products_services: intelligence.products_services || [],
+      service_areas: intelligence.service_areas || [],
+      certifications: intelligence.certifications || [],
+    };
+
     return NextResponse.json({
-      intelligence,
+      intelligence: enrichedIntelligence,
       sources: sourcesResult.data || [],
       contacts: contactsResult.data || [],
       mentions: mentionsResult.data || [],
@@ -91,8 +103,16 @@ export async function GET(
     });
   } catch (error) {
     console.error('[API] Error getting intelligence:', error);
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      errorMessage = JSON.stringify(error);
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }
@@ -179,8 +199,17 @@ export async function POST(
     });
   } catch (error) {
     console.error('[API] Error triggering collection:', error);
+    // Capture more details about the error
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      errorMessage = JSON.stringify(error);
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

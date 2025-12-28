@@ -477,6 +477,17 @@ export interface DailyDriverItem {
   product_name: string | null;
   product_slug: string | null;
 
+  // Contact context (for needsReply items)
+  contact_id: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+
+  // Communication context (for needsReply items)
+  communication_id: string | null;
+  communication_subject: string | null;
+  communication_preview: string | null;
+  response_due_by: string | null;
+
   // Stage context
   stage_id: string | null;
   stage_name: string | null;
@@ -527,6 +538,9 @@ export interface DailyDriverItemsByLevel {
  * - debug=true: Include extra debug fields (flag_id, source_type, source_id)
  */
 export interface DailyDriverResponse {
+  // Response queue - communications awaiting our reply
+  needsReply: DailyDriverItem[];
+
   // Legacy groupings (for backward compatibility)
   needsHuman: DailyDriverItem[];
   stalled: DailyDriverItem[];
@@ -537,6 +551,7 @@ export interface DailyDriverResponse {
 
   // Summary counts
   counts: {
+    needsReply: number;
     needsHuman: number;
     stalled: number;
     readyToClose: number;

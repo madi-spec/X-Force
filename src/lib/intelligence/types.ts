@@ -15,7 +15,13 @@ export type IntelligenceSourceType =
   | 'google_reviews'
   | 'linkedin_company'
   | 'linkedin_people'
-  | 'industry_mentions';
+  | 'industry_mentions'
+  | 'marketing_activity'
+  | 'employee_media'
+  | 'blog_detection'
+  | 'youtube_detection'
+  | 'website_marketing'
+  | 'serper_research';
 
 export type ContactSeniority = 'entry' | 'senior' | 'manager' | 'director' | 'vp' | 'c_level' | 'owner' | 'partner';
 
@@ -46,6 +52,22 @@ export interface AccountIntelligence {
   opportunities: Opportunity[];
   talking_points: TalkingPoint[];
   recommended_approach: string | null;
+
+  // Enhanced AI Synthesis
+  recommendations: Recommendation[];
+  connection_points: ConnectionPoint[];
+  objection_prep: ObjectionPrep[];
+  signals_timeline: SignalEvent[];
+  competitive_intel: CompetitiveIntel | null;
+
+  // Deep Intelligence Fields
+  company_profile: CompanyProfile | null;
+  review_pain_points: ReviewPainPoint[];
+  marketing_profile: MarketingProfile | null;
+  visible_employees: VisibleEmployee[];
+  products_services: ProductService[];
+  service_areas: string[];
+  certifications: string[];
 
   // Metadata
   last_collected_at: string | null;
@@ -152,6 +174,52 @@ export interface TalkingPoint {
   useCase: string;
 }
 
+export interface Recommendation {
+  title: string;
+  description: string;
+  action: string;
+  priority: 1 | 2 | 3 | 4 | 5;
+  confidence: 'high' | 'medium' | 'low';
+  category: 'outreach' | 'messaging' | 'timing' | 'stakeholder' | 'product';
+  source: string;
+}
+
+export interface ConnectionPoint {
+  type: 'shared_interest' | 'mutual_connection' | 'common_background' | 'local_community' | 'industry_event';
+  point: string;
+  context: string;
+  useCase: string;
+  source: string;
+}
+
+export interface ObjectionPrep {
+  objection: string;
+  likelihood: 'high' | 'medium' | 'low';
+  response: string;
+  evidence: string;
+  source: string;
+}
+
+export interface SignalEvent {
+  date: string;
+  type: 'news' | 'hire' | 'growth' | 'funding' | 'review' | 'social' | 'award';
+  title: string;
+  description: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  source: string;
+  url?: string;
+}
+
+export interface CompetitiveIntel {
+  currentProviders: string[];
+  switchingSignals: string[];
+  competitorMentions: Array<{
+    competitor: string;
+    context: string;
+    sentiment: 'positive' | 'neutral' | 'negative';
+  }>;
+}
+
 export interface IntelligenceSynthesis {
   executiveSummary: string;
   painPoints: PainPoint[];
@@ -166,6 +234,13 @@ export interface IntelligenceSynthesis {
     industry: number;
   };
   confidence: number;
+
+  // Enhanced outputs
+  recommendations: Recommendation[];
+  connectionPoints: ConnectionPoint[];
+  objectionPrep: ObjectionPrep[];
+  signalsTimeline: SignalEvent[];
+  competitiveIntel: CompetitiveIntel;
 }
 
 // ============================================
@@ -435,6 +510,332 @@ export interface IndustryMentionItem {
 }
 
 // ============================================
+// ENHANCED WEBSITE COLLECTOR TYPES
+// ============================================
+
+export interface EnhancedWebsiteData extends WebsiteData {
+  // Operations indicators
+  employeeSizeIndicators: {
+    teamPageCount: number;
+    careersPageExists: boolean;
+    jobPostingsCount: number;
+    locationsCount: number;
+  };
+
+  // Products & Services Deep
+  serviceAreas: string[];              // Geographic coverage
+  serviceDetails: ServiceDetail[];     // Name, description, pricing hints
+  caseStudies: CaseStudy[];            // Title, industry, results
+
+  // Awards & Certifications
+  certifications: string[];            // QualityPro, NPMA, BBB, etc.
+  awards: string[];                    // Industry awards mentioned
+
+  // Technology signals
+  schedulingSystem: string | null;     // Online booking detected?
+  paymentMethods: string[];            // Credit card, financing, etc.
+
+  // Content marketing
+  blogPostFrequency: 'daily' | 'weekly' | 'monthly' | 'rarely' | 'none';
+  lastBlogPostDate: string | null;
+  contentTopics: string[];             // What they write about
+}
+
+export interface ServiceDetail {
+  name: string;
+  description: string | null;
+  pricingHint: string | null;          // "Starting at $X", "Free estimates", etc.
+  isPrimary: boolean;
+}
+
+export interface CaseStudy {
+  title: string;
+  industry: string | null;
+  results: string | null;
+  url: string | null;
+}
+
+// ============================================
+// ENHANCED GOOGLE REVIEWS TYPES
+// ============================================
+
+export interface EnhancedGoogleReviewsData extends GoogleReviewsData {
+  // Pain Point Extraction
+  painPointAnalysis: {
+    waitTimes: PainPointCategory;
+    communication: PainPointCategory;
+    pricing: PainPointCategory;
+    quality: PainPointCategory;
+    scheduling: PainPointCategory;
+    staffIssues: PainPointCategory;
+  };
+
+  // Sentiment Trends
+  ratingTrend: 'improving' | 'stable' | 'declining';
+  recentRating: number | null;         // Last 6 months
+  historicalRating: number | null;     // Older reviews
+
+  // Response Analysis
+  ownerResponseRate: number;           // % of reviews with response
+  avgResponseTime: string | null;      // If detectable
+
+  // Competitive mentions
+  competitorMentions: string[];        // Other companies mentioned in reviews
+
+  // Service quality signals
+  mostPraisedAspects: string[];
+  mostCriticizedAspects: string[];
+}
+
+export interface PainPointCategory {
+  count: number;
+  quotes: string[];
+}
+
+// ============================================
+// ENHANCED APOLLO PEOPLE TYPES
+// ============================================
+
+export interface EnhancedApolloPerson extends ApolloPerson {
+  // Additional contact info
+  personalEmail: string | null;
+  mobilePhone: string | null;
+  directDial: string | null;
+
+  // Professional profile
+  bio: string | null;
+  skills: string[];
+  certifications: string[];
+  yearsInRole: number | null;
+  yearsAtCompany: number | null;
+
+  // Decision-making signals
+  budgetAuthority: boolean;
+  techBuyer: boolean;
+  reportsTo: string | null;
+  teamSize: number | null;
+
+  // Engagement signals
+  linkedinActivityLevel: 'high' | 'medium' | 'low' | 'none';
+  recentPosts: number;                 // Posts in last 90 days
+  connectionCount: number | null;
+}
+
+// ============================================
+// MARKETING ACTIVITY COLLECTOR TYPES
+// ============================================
+
+export interface MarketingActivityData {
+  companyName: string;
+
+  // Social Media Activity
+  facebook: {
+    postsLast30Days: number;
+    avgEngagementRate: number;
+    topPostTypes: ('image' | 'video' | 'link' | 'text')[];
+    lastPostDate: string | null;
+  };
+
+  // LinkedIn Company Activity
+  linkedin: {
+    followerCount: number | null;
+    postsLast30Days: number;
+    employeePostingActivity: 'high' | 'medium' | 'low';
+    companyUpdatesRecent: boolean;
+  };
+
+  // Content Marketing
+  blog: {
+    postsLast90Days: number;
+    avgPostLength: number;
+    topics: string[];
+    hasEmailCapture: boolean;
+  };
+
+  // Overall Assessment
+  marketingMaturity: 'sophisticated' | 'active' | 'basic' | 'minimal';
+  primaryChannels: string[];
+  contentStrategy: string;             // AI-generated assessment
+
+  // Metadata
+  collectedAt: string;
+}
+
+// ============================================
+// EMPLOYEE MEDIA PRESENCE COLLECTOR TYPES
+// ============================================
+
+export interface EmployeeMediaData {
+  companyName: string;
+
+  // Individual Profiles
+  employeeProfiles: EmployeeMediaProfile[];
+
+  // Aggregate Metrics
+  totalMediaMentions: number;
+  employeesWithPresence: number;
+  thoughtLeaders: string[];            // Names of most visible employees
+
+  // Metadata
+  collectedAt: string;
+}
+
+export interface EmployeeMediaProfile {
+  name: string;
+  title: string | null;
+
+  // Media Appearances
+  podcastAppearances: MediaMention[];
+  newsArticles: MediaMention[];
+  speakingEvents: MediaMention[];
+  publishedContent: MediaMention[];
+
+  // LinkedIn Activity (if accessible)
+  linkedinPosts: number;
+  linkedinArticles: number;
+
+  // Influence Score
+  visibilityScore: number;             // 0-100
+}
+
+export interface MediaMention {
+  title: string;
+  source: string;
+  url: string;
+  date: string | null;
+  type: 'podcast' | 'news' | 'event' | 'article' | 'interview';
+}
+
+// ============================================
+// DEEP INTELLIGENCE OUTPUT TYPES
+// ============================================
+
+export interface CompanyProfile {
+  sizeTier: 'startup' | 'smb' | 'mid_market' | 'enterprise';
+  employeeEstimate: number | null;
+  operationalMaturity: string;
+  serviceModel: string;
+  techAdoption: string;
+  yearsInBusiness: number | null;
+}
+
+export interface ReviewPainPoint {
+  category: string;
+  severity: 'high' | 'medium' | 'low';
+  frequency: number;
+  quotes: string[];
+  implication: string;
+}
+
+export interface MarketingProfile {
+  maturityLevel: string;
+  primaryChannels: string[];
+  contentStrategy: string;
+  digitalPresence: number;             // 0-100
+  recommendation: string;
+}
+
+export interface VisibleEmployee {
+  name: string;
+  title: string | null;
+  visibilityScore: number;
+  mediaAppearances: number;
+  linkedinActive: boolean;
+  connectionOpportunity: string;
+}
+
+export interface ProductService {
+  name: string;
+  description: string | null;
+  isPrimary: boolean;
+}
+
+// ============================================
+// ENRICHMENT TYPES
+// ============================================
+
+export interface CompanyEnrichmentResult {
+  success: boolean;
+  fieldsUpdated: string[];
+  newValues: Record<string, unknown>;
+  previousValues: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface ContactEnrichmentResult {
+  success: boolean;
+  enrichedCount: number;
+  createdCount: number;
+  matchedContacts: {
+    contactId: string;
+    apolloId: string;
+    fieldsUpdated: string[];
+  }[];
+  error: string | null;
+}
+
+export interface SingleContactEnrichmentResult {
+  success: boolean;
+  contactId: string;
+  fieldsUpdated: string[];
+  newValues: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface EnrichmentLogEntry {
+  id: string;
+  entityType: 'company' | 'contact';
+  entityId: string;
+  source: string;
+  fieldsUpdated: string[];
+  previousValues: Record<string, unknown>;
+  newValues: Record<string, unknown>;
+  createdAt: string;
+}
+
+// ============================================
+// ENHANCED INTELLIGENCE SYNTHESIS
+// ============================================
+
+export interface EnhancedIntelligenceSynthesis extends IntelligenceSynthesis {
+  // Company Profile
+  companyProfile: CompanyProfile;
+
+  // Review Analysis
+  reviewPainPoints: ReviewPainPoint[];
+
+  // Marketing Profile
+  marketingProfile: MarketingProfile;
+
+  // Employee Visibility
+  visibleEmployees: VisibleEmployee[];
+
+  // Products & Services
+  productsServices: ProductService[];
+
+  // Service Areas
+  serviceAreas: string[];
+
+  // Certifications
+  certifications: string[];
+}
+
+// ============================================
+// EXTENDED ACCOUNT INTELLIGENCE
+// ============================================
+
+export interface ExtendedAccountIntelligence extends AccountIntelligence {
+  // Deep intelligence fields
+  company_profile: CompanyProfile | null;
+  review_pain_points: ReviewPainPoint[];
+  marketing_profile: MarketingProfile | null;
+  visible_employees: VisibleEmployee[];
+  products_services: ProductService[];
+  service_areas: string[];
+  certifications: string[];
+}
+
+// ============================================
 // COLLECTOR OPTIONS
 // ============================================
 
@@ -442,6 +843,8 @@ export interface CollectorOptions {
   timeout?: number;
   maxRetries?: number;
   skipCache?: boolean;
+  /** Known URL to use directly, skipping discovery */
+  knownUrl?: string;
 }
 
 export interface WebsiteCollectorOptions extends CollectorOptions {
@@ -537,4 +940,160 @@ export interface TriggerCollectionResponse {
   status: 'started' | 'already_running' | 'queued';
   intelligenceId: string | null;
   message: string;
+}
+
+// ============================================
+// EMAIL ANALYSIS TYPES
+// ============================================
+
+export interface ContextConnection {
+  connection: string;
+  prior_date: string | null;
+  relevance: string;
+}
+
+export interface CommitmentUpdate {
+  commitment: string;
+  expected_by: string | null;
+}
+
+export interface EmailSignalUpdate {
+  signal: string;
+  quote: string;
+  strength: 'strong' | 'moderate' | 'weak';
+}
+
+export interface ConcernUpdate {
+  concern: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface SuggestedAction {
+  action: string;
+  priority: 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+export interface CommandCenterClassification {
+  tier: 1 | 2 | 3 | 4 | 5;
+  tier_trigger: string;
+  sla_minutes: number;
+  why_now: string;
+}
+
+export interface ResponseDraft {
+  subject: string;
+  body: string;
+}
+
+// Communication types based on sales playbook
+export type CommunicationType =
+  | 'demo_request'
+  | 'free_trial_form'
+  | 'pricing_request'
+  | 'technical_question'
+  | 'follow_up'
+  | 'objection'
+  | 'ready_to_proceed'
+  | 'internal_notification'
+  | 'other';
+
+// Sales stages
+export type SalesStage =
+  | 'initial_interest'
+  | 'discovery'
+  | 'trial'
+  | 'proposal'
+  | 'closing'
+  | 'closed';
+
+// Action owners
+export type ActionOwner = 'sales_rep' | 'operations' | 'technical' | 'management';
+
+// Workflow types
+export type WorkflowType = 'single_response' | 'multi_step_internal' | 'waiting_on_customer' | 'no_action_needed';
+
+// Required action from playbook analysis
+export interface RequiredAction {
+  action: string;
+  owner: ActionOwner;
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+// Key observations structure
+export interface KeyObservations {
+  buying_signals: EmailSignalUpdate[];
+  risk_signals: Array<{ signal: string; quote?: string }>;
+  urgency_indicators: Array<{ indicator: string; quote?: string }>;
+}
+
+export interface InboundEmailAnalysis {
+  summary: string;
+  full_analysis: string;
+
+  // Playbook-informed classification
+  communication_type: CommunicationType;
+  communication_type_reasoning: string;
+  sales_stage: SalesStage;
+  workflow_type: WorkflowType;
+
+  // Legacy field for backward compatibility
+  request_type:
+    | 'demo_request'
+    | 'pricing_question'
+    | 'general_question'
+    | 'meeting_request'
+    | 'follow_up'
+    | 'objection'
+    | 'positive_response'
+    | 'info_share'
+    | 'introduction'
+    | 'complaint'
+    | 'other';
+
+  key_questions: string[];
+  context_connections: ContextConnection[];
+  key_facts_learned: string[];
+
+  // Enhanced observations from playbook
+  key_observations: KeyObservations;
+
+  commitment_updates: {
+    fulfilled_theirs: string[];
+    new_theirs: CommitmentUpdate[];
+  };
+  signal_updates: {
+    new_buying_signals: EmailSignalUpdate[];
+    new_concerns: ConcernUpdate[];
+    resolved_concerns: string[];
+  };
+  sentiment: 'Very Positive' | 'Positive' | 'Neutral' | 'Concerned' | 'Frustrated' | 'Negative';
+  urgency: 'High' | 'Medium' | 'Low';
+  relationship_progression: {
+    momentum: 'accelerating' | 'steady' | 'stalling' | 'at_risk';
+    assessment: string;
+  };
+
+  // Playbook-informed actions
+  required_actions: RequiredAction[];
+
+  // Legacy field for backward compatibility
+  suggested_actions: SuggestedAction[];
+
+  response_draft: ResponseDraft;
+  command_center_classification: CommandCenterClassification;
+
+  // Entity extraction for auto-linking
+  entity_extraction?: {
+    contact_name?: string;
+    contact_email?: string;
+    contact_phone?: string;
+    contact_title?: string;
+    company_name?: string;
+    company_location?: string;
+    team_size?: number;
+    is_franchisee?: boolean;
+    other_facts?: string[];
+  };
 }

@@ -10,7 +10,54 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 import { getValidToken } from '@/lib/microsoft/auth';
 import { syncEmailToCommunication } from '@/lib/communicationHub/sync';
-import { isInternalEmail, getExternalEmails } from '@/lib/communicationHub/matching/matchEmailToCompany';
+import { isInternalEmail, getExternalEmails, extractEmailsFromBody } from '@/lib/communicationHub/matching/matchEmailToCompany';
+
+// ============================================================================
+// HTML to Text Conversion
+// ============================================================================
+
+/**
+ * Convert HTML content to plain text
+ * Strips HTML tags and decodes entities
+ */
+function htmlToPlainText(html: string | null | undefined): string | null {
+  if (!html) return null;
+
+  let text = html
+    // Remove style and script blocks entirely
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    // Convert <br> and block elements to newlines
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    // Remove all remaining HTML tags
+    .replace(/<[^>]+>/g, '')
+    // Decode common HTML entities
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    // Clean up whitespace
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+
+  return text || null;
+}
 
 // ============================================================================
 // Types
@@ -456,6 +503,10 @@ async function processMessage(
     .eq('message_id', message.id)
     .single();
 
+  // Convert HTML body to plain text for searching and matching
+  const bodyHtml = message.body?.content;
+  const bodyText = htmlToPlainText(bodyHtml);
+
   const messageData = {
     conversation_ref: conversationId,
     user_id: userId,
@@ -469,7 +520,8 @@ async function processMessage(
     cc_emails: message.ccRecipients?.map((r) => r.emailAddress?.address) || [],
     cc_names: message.ccRecipients?.map((r) => r.emailAddress?.name || null) || [],
     body_preview: message.bodyPreview,
-    body_html: message.body?.content,
+    body_text: bodyText,
+    body_html: bodyHtml,
     is_read: message.isRead ?? false,
     is_sent_by_user: !isInbound,
     is_flagged: message.flag?.flagStatus === 'flagged',
@@ -535,11 +587,25 @@ async function calculateLinkConfidence(
   // 1. Check if email matches a known contact
   // For outbound emails, check ALL recipients, not just the first one
   // Filter out internal domains - we only want to match to customer emails
-  const emailsToCheck = getExternalEmails(
+  const participantEmails = getExternalEmails(
     allRecipientEmails.length > 0
       ? allRecipientEmails
       : (primaryEmail ? [primaryEmail] : [])
   );
+
+  // Also extract emails from the message body (for forwarded emails, internal context, etc.)
+  // Use full body content when available, fallback to preview
+  const bodyHtml = message.body?.content;
+  const bodyContent = bodyHtml ? htmlToPlainText(bodyHtml) : message.bodyPreview || '';
+  const bodyEmails = extractEmailsFromBody(bodyContent || '');
+
+  // Combine participant emails with body emails, prioritizing participants
+  const emailsToCheck = [...participantEmails];
+  for (const bodyEmail of bodyEmails) {
+    if (!emailsToCheck.includes(bodyEmail)) {
+      emailsToCheck.push(bodyEmail);
+    }
+  }
 
   let contact: { id: string; name: string; company_id: string | null } | null = null;
 

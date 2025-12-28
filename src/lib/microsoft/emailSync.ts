@@ -491,3 +491,21 @@ export async function sendEmail(
     return { success: false, error: String(err) };
   }
 }
+
+/**
+ * Sync recent emails (for webhook-triggered quick sync)
+ * Only syncs emails from the last N minutes
+ */
+export async function syncRecentEmails(
+  userId: string,
+  minutesBack: number = 5
+): Promise<EmailSyncResult> {
+  const sinceDate = new Date(Date.now() - minutesBack * 60 * 1000);
+  console.log(`[EmailSync] Quick sync for user ${userId} since ${sinceDate.toISOString()}`);
+
+  return syncEmails(userId, {
+    sinceDate,
+    maxMessages: 20,
+    folders: 'inbox-sent',
+  });
+}

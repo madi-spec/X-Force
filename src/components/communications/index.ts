@@ -7,3 +7,7 @@ export { AIActivityFeed } from './AIActivityFeed';
 export { ConversationList } from './ConversationList';
 export { ConversationThread } from './ConversationThread';
 export { CustomerContext } from './CustomerContext';
+
+// Lead Management
+export { CreateLeadFromEmail } from './CreateLeadFromEmail';
+export { AssignToCompanyModal } from './AssignToCompanyModal';

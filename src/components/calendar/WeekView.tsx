@@ -7,13 +7,14 @@ interface WeekViewProps {
   currentDate: Date;
   events: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
+  onSlotDoubleClick?: (date: Date) => void;
 }
 
 const HOUR_HEIGHT = 60; // pixels per hour
 const START_HOUR = 7;
 const END_HOUR = 20; // 8pm
 
-export function WeekView({ currentDate, events, onEventClick }: WeekViewProps) {
+export function WeekView({ currentDate, events, onEventClick, onSlotDoubleClick }: WeekViewProps) {
   // Get the week's days (Sunday to Saturday)
   const getWeekDays = () => {
     const startOfWeek = new Date(currentDate);
@@ -122,8 +123,15 @@ export function WeekView({ currentDate, events, onEventClick }: WeekViewProps) {
                 {hours.map((hour) => (
                   <div
                     key={hour}
-                    className="border-b border-gray-100"
+                    className="border-b border-gray-100 cursor-pointer hover:bg-blue-50/50 transition-colors"
                     style={{ height: HOUR_HEIGHT }}
+                    onDoubleClick={() => {
+                      if (onSlotDoubleClick) {
+                        const slotDate = new Date(day);
+                        slotDate.setHours(hour, 0, 0, 0);
+                        onSlotDoubleClick(slotDate);
+                      }
+                    }}
                   />
                 ))}
 

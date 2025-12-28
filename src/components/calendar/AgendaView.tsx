@@ -194,7 +194,7 @@ export function AgendaView({ currentDate, events, onEventClick }: AgendaViewProp
                           <div className="flex items-center gap-1.5 mt-2 text-sm text-gray-600">
                             <Users className="h-4 w-4" />
                             <span className="truncate">
-                              {event.metadata.attendees.slice(0, 3).map(a => a.name || a.email.split('@')[0]).join(', ')}
+                              {event.metadata.attendees.slice(0, 3).map(a => a.name || (a.email ? a.email.split('@')[0] : 'Unknown')).join(', ')}
                               {event.metadata.attendees.length > 3 && ` +${event.metadata.attendees.length - 3} more`}
                             </span>
                           </div>

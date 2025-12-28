@@ -6,6 +6,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Communication } from '@/types/communicationHub';
+import { classifyEmailNoise } from '@/lib/email/noiseDetection';
+import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
+import { getValidToken } from '@/lib/microsoft/auth';
 
 interface EmailMessage {
   id: string;
@@ -40,6 +43,17 @@ export function emailToCommunication(email: EmailMessage): Partial<Communication
     name: email.from_name || '',
   };
 
+  // Check for noise emails (AI notetakers, etc.) - these don't need response
+  const noiseClassification = !isOutbound
+    ? classifyEmailNoise(email.from_email, email.subject, email.body_preview)
+    : null;
+
+  const isNoiseEmail = noiseClassification?.autoProcess ?? false;
+
+  // Noise emails are auto-processed: no response needed, already "responded"
+  const awaitingOurResponse = !isOutbound && !isNoiseEmail;
+  const respondedAt = isNoiseEmail ? new Date().toISOString() : null;
+
   return {
     // Channel
     channel: 'email',
@@ -69,13 +83,15 @@ export function emailToCommunication(email: EmailMessage): Partial<Communication
     external_id: email.message_id,
     thread_id: email.conversation_ref,
 
-    // Response state (inbound = awaiting our response)
-    awaiting_our_response: !isOutbound,
+    // Response state
+    // Noise emails (AI notetakers) are auto-processed and don't need response
+    awaiting_our_response: awaitingOurResponse,
     awaiting_their_response: isOutbound,
-    response_sla_minutes: !isOutbound ? 240 : null,  // 4 hour default SLA for inbound
-    response_due_by: !isOutbound
+    response_sla_minutes: awaitingOurResponse ? 240 : null,  // 4 hour default SLA for inbound
+    response_due_by: awaitingOurResponse
       ? new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
       : null,
+    responded_at: respondedAt,
 
     // Relationships - email_messages doesn't have these columns
     company_id: null,
@@ -86,8 +102,8 @@ export function emailToCommunication(email: EmailMessage): Partial<Communication
     // AI
     is_ai_generated: false,
 
-    // Analysis pending
-    analysis_status: 'pending',
+    // Noise emails are pre-classified
+    analysis_status: isNoiseEmail ? 'complete' : 'pending',
   };
 }
 
@@ -121,6 +137,9 @@ export async function syncEmailToCommunications(emailId: string): Promise<string
   // Convert and insert
   const communication = emailToCommunication(email as EmailMessage);
 
+  // Check if this is an auto-processed noise email
+  const noiseCheck = classifyEmailNoise(email.from_email, email.subject, email.body_preview);
+
   const { data: inserted, error: insertError } = await supabase
     .from('communications')
     .insert(communication)
@@ -132,7 +151,36 @@ export async function syncEmailToCommunications(emailId: string): Promise<string
     return null;
   }
 
-  console.log(`[EmailAdapter] Synced email ${emailId} → communication ${inserted.id}`);
+  if (noiseCheck.autoProcess) {
+    console.log(`[EmailAdapter] Auto-processed ${noiseCheck.noiseType}: ${email.from_email} → ${inserted.id} (${noiseCheck.reason})`);
+
+    // Tag the email in Outlook with X-FORCE category
+    if (email.message_id) {
+      try {
+        // Get Microsoft connection for this user
+        const { data: msConnection } = await supabase
+          .from('microsoft_connections')
+          .select('user_id')
+          .eq('is_active', true)
+          .limit(1)
+          .single();
+
+        if (msConnection) {
+          const token = await getValidToken(msConnection.user_id);
+          if (token) {
+            const graphClient = new MicrosoftGraphClient(token);
+            await graphClient.addCategoryToMessage(email.message_id, 'X-FORCE');
+            console.log(`[EmailAdapter] Tagged notetaker email in Outlook: ${email.message_id}`);
+          }
+        }
+      } catch (tagError) {
+        // Non-critical, just log
+        console.warn(`[EmailAdapter] Could not tag email in Outlook:`, tagError);
+      }
+    }
+  } else {
+    console.log(`[EmailAdapter] Synced email ${emailId} → communication ${inserted.id}`);
+  }
   return inserted.id;
 }
 

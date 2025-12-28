@@ -61,6 +61,8 @@ export {
 } from './contextEnrichment';
 
 // Tier Detection (Priority Tiers System)
+// NOTE: Tier detection now uses AI analysis + COMMUNICATION_TYPE_TIERS mapping
+// classifyItem is the main API - it uses tier_trigger from AI analysis
 export {
   classifyItem,
   classifyAllItems,
@@ -68,11 +70,22 @@ export {
   sortTier2,
   sortTier3,
   sortTier4,
-  detectTier1,
-  detectTier2,
-  detectTier3,
-  detectTier4,
+  COMMUNICATION_TYPE_TIERS,
+  getTierForTrigger,
 } from './tierDetection';
+
+// Already Handled Detection
+export {
+  detectAlreadyHandled,
+  batchDetectAlreadyHandled,
+} from './alreadyHandledDetection';
+
+// Action Reconciliation (syncs with Relationship Intelligence)
+export {
+  reconcileCompanyActions,
+  syncActionCompletion,
+  runBatchReconciliation,
+} from './actionReconciliation';
 
 // Re-export types for convenience
 export type {

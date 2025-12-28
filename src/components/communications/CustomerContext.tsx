@@ -1,25 +1,39 @@
 'use client';
 
+import { useState } from 'react';
 import useSWR from 'swr';
+import { format } from 'date-fns';
 import {
   Building2,
   User,
   Mail,
-  Phone,
-  Globe,
-  Briefcase,
-  Package,
   Calendar,
-  MessageSquare,
+  UserPlus,
+  AlertCircle,
+  Package,
+  Users,
+  Hash,
+  Video,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
   TrendingUp,
-  Target
+  Sparkles,
+  Phone
 } from 'lucide-react';
+import { CreateLeadFromEmail } from './CreateLeadFromEmail';
+import { ComposeModal } from '@/components/inbox/ComposeModal';
+import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
+import { QuickBookModal } from '@/components/scheduler/QuickBookModal';
+import { cn } from '@/lib/utils';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 interface CustomerContextProps {
   companyId: string | null;
   contactId?: string | null;
+  senderEmail?: string | null;
+  onLeadCreated?: () => void;
 }
 
 interface Company {
@@ -28,6 +42,9 @@ interface Company {
   email?: string;
   phone?: string;
   website?: string;
+  vfp_customer_id?: string | null;
+  ats_id?: string | null;
+  voice_customer?: boolean;
 }
 
 interface Contact {
@@ -36,251 +53,551 @@ interface Contact {
   title?: string;
   email?: string;
   phone?: string;
+  is_primary?: boolean;
 }
 
-interface Deal {
+interface CompanyProduct {
   id: string;
-  name: string;
-  value?: number;
-  stage?: string;
-  expected_close_date?: string;
+  status: string;
+  product?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  current_stage?: {
+    id: string;
+    name: string;
+  };
+  owner?: {
+    id: string;
+    name: string;
+  };
+  owner_user_id?: string | null;
 }
 
-interface Stats {
-  total_communications: number;
-  inbound: number;
-  outbound: number;
-  products_discussed: string[];
-  recent_signals: Array<{ signal: string; type: string }>;
-  avg_response_time: string;
+interface SchedulingRequest {
+  id: string;
+  title: string;
+  status: string;
+  scheduled_time?: string;
+  meeting_type: string;
+  duration_minutes: number;
 }
 
-export function CustomerContext({ companyId, contactId }: CustomerContextProps) {
+interface MeetingActivity {
+  id: string;
+  subject: string | null;
+  occurred_at: string;
+  metadata: {
+    start_time?: string;
+    end_time?: string;
+    is_online_meeting?: boolean;
+    join_url?: string;
+    attendees?: Array<{ name?: string; email?: string }>;
+  } | null;
+  contact?: {
+    id: string;
+    name: string;
+    email?: string;
+  };
+}
+
+// Status badge colors
+const statusColors: Record<string, { bg: string; text: string }> = {
+  active: { bg: 'bg-green-100', text: 'text-green-700' },
+  customer: { bg: 'bg-green-100', text: 'text-green-700' },
+  in_sales: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  onboarding: { bg: 'bg-purple-100', text: 'text-purple-700' },
+  churned: { bg: 'bg-gray-100', text: 'text-gray-600' },
+  declined: { bg: 'bg-red-100', text: 'text-red-700' },
+};
+
+export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreated }: CustomerContextProps) {
+  const [showAllContacts, setShowAllContacts] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
+  const [showScheduleMenu, setShowScheduleMenu] = useState(false);
+  const [showAIScheduler, setShowAIScheduler] = useState(false);
+  const [showQuickBook, setShowQuickBook] = useState(false);
+
   // Fetch company details
   const { data: companyData } = useSWR<{ company: Company }>(
     companyId ? `/api/companies/${companyId}` : null,
     fetcher
   );
 
-  // Fetch contact details if specific contact selected
-  const { data: contactData } = useSWR<{ contact: Contact }>(
-    contactId ? `/api/contacts/${contactId}` : null,
+  // Fetch contacts for this company
+  const { data: contactsData } = useSWR<{ contacts: Contact[] }>(
+    companyId ? `/api/contacts?company_id=${companyId}` : null,
     fetcher
   );
 
-  // Fetch deals for this company
-  const { data: dealsData } = useSWR<{ deals: Deal[] }>(
-    companyId ? `/api/deals?company_id=${companyId}` : null,
+  // Fetch company products
+  const { data: productsData } = useSWR<{ companyProducts: CompanyProduct[] }>(
+    companyId ? `/api/companies/${companyId}/products` : null,
     fetcher
   );
 
-  // Fetch communication stats
-  const { data: statsData } = useSWR<{ stats: Stats }>(
-    companyId ? `/api/communications/stats?company_id=${companyId}` : null,
+  // Fetch upcoming meetings from activities table
+  const { data: meetingsData } = useSWR<{ activities: MeetingActivity[] }>(
+    companyId ? `/api/activities?company_id=${companyId}&type=meeting&upcoming=true&limit=5` : null,
+    fetcher
+  );
+
+  // For unlinked: fetch communications by sender email
+  const { data: unlinkedCommsData } = useSWR<{ communications: Array<{ id: string }> }>(
+    !companyId && senderEmail ? `/api/communications?sender_email=${encodeURIComponent(senderEmail)}&limit=1` : null,
     fetcher
   );
 
   const company = companyData?.company;
-  const contact = contactData?.contact;
-  const deals = dealsData?.deals || [];
-  const stats = statsData?.stats;
-  const activeDeal = deals.find((d) => d.stage !== 'closed_won' && d.stage !== 'closed_lost');
+  const contacts = contactsData?.contacts || [];
+  const products = productsData?.companyProducts || [];
+  const meetings = meetingsData?.activities || [];
+
+  // Separate products by status
+  const activeProducts = products.filter(p => p.status === 'active' || p.status === 'customer');
+  const inSalesProducts = products.filter(p => p.status === 'in_sales');
+  const otherProducts = products.filter(p => !['active', 'customer', 'in_sales'].includes(p.status));
+
+  // Get VFP rep from products (first product with an owner)
+  const vfpRep = products.find(p => p.owner)?.owner;
+
+  // Unlinked communication view - show create lead option
+  if (!companyId && senderEmail) {
+    const communicationId = unlinkedCommsData?.communications?.[0]?.id;
+    const domain = senderEmail.split('@')[1];
+
+    return (
+      <div className="w-80 h-full border-l bg-white overflow-y-auto flex flex-col">
+        {/* Unlinked Header */}
+        <div className="p-4 border-b border-gray-200 bg-gradient-to-br from-amber-50 to-orange-50">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Unlinked</h3>
+              <p className="text-xs text-gray-500">{domain}</p>
+            </div>
+          </div>
+
+          {/* Sender Info */}
+          <div className="text-sm text-gray-600 truncate">
+            <Mail className="w-3.5 h-3.5 inline mr-1.5" />
+            {senderEmail}
+          </div>
+        </div>
+
+        {/* Create Lead Section */}
+        <div className="p-4">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <UserPlus className="w-3.5 h-3.5" />
+            Create Lead
+          </h4>
+
+          {communicationId ? (
+            <CreateLeadFromEmail
+              communicationId={communicationId}
+              onLeadCreated={() => onLeadCreated?.()}
+            />
+          ) : (
+            <div className="text-sm text-gray-500 text-center py-4">
+              Loading...
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!companyId) {
     return (
-      <div className="w-80 border-l bg-gray-50 p-6 flex items-center justify-center">
-        <p className="text-gray-400 text-center">
-          Select a conversation to see customer details
+      <div className="w-80 h-full border-l bg-gray-50 p-6 flex items-center justify-center">
+        <p className="text-gray-400 text-center text-sm">
+          Select a conversation to see details
         </p>
       </div>
     );
   }
 
-  return (
-    <div className="w-80 border-l bg-white overflow-y-auto">
-      {/* Contact/Company Header */}
-      <div className="p-4 border-b bg-gradient-to-br from-blue-50 to-purple-50">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-            {contact ? (
-              <User className="w-6 h-6 text-blue-600" />
-            ) : (
-              <Building2 className="w-6 h-6 text-blue-600" />
-            )}
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">
-              {contact?.name || company?.name || 'Loading...'}
-            </h3>
-            {contact && (
-              <p className="text-sm text-gray-500">{contact.title || 'Contact'}</p>
-            )}
-            {contact && company && (
-              <p className="text-xs text-gray-400">{company.name}</p>
-            )}
-          </div>
-        </div>
+  // Determine primary contact
+  const primaryContact = contacts.find(c => c.is_primary) || contacts[0];
+  const displayedContacts = showAllContacts ? contacts : contacts.slice(0, 3);
 
-        {/* Quick Contact Info */}
-        <div className="space-y-1.5 text-sm">
-          {(contact?.email || company?.email) && (
-            <a
-              href={`mailto:${contact?.email || company?.email}`}
-              className="flex items-center gap-2 text-gray-600 hover:text-blue-600"
-            >
-              <Mail className="w-4 h-4" />
-              <span className="truncate">{contact?.email || company?.email}</span>
-            </a>
-          )}
-          {(contact?.phone || company?.phone) && (
-            <a
-              href={`tel:${contact?.phone || company?.phone}`}
-              className="flex items-center gap-2 text-gray-600 hover:text-blue-600"
-            >
-              <Phone className="w-4 h-4" />
-              {contact?.phone || company?.phone}
-            </a>
-          )}
-          {company?.website && (
-            <a
-              href={company.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-gray-600 hover:text-blue-600"
-            >
-              <Globe className="w-4 h-4" />
-              <span className="truncate">{company.website.replace(/^https?:\/\//, '')}</span>
-            </a>
-          )}
+  return (
+    <div className="w-80 h-full border-l border-gray-200 bg-white overflow-y-auto flex flex-col">
+      {/* Company Header */}
+      <div className="p-4 border-b border-gray-200">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+            <Building2 className="w-5 h-5 text-blue-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-900 truncate">
+              {company?.name || 'Loading...'}
+            </h3>
+            {company?.voice_customer && (
+              <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">
+                VFP Customer
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Active Deal */}
-      {activeDeal && (
-        <div className="p-4 border-b">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
-            <Briefcase className="w-4 h-4" />
-            Active Deal
-          </h4>
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="font-medium text-gray-900 mb-1">{activeDeal.name}</p>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="text-gray-500">Value: </span>
-                <span className="font-medium text-green-600">
-                  ${activeDeal.value?.toLocaleString()}/yr
+      {/* Rev & ATS IDs */}
+      {(company?.vfp_customer_id || company?.ats_id) && (
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-4 text-xs">
+            {company.vfp_customer_id && (
+              <div className="flex items-center gap-1.5">
+                <Hash className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-gray-500">Rev:</span>
+                <span className="font-mono font-medium text-gray-700">
+                  {company.vfp_customer_id}
                 </span>
               </div>
-              <div>
-                <span className="text-gray-500">Stage: </span>
-                <span className="font-medium text-gray-700 capitalize">
-                  {activeDeal.stage?.replace(/_/g, ' ')}
+            )}
+            {company.ats_id && (
+              <div className="flex items-center gap-1.5">
+                <Hash className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-gray-500">ATS:</span>
+                <span className="font-mono font-medium text-gray-700">
+                  {company.ats_id}
                 </span>
-              </div>
-            </div>
-            {activeDeal.expected_close_date && (
-              <div className="mt-2 text-xs text-gray-500">
-                Expected close: {new Date(activeDeal.expected_close_date).toLocaleDateString()}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Products Discussed */}
-      {stats?.products_discussed && stats.products_discussed.length > 0 && (
-        <div className="p-4 border-b">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
-            <Package className="w-4 h-4" />
-            Products Discussed
-          </h4>
-          <div className="flex flex-wrap gap-2">
-            {stats.products_discussed.map((product) => (
-              <span
-                key={product}
-                className="px-2 py-1 bg-blue-100 text-blue-700 text-sm rounded-lg"
-              >
-                {product}
-              </span>
-            ))}
+      {/* VFP Rep */}
+      {vfpRep && (
+        <div className="px-4 py-3 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <User className="w-3.5 h-3.5 text-gray-400" />
+            <span className="text-xs text-gray-500">VFP Rep:</span>
+            <span className="text-sm font-medium text-gray-900">
+              {vfpRep.name}
+            </span>
           </div>
         </div>
       )}
 
-      {/* Communication Stats */}
-      {stats && (
-        <div className="p-4 border-b">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" />
-            Communication Stats
-          </h4>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gray-50 rounded-lg p-2 text-center">
-              <p className="text-2xl font-bold text-gray-900">{stats.total_communications || 0}</p>
-              <p className="text-xs text-gray-500">Total</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-2 text-center">
-              <p className="text-2xl font-bold text-gray-900">{stats.avg_response_time || '-'}</p>
-              <p className="text-xs text-gray-500">Avg Response</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-2 text-center">
-              <p className="text-2xl font-bold text-blue-600">{stats.inbound || 0}</p>
-              <p className="text-xs text-gray-500">Inbound</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-2 text-center">
-              <p className="text-2xl font-bold text-green-600">{stats.outbound || 0}</p>
-              <p className="text-xs text-gray-500">Outbound</p>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Contacts Section */}
+      <div className="p-4 border-b border-gray-200">
+        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Users className="w-3.5 h-3.5" />
+          Contacts
+          {contacts.length > 0 && (
+            <span className="ml-auto text-gray-400">{contacts.length}</span>
+          )}
+        </h4>
 
-      {/* Recent Signals */}
-      {stats?.recent_signals && stats.recent_signals.length > 0 && (
-        <div className="p-4 border-b">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
-            <Target className="w-4 h-4" />
-            Recent Signals
-          </h4>
+        {contacts.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No contacts</p>
+        ) : (
           <div className="space-y-2">
-            {stats.recent_signals.map((signal, i) => (
+            {displayedContacts.map((contact) => (
               <div
-                key={i}
-                className={`px-3 py-2 rounded-lg text-sm ${
-                  signal.type === 'positive'
-                    ? 'bg-green-50 text-green-700'
-                    : signal.type === 'negative'
-                      ? 'bg-red-50 text-red-700'
-                      : 'bg-gray-50 text-gray-700'
-                }`}
+                key={contact.id}
+                className={cn(
+                  'p-2 rounded-lg',
+                  contact.is_primary
+                    ? 'bg-blue-50 border border-blue-200'
+                    : 'bg-gray-50'
+                )}
               >
-                {signal.signal.replace(/_/g, ' ')}
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {contact.name}
+                      {contact.is_primary && (
+                        <span className="ml-1.5 text-xs text-blue-600">(Primary)</span>
+                      )}
+                    </p>
+                    {contact.title && (
+                      <p className="text-xs text-gray-500 truncate">{contact.title}</p>
+                    )}
+                  </div>
+                </div>
+                {contact.email && (
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="text-xs text-gray-500 hover:text-blue-600 truncate block mt-1"
+                  >
+                    {contact.email}
+                  </a>
+                )}
+              </div>
+            ))}
+
+            {contacts.length > 3 && (
+              <button
+                onClick={() => setShowAllContacts(!showAllContacts)}
+                className="w-full text-xs text-blue-600 hover:text-blue-700 flex items-center justify-center gap-1 py-1"
+              >
+                {showAllContacts ? (
+                  <>Show less <ChevronUp className="w-3 h-3" /></>
+                ) : (
+                  <>Show {contacts.length - 3} more <ChevronDown className="w-3 h-3" /></>
+                )}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Active Products Section */}
+      {activeProducts.length > 0 && (
+        <div className="p-4 border-b border-gray-200">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Package className="w-3.5 h-3.5" />
+            Active Products
+            <span className="ml-auto text-gray-400">{activeProducts.length}</span>
+          </h4>
+
+          <div className="space-y-2">
+            {activeProducts.map((cp) => (
+              <div key={cp.id} className="p-2 bg-green-50 rounded-lg border border-green-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">
+                    {cp.product?.name || 'Unknown Product'}
+                  </span>
+                  <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">
+                    Active
+                  </span>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* In Sales Products Section */}
+      {inSalesProducts.length > 0 && (
+        <div className="p-4 border-b border-gray-200">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <TrendingUp className="w-3.5 h-3.5" />
+            In Sales Cycle
+            <span className="ml-auto text-gray-400">{inSalesProducts.length}</span>
+          </h4>
+
+          <div className="space-y-2">
+            {inSalesProducts.map((cp) => (
+              <div key={cp.id} className="p-2 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">
+                    {cp.product?.name || 'Unknown Product'}
+                  </span>
+                  <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-700">
+                    In Sales
+                  </span>
+                </div>
+                {cp.current_stage && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Stage: {cp.current_stage.name}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Other Products (churned, declined, onboarding) */}
+      {otherProducts.length > 0 && (
+        <div className="p-4 border-b border-gray-200">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Package className="w-3.5 h-3.5" />
+            Other Products
+            <span className="ml-auto text-gray-400">{otherProducts.length}</span>
+          </h4>
+
+          <div className="space-y-2">
+            {otherProducts.map((cp) => {
+              const colors = statusColors[cp.status] || { bg: 'bg-gray-100', text: 'text-gray-600' };
+              return (
+                <div key={cp.id} className="p-2 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-900">
+                      {cp.product?.name || 'Unknown Product'}
+                    </span>
+                    <span className={cn(
+                      'px-1.5 py-0.5 text-xs font-medium rounded capitalize',
+                      colors.bg, colors.text
+                    )}>
+                      {cp.status?.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Show empty state if no products at all */}
+      {products.length === 0 && (
+        <div className="p-4 border-b border-gray-200">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Package className="w-3.5 h-3.5" />
+            Products
+          </h4>
+          <p className="text-sm text-gray-400 italic">No products</p>
+        </div>
+      )}
+
+      {/* Upcoming Meetings Section */}
+      <div className="p-4 border-b border-gray-200">
+        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Calendar className="w-3.5 h-3.5" />
+          Upcoming Meetings
+        </h4>
+
+        {meetings.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No scheduled meetings</p>
+        ) : (
+          <div className="space-y-2">
+            {meetings.map((meeting) => {
+              const startTime = meeting.metadata?.start_time || meeting.occurred_at;
+              const endTime = meeting.metadata?.end_time;
+              const durationMinutes = startTime && endTime
+                ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000)
+                : null;
+
+              return (
+                <div key={meeting.id} className="p-2 bg-gray-50 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <Video className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {meeting.subject || 'Meeting'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {format(new Date(startTime), 'MMM d, h:mm a')}
+                        {durationMinutes && (
+                          <span className="text-gray-400 ml-1">
+                            ({durationMinutes}m)
+                          </span>
+                        )}
+                      </p>
+                      {meeting.contact && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          with {meeting.contact.name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Quick Actions */}
       <div className="p-4">
-        <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3">
+        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
           Quick Actions
         </h4>
         <div className="space-y-2">
-          <button className="w-full px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2">
+          <button
+            onClick={() => setShowCompose(true)}
+            className="w-full px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+          >
             <Mail className="w-4 h-4" />
             Send Email
           </button>
-          <button className="w-full px-4 py-2 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-colors flex items-center justify-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Schedule Meeting
-          </button>
-          <button className="w-full px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2">
-            <MessageSquare className="w-4 h-4" />
-            Add Note
-          </button>
+
+          {/* Schedule Meeting Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowScheduleMenu(!showScheduleMenu)}
+              className="w-full px-4 py-2 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+            >
+              <Calendar className="w-4 h-4" />
+              Schedule Meeting
+              <ChevronUp className={cn("w-3 h-3 ml-1 transition-transform", !showScheduleMenu && "rotate-180")} />
+            </button>
+            {showScheduleMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowScheduleMenu(false)}
+                />
+                <div className="absolute left-0 right-0 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                  <button
+                    onClick={() => {
+                      setShowAIScheduler(true);
+                      setShowScheduleMenu(false);
+                    }}
+                    className="w-full flex items-start gap-3 px-3 py-2 hover:bg-gray-50 text-left"
+                  >
+                    <Sparkles className="h-4 w-4 text-blue-500 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">AI Scheduler</div>
+                      <div className="text-xs text-gray-500">AI drafts email & handles replies</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowQuickBook(true);
+                      setShowScheduleMenu(false);
+                    }}
+                    className="w-full flex items-start gap-3 px-3 py-2 hover:bg-gray-50 text-left"
+                  >
+                    <Phone className="h-4 w-4 text-green-500 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">Quick Book</div>
+                      <div className="text-xs text-gray-500">Book now while on a call</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <a
+            href={`/companies/${companyId}`}
+            className="w-full px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+          >
+            <ExternalLink className="w-4 h-4" />
+            View Company
+          </a>
         </div>
       </div>
+
+      {/* Compose Modal */}
+      {showCompose && (
+        <ComposeModal
+          isOpen={true}
+          onClose={() => setShowCompose(false)}
+          onSent={() => setShowCompose(false)}
+          toEmail={primaryContact?.email}
+          toName={primaryContact?.name}
+          companyId={companyId}
+        />
+      )}
+
+      {/* AI Scheduler Modal */}
+      <ScheduleMeetingModal
+        isOpen={showAIScheduler}
+        onClose={() => setShowAIScheduler(false)}
+        onSuccess={() => setShowAIScheduler(false)}
+        companyId={companyId || undefined}
+        contactName={primaryContact?.name}
+        contactEmail={primaryContact?.email}
+      />
+
+      {/* Quick Book Modal */}
+      <QuickBookModal
+        isOpen={showQuickBook}
+        onClose={() => setShowQuickBook(false)}
+        onSuccess={() => setShowQuickBook(false)}
+        companyId={companyId || undefined}
+        contactName={primaryContact?.name}
+        contactEmail={primaryContact?.email}
+      />
     </div>
   );
 }

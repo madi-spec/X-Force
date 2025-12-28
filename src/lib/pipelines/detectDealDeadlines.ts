@@ -223,6 +223,7 @@ export async function detectDealDeadlines(userId?: string): Promise<PipelineResu
               company_name: company?.name || null,
               status: 'pending',
               source: 'system',
+              source_id: deal.id,
               created_at: nowTimestamp,
               updated_at: nowTimestamp,
             });
@@ -255,6 +256,7 @@ export async function detectDealDeadlines(userId?: string): Promise<PipelineResu
             company_name: company?.name || null,
             status: 'pending',
             source: 'system',
+            source_id: deal.id,
             created_at: nowTimestamp,
             updated_at: nowTimestamp,
           });
@@ -285,6 +287,7 @@ export async function detectDealDeadlines(userId?: string): Promise<PipelineResu
             company_name: company?.name || null,
             status: 'pending',
             source: 'system',
+            source_id: deal.id,
             created_at: nowTimestamp,
             updated_at: nowTimestamp,
           });

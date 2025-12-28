@@ -5,6 +5,7 @@ import { getValidToken, updateLastSync } from './auth';
 interface CalendarSyncResult {
   imported: number;
   skipped: number;
+  rematched: number;
   errors: string[];
 }
 
@@ -60,11 +61,99 @@ function convertToUTC(dateTime: string, timeZone: string): string {
   return utcDate.toISOString();
 }
 
+interface MeetingMetadata {
+  attendees?: Array<{ email?: string; name?: string }>;
+  [key: string]: unknown;
+}
+
+/**
+ * Re-match future meetings that are currently linked to "External Contacts"
+ * to proper companies based on attendee emails matching known contacts.
+ *
+ * This handles the case where a meeting was synced before a contact was added.
+ */
+async function rematchFutureMeetings(
+  externalCompanyId: string,
+  contactsByEmail: Map<string, { id: string; email?: string; company_id: string }>,
+  dealsByContact: Map<string, string>
+): Promise<{ rematched: number }> {
+  const supabase = createAdminClient();
+  const now = new Date().toISOString();
+  let rematched = 0;
+
+  // Get all future meetings linked to External Contacts
+  const { data: unmatchedMeetings, error } = await supabase
+    .from('activities')
+    .select('id, subject, metadata')
+    .eq('company_id', externalCompanyId)
+    .eq('type', 'meeting')
+    .gte('occurred_at', now);
+
+  if (error) {
+    console.error('[CalendarSync] Error fetching unmatched meetings:', error);
+    return { rematched: 0 };
+  }
+
+  if (!unmatchedMeetings || unmatchedMeetings.length === 0) {
+    return { rematched: 0 };
+  }
+
+  console.log(`[CalendarSync] Checking ${unmatchedMeetings.length} future meetings for re-matching`);
+
+  for (const meeting of unmatchedMeetings) {
+    const metadata = meeting.metadata as MeetingMetadata | null;
+    const attendees = metadata?.attendees || [];
+
+    // Try to find a matching contact from attendees
+    let matchedContact: { id: string; email?: string; company_id: string } | null = null;
+
+    for (const attendee of attendees) {
+      const email = attendee.email?.toLowerCase();
+      if (email && contactsByEmail.has(email)) {
+        const contact = contactsByEmail.get(email)!;
+        // Only match if the contact belongs to a real company (not External Contacts)
+        if (contact.company_id !== externalCompanyId) {
+          matchedContact = contact;
+          break;
+        }
+      }
+    }
+
+    if (matchedContact) {
+      // Update the meeting with the matched company and contact
+      const dealId = dealsByContact.get(matchedContact.id) || null;
+
+      const { error: updateError } = await supabase
+        .from('activities')
+        .update({
+          company_id: matchedContact.company_id,
+          contact_id: matchedContact.id,
+          deal_id: dealId,
+          metadata: {
+            ...metadata,
+            has_contact: true,
+            rematched_at: new Date().toISOString(),
+          },
+        })
+        .eq('id', meeting.id);
+
+      if (updateError) {
+        console.error(`[CalendarSync] Error re-matching meeting ${meeting.id}:`, updateError);
+      } else {
+        console.log(`[CalendarSync] Re-matched meeting "${meeting.subject}" to company ${matchedContact.company_id}`);
+        rematched++;
+      }
+    }
+  }
+
+  return { rematched };
+}
+
 /**
  * Sync calendar events from Microsoft 365 to activities
  */
 export async function syncCalendarEvents(userId: string, options: CalendarSyncOptions = {}): Promise<CalendarSyncResult> {
-  const result: CalendarSyncResult = { imported: 0, skipped: 0, errors: [] };
+  const result: CalendarSyncResult = { imported: 0, skipped: 0, rematched: 0, errors: [] };
   const { sinceDate, untilDate, maxEvents = 100 } = options;
 
   console.log('[CalendarSync] Starting sync for user:', userId);
@@ -245,6 +334,16 @@ export async function syncCalendarEvents(userId: string, options: CalendarSyncOp
         }
       } catch (err) {
         result.errors.push(`Error processing event ${event.id}: ${err}`);
+      }
+    }
+
+    // Re-match future meetings that are linked to External Contacts
+    // This catches meetings that were imported before contacts were added
+    if (externalCompanyId) {
+      const rematchResult = await rematchFutureMeetings(externalCompanyId, contactsByEmail, dealsByContact);
+      result.rematched = rematchResult.rematched;
+      if (rematchResult.rematched > 0) {
+        console.log(`[CalendarSync] Re-matched ${rematchResult.rematched} meetings to proper companies`);
       }
     }
 

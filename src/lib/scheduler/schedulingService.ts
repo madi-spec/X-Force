@@ -22,6 +22,15 @@ import {
   SchedulingRequestSummary,
   SchedulerDashboardData,
 } from './types';
+import {
+  generateSchedulingEmail,
+  generateProposedTimes,
+  formatTimeSlotsForEmail,
+  EmailType,
+} from './emailGeneration';
+import { sendEmail } from '@/lib/microsoft/emailSync';
+import { getValidToken } from '@/lib/microsoft/auth';
+import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 
 // ============================================
 // STATE MACHINE DEFINITION
@@ -95,10 +104,20 @@ export class SchedulingService {
 
   constructor(options?: { useAdmin?: boolean }) {
     this.useAdmin = options?.useAdmin ?? false;
+    console.log('[SchedulingService] Constructor called with options:', options, '=> useAdmin:', this.useAdmin);
   }
 
   private async getClient() {
-    return this.useAdmin ? createAdminClient() : await createClient();
+    console.log('[SchedulingService.getClient] useAdmin:', this.useAdmin);
+    if (this.useAdmin) {
+      const client = createAdminClient();
+      console.log('[SchedulingService.getClient] Created admin client');
+      return client;
+    } else {
+      const client = await createClient();
+      console.log('[SchedulingService.getClient] Created regular client');
+      return client;
+    }
   }
 
   // ============================================
@@ -122,6 +141,7 @@ export class SchedulingService {
           created_by: createdBy,
           deal_id: input.deal_id || null,
           company_id: input.company_id || null,
+          source_communication_id: input.source_communication_id || null,
           meeting_type: input.meeting_type,
           duration_minutes: input.duration_minutes,
           title: input.title || null,
@@ -147,15 +167,28 @@ export class SchedulingService {
         return { data: null, error: requestError.message };
       }
 
-      // 2. Create internal attendees
-      const internalAttendees = input.internal_attendees.map((attendee) => ({
-        scheduling_request_id: request.id,
-        side: ATTENDEE_SIDE.INTERNAL,
-        user_id: attendee.user_id,
-        is_organizer: attendee.is_organizer ?? false,
-        is_required: true,
-        invite_status: INVITE_STATUS.PENDING,
-      }));
+      // 2. Create internal attendees - fetch user info
+      const userIds = input.internal_attendees.map(a => a.user_id);
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .in('id', userIds);
+
+      const userMap = new Map((usersData || []).map(u => [u.id, u]));
+
+      const internalAttendees = input.internal_attendees.map((attendee) => {
+        const user = userMap.get(attendee.user_id);
+        return {
+          scheduling_request_id: request.id,
+          side: ATTENDEE_SIDE.INTERNAL,
+          user_id: attendee.user_id,
+          name: user?.name || null,
+          email: user?.email || '',
+          is_organizer: attendee.is_organizer ?? false,
+          is_required: true,
+          invite_status: INVITE_STATUS.PENDING,
+        };
+      });
 
       // 3. Create external attendees
       const externalAttendees = input.external_attendees.map((attendee) => ({
@@ -218,10 +251,21 @@ export class SchedulingService {
         `
         *,
         attendees:scheduling_attendees(*),
-        actions:scheduling_actions(*)
+        actions:scheduling_actions(*),
+        company:companies(id, name),
+        deal:deals(id, name),
+        source_communication:communications!source_communication_id(
+          id,
+          subject,
+          channel,
+          direction,
+          occurred_at,
+          content_preview
+        )
       `
       )
       .eq('id', id)
+      .order('created_at', { referencedTable: 'scheduling_actions', ascending: false })
       .single();
 
     if (error) {
@@ -277,6 +321,81 @@ export class SchedulingService {
   }
 
   /**
+   * Reconciles confirmed meetings with calendar - marks cancelled if event no longer exists
+   */
+  private async reconcileCancelledMeetings(): Promise<void> {
+    try {
+      const supabase = await this.getClient();
+
+      // Get confirmed requests with calendar_event_id and created_by
+      const { data: confirmedWithEvents } = await supabase
+        .from('scheduling_requests')
+        .select('id, calendar_event_id, created_by')
+        .in('status', [SCHEDULING_STATUS.CONFIRMED, SCHEDULING_STATUS.REMINDER_SENT])
+        .not('calendar_event_id', 'is', null);
+
+      if (!confirmedWithEvents || confirmedWithEvents.length === 0) {
+        return;
+      }
+
+      // Group by creator to minimize token lookups
+      const byCreator = new Map<string, typeof confirmedWithEvents>();
+      for (const req of confirmedWithEvents) {
+        if (!req.created_by) continue;
+        const list = byCreator.get(req.created_by) || [];
+        list.push(req);
+        byCreator.set(req.created_by, list);
+      }
+
+      // Check each creator's events
+      for (const [userId, requests] of byCreator) {
+        try {
+          const token = await getValidToken(userId);
+          if (!token) continue;
+
+          const client = new MicrosoftGraphClient(token);
+
+          for (const req of requests) {
+            try {
+              await client.getEvent(req.calendar_event_id!);
+              // Event exists, nothing to do
+            } catch (err) {
+              // Event doesn't exist or was cancelled - mark as cancelled
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('ErrorItemNotFound')) {
+                console.log(`[Scheduler] Calendar event ${req.calendar_event_id} no longer exists, marking request ${req.id} as cancelled`);
+
+                await supabase
+                  .from('scheduling_requests')
+                  .update({
+                    status: SCHEDULING_STATUS.CANCELLED,
+                    outcome: 'cancelled_from_calendar',
+                    completed_at: new Date().toISOString(),
+                  })
+                  .eq('id', req.id);
+
+                // Log the action
+                await supabase
+                  .from('scheduling_actions')
+                  .insert({
+                    scheduling_request_id: req.id,
+                    action_type: 'calendar_cancelled',
+                    actor: 'system',
+                    message_content: 'Meeting was cancelled directly from calendar',
+                  });
+              }
+            }
+          }
+        } catch (err) {
+          console.error(`[Scheduler] Error checking calendar for user ${userId}:`, err);
+        }
+      }
+    } catch (err) {
+      console.error('[Scheduler] Error in reconcileCancelledMeetings:', err);
+    }
+  }
+
+  /**
    * Gets dashboard data for the scheduler
    */
   async getDashboardData(): Promise<{
@@ -284,6 +403,9 @@ export class SchedulingService {
     error: string | null;
   }> {
     const supabase = await this.getClient();
+
+    // Reconcile cancelled meetings from calendar before fetching data
+    await this.reconcileCancelledMeetings();
 
     // Get pending requests (initiated, proposing, awaiting_response, negotiating)
     const { data: pending, error: pendingError } = await supabase
@@ -865,6 +987,316 @@ export class SchedulingService {
     }
 
     return { success: true, error: null };
+  }
+
+  // ============================================
+  // EMAIL OPERATIONS
+  // ============================================
+
+  /**
+   * Sends an initial scheduling email for a request.
+   * Generates proposed times, creates the email via AI, and sends via Microsoft Graph.
+   */
+  async sendSchedulingEmail(
+    requestId: string,
+    userId: string,
+    options?: {
+      emailType?: EmailType;
+      customSubject?: string;
+      customBody?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    error: string | null;
+    email?: { subject: string; body: string };
+    proposedTimes?: string[];
+  }> {
+    console.log('[sendSchedulingEmail] Starting with:', { requestId, userId, useAdmin: this.useAdmin });
+    const supabase = await this.getClient();
+    console.log('[sendSchedulingEmail] Got supabase client');
+
+    try {
+      // 1. Get the scheduling request with all related data
+      const { data: request, error: fetchError } = await supabase
+        .from('scheduling_requests')
+        .select(`
+          *,
+          attendees:scheduling_attendees(*),
+          company:companies(id, name, industry),
+          deal:deals(id, name, stage)
+        `)
+        .eq('id', requestId)
+        .single();
+
+      if (fetchError || !request) {
+        return { success: false, error: fetchError?.message || 'Request not found' };
+      }
+
+      // 2. Get sender info
+      console.log('[sendSchedulingEmail] Looking up user:', userId);
+      console.log('[sendSchedulingEmail] Using admin client:', this.useAdmin);
+
+      const { data: sender, error: senderError } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .eq('id', userId)
+        .single();
+
+      console.log('[sendSchedulingEmail] Sender lookup result:', { sender, error: senderError });
+
+      if (!sender) {
+        return { success: false, error: `Sender user not found: ${senderError?.message || 'no data returned'}` };
+      }
+
+      // 3. Get external attendees (recipients)
+      const externalAttendees = (request.attendees || []).filter(
+        (a: SchedulingAttendee) => a.side === ATTENDEE_SIDE.EXTERNAL
+      );
+
+      if (externalAttendees.length === 0) {
+        return { success: false, error: 'No external attendees to send email to' };
+      }
+
+      // 4. Generate proposed times
+      const dateRangeStart = request.date_range_start
+        ? new Date(request.date_range_start)
+        : new Date();
+      const dateRangeEnd = request.date_range_end
+        ? new Date(request.date_range_end)
+        : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+
+      const proposedTimeDates = generateProposedTimes(
+        dateRangeStart,
+        dateRangeEnd,
+        request.preferred_times || { morning: true, afternoon: true, evening: false },
+        request.avoid_days || [],
+        4
+      );
+
+      const proposedTimeSlots = formatTimeSlotsForEmail(
+        proposedTimeDates,
+        request.timezone || 'America/New_York'
+      );
+
+      // 5. Generate email content
+      const emailType = options?.emailType || 'initial_outreach';
+      let emailContent: { subject: string; body: string };
+
+      if (options?.customSubject && options?.customBody) {
+        emailContent = {
+          subject: options.customSubject,
+          body: options.customBody,
+        };
+      } else {
+        const { email } = await generateSchedulingEmail({
+          emailType,
+          request: request as SchedulingRequest,
+          attendees: request.attendees as SchedulingAttendee[],
+          proposedTimes: proposedTimeSlots,
+          senderName: sender.name || sender.email,
+          senderTitle: undefined, // users table doesn't have title column
+          companyContext: request.company
+            ? {
+                name: request.company.name,
+                industry: request.company.industry,
+              }
+            : undefined,
+          dealContext: request.deal
+            ? {
+                stage: request.deal.stage,
+              }
+            : undefined,
+        });
+        emailContent = email;
+      }
+
+      // 6. Send email via Microsoft Graph
+      const recipientEmails = externalAttendees.map((a: SchedulingAttendee) => a.email);
+
+      console.log('[SchedulingService] Sending email:', {
+        userId,
+        recipients: recipientEmails,
+        subject: emailContent.subject,
+        bodyLength: emailContent.body.length,
+      });
+
+      const sendResult = await sendEmail(
+        userId,
+        recipientEmails,
+        emailContent.subject,
+        emailContent.body,
+        undefined, // cc
+        false // isHtml
+      );
+
+      console.log('[SchedulingService] Send result:', sendResult);
+
+      if (!sendResult.success) {
+        console.error('[SchedulingService] Email send failed:', sendResult.error);
+        return {
+          success: false,
+          error: `Failed to send email: ${sendResult.error}`,
+          email: emailContent,
+        };
+      }
+
+      // 7. Update scheduling request state
+      const proposedTimeStrings = proposedTimeSlots.map((t) => t.formatted);
+
+      await supabase
+        .from('scheduling_requests')
+        .update({
+          status: SCHEDULING_STATUS.AWAITING_RESPONSE,
+          proposed_times: proposedTimeStrings,
+          last_action_at: new Date().toISOString(),
+          next_action_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+          next_action_type: 'follow_up',
+          attempt_count: (request.attempt_count || 0) + 1,
+        })
+        .eq('id', requestId);
+
+      // 8. Log the action
+      await this.logAction(requestId, {
+        action_type: ACTION_TYPES.EMAIL_SENT,
+        message_subject: emailContent.subject,
+        message_content: emailContent.body,
+        times_proposed: proposedTimeStrings,
+        actor: 'ai',
+        ai_reasoning: `Sent ${emailType.replace(/_/g, ' ')} email with ${proposedTimeStrings.length} proposed times`,
+      });
+
+      console.log(`[Scheduler] Sent ${emailType} email for request ${requestId} to ${recipientEmails.join(', ')}`);
+
+      return {
+        success: true,
+        error: null,
+        email: emailContent,
+        proposedTimes: proposedTimeStrings,
+      };
+    } catch (err) {
+      console.error('[Scheduler] Error sending scheduling email:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error sending email',
+      };
+    }
+  }
+
+  /**
+   * Sends a follow-up email for a request that hasn't received a response.
+   */
+  async sendFollowUpEmail(
+    requestId: string,
+    userId: string
+  ): Promise<{
+    success: boolean;
+    error: string | null;
+    email?: { subject: string; body: string };
+  }> {
+    const supabase = await this.getClient();
+
+    // Get request to check attempt count
+    const { data: request } = await supabase
+      .from('scheduling_requests')
+      .select('attempt_count')
+      .eq('id', requestId)
+      .single();
+
+    const emailType: EmailType =
+      (request?.attempt_count || 0) >= 2 ? 'second_follow_up' : 'follow_up';
+
+    return this.sendSchedulingEmail(requestId, userId, { emailType });
+  }
+
+  /**
+   * Preview the email that would be sent without actually sending it.
+   */
+  async previewSchedulingEmail(
+    requestId: string,
+    emailType: EmailType = 'initial_outreach'
+  ): Promise<{
+    success: boolean;
+    error: string | null;
+    email?: { subject: string; body: string };
+    proposedTimes?: string[];
+  }> {
+    const supabase = await this.getClient();
+
+    try {
+      // Get the scheduling request with all related data
+      const { data: request, error: fetchError } = await supabase
+        .from('scheduling_requests')
+        .select(`
+          *,
+          attendees:scheduling_attendees(*),
+          company:companies(id, name, industry),
+          deal:deals(id, name, stage),
+          creator:users!scheduling_requests_created_by_fkey(id, name, email)
+        `)
+        .eq('id', requestId)
+        .single();
+
+      if (fetchError || !request) {
+        return { success: false, error: fetchError?.message || 'Request not found' };
+      }
+
+      // Generate proposed times
+      const dateRangeStart = request.date_range_start
+        ? new Date(request.date_range_start)
+        : new Date();
+      const dateRangeEnd = request.date_range_end
+        ? new Date(request.date_range_end)
+        : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+      const proposedTimeDates = generateProposedTimes(
+        dateRangeStart,
+        dateRangeEnd,
+        request.preferred_times || { morning: true, afternoon: true, evening: false },
+        request.avoid_days || [],
+        4
+      );
+
+      const proposedTimeSlots = formatTimeSlotsForEmail(
+        proposedTimeDates,
+        request.timezone || 'America/New_York'
+      );
+
+      // Generate email content
+      const sender = request.creator || { name: 'Sales Team', email: '' };
+
+      const { email } = await generateSchedulingEmail({
+        emailType,
+        request: request as SchedulingRequest,
+        attendees: request.attendees as SchedulingAttendee[],
+        proposedTimes: proposedTimeSlots,
+        senderName: sender.name || sender.email,
+        senderTitle: undefined, // users table doesn't have title column
+        companyContext: request.company
+          ? {
+              name: request.company.name,
+              industry: request.company.industry,
+            }
+          : undefined,
+        dealContext: request.deal
+          ? {
+              stage: request.deal.stage,
+            }
+          : undefined,
+      });
+
+      return {
+        success: true,
+        error: null,
+        email,
+        proposedTimes: proposedTimeSlots.map((t) => t.formatted),
+      };
+    } catch (err) {
+      console.error('[Scheduler] Error previewing email:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
+    }
   }
 }
 

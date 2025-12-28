@@ -27,7 +27,7 @@ export async function PUT(
   }
 
   const body = await request.json();
-  const { prompt_template, schema_template, change_reason } = body;
+  const { prompt_template, schema_template, model, max_tokens, change_reason } = body;
 
   if (!prompt_template) {
     return NextResponse.json({ error: 'prompt_template is required' }, { status: 400 });
@@ -35,7 +35,7 @@ export async function PUT(
 
   const result = await updatePrompt(
     id,
-    { prompt_template, schema_template },
+    { prompt_template, schema_template, model, max_tokens },
     profile.id,
     change_reason
   );

@@ -24,7 +24,7 @@ export async function POST(
     // Get company info
     const { data: company, error: companyError } = await supabase
       .from('companies')
-      .select('id, name, address')
+      .select('id, name, address, domain')
       .eq('id', companyId)
       .single();
 
@@ -39,7 +39,7 @@ export async function POST(
     const result = await collectIntelligence({
       companyId,
       companyName: company.name,
-      domain: null, // Would extract from company data in production
+      domain: company.domain || null,
       sources,
       force: true,
     });

@@ -20,6 +20,7 @@ import {
   type TranscriptMatchResult,
 } from './transcriptUtils';
 import { processSingleTranscript } from '@/lib/pipelines';
+import { syncTranscriptToCommunication } from '@/lib/communicationHub/sync';
 
 export interface SyncResult {
   synced: number;
@@ -260,6 +261,13 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
         }
 
         synced++;
+
+        // Sync to Communication Hub (async, don't block)
+        if (saved?.id) {
+          syncTranscriptToCommunication(saved.id).catch((err) => {
+            console.error('[Fireflies Sync] Failed to sync transcript to Communication Hub:', err);
+          });
+        }
 
         // Create activity record if matched to a deal (so it shows in Recent Activity)
         if (match.dealId && saved) {

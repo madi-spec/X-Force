@@ -28,6 +28,9 @@ const EXCLUDED_DOMAINS = [
   'calendly.com',
   'hubspot.com',
   'updates.otter.ai',
+  'aelgroup.net',     // Security warning email footer
+  'e.read.ai',        // AI meeting assistant
+  'server.boomte.ch', // Form submission system
 ];
 
 /**
@@ -80,6 +83,31 @@ export function extractForwardedSender(content: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * Extract all email addresses from email body content
+ * Filters out internal and excluded domains
+ * Returns unique external emails found in the body
+ */
+export function extractEmailsFromBody(content: string): string[] {
+  if (!content) return [];
+
+  // Match email addresses in the body
+  // This pattern matches most valid email formats
+  const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
+
+  const matches = content.match(emailPattern) || [];
+
+  // Normalize, dedupe, and filter
+  const uniqueEmails = [...new Set(matches.map(e => e.toLowerCase()))];
+
+  // Filter out internal and excluded domains
+  const externalEmails = uniqueEmails.filter(email =>
+    !isInternalEmail(email) && !isExcludedEmail(email)
+  );
+
+  return externalEmails;
 }
 
 export interface MatchResult {
@@ -216,8 +244,19 @@ export async function matchCommunicationToCompany(communicationId: string): Prom
     }
   }
 
+  // Extract any email addresses mentioned in the body (for internal forwards, paperwork, etc.)
+  const bodyEmails = extractEmailsFromBody(content);
+  for (const bodyEmail of bodyEmails) {
+    if (!emailsToTry.includes(bodyEmail)) {
+      emailsToTry.push(bodyEmail);
+    }
+  }
+  if (bodyEmails.length > 0) {
+    console.log(`[EmailMatch] Found ${bodyEmails.length} external email(s) in body: ${bodyEmails.join(', ')}`);
+  }
+
   // Log if we filtered out internal emails
-  const internalCount = theirEmails.length + ourEmails.length - emailsToTry.length;
+  const internalCount = theirEmails.length + ourEmails.length - emailsToTry.length + bodyEmails.length;
   if (internalCount > 0) {
     console.log(`[EmailMatch] Filtered out ${internalCount} internal email(s) for communication ${communicationId}`);
   }

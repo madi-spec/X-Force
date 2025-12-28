@@ -19,6 +19,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { hasActiveConnection } from '@/lib/microsoft/auth';
 import { sendEmail } from '@/lib/microsoft/emailSync';
 import { AttentionFlagType } from '@/types/operatingLayer';
+import { addCommunicationNote, getActionDescription } from '@/lib/communications/addNote';
 import crypto from 'crypto';
 
 // Valid flag types for send-email action
@@ -127,7 +128,7 @@ export async function POST(
     // 5. Fetch the attention flag
     const { data: flag, error: flagError } = await supabase
       .from('attention_flags')
-      .select('id, status, flag_type, company_id, company_product_id')
+      .select('id, status, flag_type, company_id, company_product_id, source_type, source_id')
       .eq('id', flagId)
       .single();
 
@@ -324,6 +325,18 @@ export async function POST(
     if (resolveError) {
       console.error('[SendEmail] Error resolving flag:', resolveError);
       // Don't fail - email was sent successfully
+    }
+
+    // 14. Add note to linked communication if this flag came from a communication
+    if (flag.source_type === 'communication' && flag.source_id) {
+      await addCommunicationNote({
+        communicationId: flag.source_id,
+        userId: dbUser.id,
+        content: getActionDescription('sent_email', { subject }),
+        noteType: 'action',
+        actionType: 'sent_email',
+        attentionFlagId: flagId,
+      });
     }
 
     console.log(`[SendEmail] Successfully sent email for flag ${flagId} to ${to}`);

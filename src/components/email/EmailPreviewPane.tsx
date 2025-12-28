@@ -12,6 +12,20 @@ interface EmailPreviewPaneProps {
   onStarToggle: () => void;
 }
 
+// Helper to safely get string value
+function safeString(val: unknown): string {
+  if (typeof val === 'string') return val;
+  if (val && typeof val === 'object') {
+    if ('name' in val && typeof (val as { name: unknown }).name === 'string') {
+      return (val as { name: string }).name;
+    }
+    if ('address' in val && typeof (val as { address: unknown }).address === 'string') {
+      return (val as { address: string }).address;
+    }
+  }
+  return '';
+}
+
 export function EmailPreviewPane({
   email,
   onClose,
@@ -32,17 +46,17 @@ export function EmailPreviewPane({
 
   const isInbound = email.metadata.direction === 'inbound';
   const senderName = isInbound
-    ? (email.metadata.from?.name || email.metadata.from?.address || 'Unknown')
+    ? (safeString(email.metadata.from?.name) || safeString(email.metadata.from?.address) || 'Unknown')
     : 'You';
   const senderEmail = isInbound
-    ? email.metadata.from?.address
-    : email.metadata.to?.[0]?.address;
+    ? safeString(email.metadata.from?.address)
+    : safeString(email.metadata.to?.[0]?.address);
 
   const recipients = isInbound
-    ? email.metadata.to?.map(r => r.name || r.address).join(', ') || 'Me'
-    : email.metadata.to?.map(r => r.name || r.address).join(', ') || 'Unknown';
+    ? email.metadata.to?.map(r => safeString(r.name) || safeString(r.address)).join(', ') || 'Me'
+    : email.metadata.to?.map(r => safeString(r.name) || safeString(r.address)).join(', ') || 'Unknown';
 
-  const displayName = email.contact?.name || senderName;
+  const displayName = safeString(email.contact?.name) || senderName;
 
   const formatFullDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('en-US', {

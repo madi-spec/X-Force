@@ -37,8 +37,9 @@ export async function updateSession(request: NextRequest) {
   // Redirect unauthenticated users to login
   const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
                      request.nextUrl.pathname.startsWith('/signup');
+  const isPublicRoom = request.nextUrl.pathname.startsWith('/room/');
 
-  if (!user && !isAuthPage && !request.nextUrl.pathname.startsWith('/api')) {
+  if (!user && !isAuthPage && !isPublicRoom && !request.nextUrl.pathname.startsWith('/api')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

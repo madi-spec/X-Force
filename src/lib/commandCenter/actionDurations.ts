@@ -24,10 +24,13 @@ export const ACTION_DURATIONS: Record<ActionType, ActionDuration> = {
   email_send_draft: { min: 2, typical: 3, max: 5 },      // AI draft ready
   email_compose: { min: 5, typical: 10, max: 20 },       // Writing from scratch
   email_respond: { min: 3, typical: 8, max: 15 },        // Reply
+  respond_email: { min: 5, typical: 10, max: 20 },       // Unified: needs reply
+  send_followup: { min: 5, typical: 10, max: 20 },       // Unified: stalled followup
 
   // Meetings
   meeting_prep: { min: 10, typical: 15, max: 30 },
   meeting_follow_up: { min: 5, typical: 10, max: 20 },
+  schedule_meeting: { min: 2, typical: 5, max: 10 },     // Unified: schedule approval
 
   // Documents
   proposal_review: { min: 15, typical: 30, max: 60 },
@@ -44,6 +47,10 @@ export const ACTION_DURATIONS: Record<ActionType, ActionDuration> = {
   // Tasks
   task_simple: { min: 2, typical: 5, max: 10 },
   task_complex: { min: 15, typical: 30, max: 60 },
+
+  // Unified (from Daily Driver)
+  close_deal: { min: 15, typical: 30, max: 60 },         // Ready to close
+  review_flag: { min: 5, typical: 15, max: 30 },         // General flag review
 };
 
 /**

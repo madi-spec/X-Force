@@ -148,16 +148,24 @@ export function KanbanBoard({ initialDeals }: KanbanBoardProps) {
   // Show loading skeleton until client-side hydration is complete
   if (!isMounted) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {activeStages.map((stage) => (
-          <div key={stage.id} className="flex flex-col w-72 shrink-0">
-            <div className="flex items-center gap-2 px-3 py-2 mb-2">
-              <div className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />
-              <h3 className="font-medium text-gray-900 text-sm">{stage.name}</h3>
+      <div className="flex flex-col h-full">
+        {/* Scrollbar at top using flex-direction column-reverse */}
+        <div className="flex flex-col-reverse flex-1 min-h-0">
+          <div className="flex-1" />
+          <div className="overflow-x-auto pb-2">
+            <div className="flex gap-4">
+              {activeStages.map((stage) => (
+                <div key={stage.id} className="flex flex-col w-72 shrink-0">
+                  <div className="flex items-center gap-2 px-3 py-2 mb-2">
+                    <div className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />
+                    <h3 className="font-medium text-gray-900 text-sm">{stage.name}</h3>
+                  </div>
+                  <div className="flex-1 rounded-xl p-2 min-h-[200px] bg-gray-100 animate-pulse" />
+                </div>
+              ))}
             </div>
-            <div className="flex-1 rounded-xl p-2 min-h-[200px] bg-gray-100 animate-pulse" />
           </div>
-        ))}
+        </div>
       </div>
     );
   }
@@ -170,14 +178,22 @@ export function KanbanBoard({ initialDeals }: KanbanBoardProps) {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {activeStages.map((stage) => (
-          <PipelineColumn
-            key={stage.id}
-            stage={stage}
-            deals={getDealsByStage(stage.id)}
-          />
-        ))}
+      <div className="flex flex-col h-full">
+        {/* Scrollbar at top using flex-direction column-reverse */}
+        <div className="flex flex-col-reverse flex-1 min-h-0">
+          <div className="flex-1" />
+          <div className="overflow-x-auto pb-2">
+            <div className="flex gap-4">
+              {activeStages.map((stage) => (
+                <PipelineColumn
+                  key={stage.id}
+                  stage={stage}
+                  deals={getDealsByStage(stage.id)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       <DragOverlay>

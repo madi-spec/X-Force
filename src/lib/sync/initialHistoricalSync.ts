@@ -1,6 +1,9 @@
 /**
  * Initial Historical Sync
  *
+ * MIGRATED: Now uses processIncomingCommunication from contextFirstPipeline
+ * instead of deprecated updateRelationshipFromAnalysis and processOutboundEmail.
+ *
  * Comprehensive sync that:
  * 1. Fetches all emails from all folders (except Deleted/Junk) from last month
  * 2. Fetches all calendar events from last month
@@ -13,13 +16,12 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { syncAllFolderEmails } from '@/lib/microsoft/emailSync';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
+// Migrated to context-first pipeline
 import {
-  updateRelationshipFromAnalysis,
-  fromTranscriptAnalysis,
-  type InteractionAnalysis,
-} from '@/lib/intelligence/updateRelationshipFromAnalysis';
+  processIncomingCommunication,
+  type CommunicationInput,
+} from '@/lib/intelligence/contextFirstPipeline';
 import { analyzeEmail, saveEmailAnalysis } from '@/lib/email/analyzeEmail';
-import { processOutboundEmail } from '@/lib/intelligence/analyzeOutboundEmail';
 import type { PriorityTier, TierTrigger } from '@/types/commandCenter';
 
 // ============================================
@@ -281,62 +283,38 @@ async function processInboundForRI(
   // Get email details
   const { data: email } = await supabase
     .from('email_messages')
-    .select('id, user_id, conversation_ref, from_email, received_at, analysis')
+    .select('id, user_id, conversation_ref, from_email, from_name, to_emails, subject, body_text, body_preview, received_at, analysis')
     .eq('id', emailId)
     .single();
 
   if (!email) return;
 
-  // Run analysis if not done
-  let analysis = email.analysis;
-  if (!analysis) {
+  // Build CommunicationInput for context-first pipeline
+  const communication: CommunicationInput = {
+    type: 'email_inbound',
+    from_email: email.from_email,
+    from_name: email.from_name || undefined,
+    to_emails: email.to_emails || [],
+    subject: email.subject || undefined,
+    body: email.body_text || email.body_preview || undefined,
+  };
+
+  try {
+    // Run context-first pipeline (handles entity matching + RI updates)
+    await processIncomingCommunication(communication, email.user_id);
+  } catch (err) {
+    console.warn(`[InitialSync] Pipeline failed for inbound email ${emailId}:`, err);
+    // Fall back to legacy analysis if pipeline fails
     try {
       const result = await analyzeEmail(emailId);
       await saveEmailAnalysis(result);
-      analysis = result.analysis;
-    } catch (err) {
-      console.warn(`[InitialSync] Analysis failed for email ${emailId}:`, err);
+    } catch (analysisErr) {
+      console.warn(`[InitialSync] Analysis also failed for email ${emailId}:`, analysisErr);
       return;
     }
   }
 
-  if (!analysis) return;
-
-  // Get conversation for linking
-  const { data: conversation } = await supabase
-    .from('email_conversations')
-    .select('contact_id, company_id')
-    .eq('id', email.conversation_ref)
-    .single();
-
-  const contactId = conversation?.contact_id;
-  const companyId = conversation?.company_id;
-
-  if (!contactId && !companyId) return;
-
-  // Update relationship intelligence
-  const interactionAnalysis: InteractionAnalysis = {
-    type: 'email_inbound',
-    source_id: emailId,
-    contact_id: contactId || undefined,
-    company_id: companyId || undefined,
-    date: email.received_at,
-    summary: analysis.email_analysis?.summary || '',
-    sentiment: analysis.email_analysis?.sentiment,
-    buying_signals: (analysis.buying_signals || []).map((s: any) => ({
-      signal: s.signal,
-      quote: s.quote,
-      strength: s.strength,
-    })),
-    concerns: (analysis.concerns_detected || []).map((c: any) => ({
-      concern: c.concern,
-      severity: c.severity,
-    })),
-  };
-
-  await updateRelationshipFromAnalysis(interactionAnalysis);
-
-  // Mark as processed (but no CC item created)
+  // Mark as processed (but no CC item created during historical sync)
   await supabase
     .from('email_messages')
     .update({ analysis_complete: true })
@@ -351,16 +329,37 @@ async function processOutboundForRI(
   supabase: ReturnType<typeof createAdminClient>,
   emailId: string
 ): Promise<void> {
-  // processOutboundEmail already handles:
-  // - AI analysis
-  // - Storing analysis
-  // - Updating relationship intelligence
-  // So we just call it directly
+  // Get email details
+  const { data: email } = await supabase
+    .from('email_messages')
+    .select('id, user_id, from_email, from_name, to_emails, subject, body_text, body_preview, sent_at')
+    .eq('id', emailId)
+    .single();
+
+  if (!email) return;
+
+  // Build CommunicationInput for context-first pipeline
+  const communication: CommunicationInput = {
+    type: 'email_outbound',
+    from_email: email.from_email,
+    from_name: email.from_name || undefined,
+    to_emails: email.to_emails || [],
+    subject: email.subject || undefined,
+    body: email.body_text || email.body_preview || undefined,
+  };
+
   try {
-    await processOutboundEmail(emailId);
+    // Run context-first pipeline (handles entity matching + RI updates)
+    await processIncomingCommunication(communication, email.user_id);
   } catch (err) {
-    console.warn(`[InitialSync] Outbound analysis failed for ${emailId}:`, err);
+    console.warn(`[InitialSync] Pipeline failed for outbound email ${emailId}:`, err);
   }
+
+  // Mark as processed
+  await supabase
+    .from('email_messages')
+    .update({ analysis_complete: true })
+    .eq('id', emailId);
 }
 
 // ============================================
@@ -368,51 +367,28 @@ async function processOutboundForRI(
 // ============================================
 
 async function processTranscriptForRI(
-  supabase: ReturnType<typeof createAdminClient>,
+  _supabase: ReturnType<typeof createAdminClient>,
   transcript: any
 ): Promise<void> {
-  if (!transcript.analysis) return;
+  if (!transcript.user_id) {
+    console.warn(`[InitialSync] Transcript ${transcript.id} has no user_id, skipping`);
+    return;
+  }
 
-  const contactId = transcript.contact_id;
-  const companyId = transcript.company_id;
+  // Build CommunicationInput for context-first pipeline
+  const communication: CommunicationInput = {
+    type: 'transcript',
+    attendees: transcript.attendees || [],
+    title: transcript.title,
+    transcript_text: transcript.transcript || transcript.analysis?.summary || '',
+  };
 
-  if (!contactId && !companyId) return;
-
-  const analysis = transcript.analysis;
-
-  // Map objections to concerns
-  const concerns = (analysis.objections || [])
-    .filter((o: any) => !o.resolved)
-    .map((o: any) => ({
-      concern: o.objection,
-      severity: 'medium' as const,
-    }));
-
-  const interactionAnalysis = fromTranscriptAnalysis(
-    transcript.id,
-    contactId,
-    companyId,
-    transcript.meeting_date,
-    {
-      summary: analysis.summary || transcript.title,
-      sentiment: analysis.sentiment?.overall,
-      key_topics: analysis.extractedInfo?.painPoints || [],
-      action_items: (analysis.actionItems || []).map((ai: any) => ({
-        action: ai.task,
-        owner: ai.owner,
-        due_date: ai.dueDate || undefined,
-      })),
-      buying_signals: (analysis.buyingSignals || []).map((s: any) => ({
-        signal: s.signal,
-        quote: s.quote || undefined,
-        strength: s.strength,
-      })),
-      concerns,
-      key_facts: analysis.extractedInfo?.painPoints || [],
-    }
-  );
-
-  await updateRelationshipFromAnalysis(interactionAnalysis);
+  try {
+    // Run context-first pipeline (handles entity matching + RI updates)
+    await processIncomingCommunication(communication, transcript.user_id);
+  } catch (err) {
+    console.warn(`[InitialSync] Pipeline failed for transcript ${transcript.id}:`, err);
+  }
 }
 
 // ============================================
@@ -678,7 +654,6 @@ async function createActionsFromCurrentState(
           user_id: userId,
           deal_id: deal.id,
           company_id: deal.company_id,
-          contact_id: deal.contact_id,
           action_type: 'call',
           title: `Stale deal: ${dealTargetName}`,
           description: `${deal.stage} stage deal with no activity in ${daysSinceActivity} days.`,
@@ -739,6 +714,104 @@ async function createActionsFromCurrentState(
         result.tier4++;
         result.itemsCreated++;
       }
+    }
+  }
+
+  // Orphaned opportunities: Contacts with engagement but no deal (Tier 4)
+  // These are leads that fell through the cracks - they engaged but weren't linked to a deal
+  for (const ri of riRecords || []) {
+    // Only check RI records that have activity
+    const hasEngagement = (ri.interactions?.length || 0) > 0 ||
+      (ri.signals?.buying_signals || []).length > 0;
+
+    if (!hasEngagement) continue;
+
+    // Check if there's a deal for this company
+    let hasDeal = false;
+    if (ri.company_id) {
+      const { data: companyDeal } = await supabase
+        .from('deals')
+        .select('id')
+        .eq('company_id', ri.company_id)
+        .eq('owner_id', userId)
+        .not('stage', 'in', '("closed_won","closed_lost")')
+        .limit(1)
+        .single();
+      hasDeal = !!companyDeal;
+    }
+
+    // If has deal, it's properly linked - skip
+    if (hasDeal) continue;
+
+    // Check if we already have a CC item for this
+    let existingQuery = supabase
+      .from('command_center_items')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('tier_trigger', 'orphaned_opportunity')
+      .eq('status', 'pending');
+
+    if (ri.contact_id) {
+      existingQuery = existingQuery.eq('contact_id', ri.contact_id);
+    } else if (ri.company_id) {
+      existingQuery = existingQuery.eq('company_id', ri.company_id);
+    } else {
+      continue; // No contact or company, skip
+    }
+
+    const { data: existing } = await existingQuery.single();
+
+    if (!existing) {
+      // Get contact/company name for display
+      let orphanTargetName = 'Contact';
+      let orphanCompanyName: string | null = null;
+
+      if (ri.contact_id) {
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('name, email')
+          .eq('id', ri.contact_id)
+          .single();
+        orphanTargetName = contact?.name || contact?.email || orphanTargetName;
+      }
+
+      if (ri.company_id) {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('name')
+          .eq('id', ri.company_id)
+          .single();
+        orphanCompanyName = company?.name || null;
+        if (!ri.contact_id) {
+          orphanTargetName = orphanCompanyName || orphanTargetName;
+        }
+      }
+
+      // Determine what's missing
+      const missingWhat = !ri.company_id
+        ? 'company or deal'
+        : 'deal';
+
+      const interactionCount = ri.interactions?.length || 0;
+      const signalCount = (ri.signals?.buying_signals || []).length;
+
+      await supabase.from('command_center_items').insert({
+        user_id: userId,
+        contact_id: ri.contact_id,
+        company_id: ri.company_id,
+        action_type: 'task_simple',
+        title: `Link opportunity: ${orphanTargetName}`,
+        description: `Has ${interactionCount} interaction${interactionCount !== 1 ? 's' : ''} and ${signalCount} buying signal${signalCount !== 1 ? 's' : ''} but no ${missingWhat} linked.`,
+        why_now: `${interactionCount > 0 ? `${interactionCount} interactions` : `${signalCount} buying signals`} — link to track this opportunity`,
+        tier: 4 as PriorityTier,
+        tier_trigger: 'orphaned_opportunity' as TierTrigger,
+        status: 'pending',
+        source: 'system',
+        target_name: orphanTargetName,
+        company_name: orphanCompanyName,
+      });
+      result.tier4++;
+      result.itemsCreated++;
     }
   }
 

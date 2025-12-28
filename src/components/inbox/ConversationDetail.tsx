@@ -20,12 +20,14 @@ import {
   Calendar,
   Loader2,
   X,
+  UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getInitials, getAvatarColor } from '@/components/email/types';
 import type { Conversation, EmailMessage, EmailDraft, SnoozeOption } from './types';
 import { getSnoozeOptions, formatConversationTime, getPriorityColor } from './types';
 import { LinkingModal } from './LinkingModal';
+import { CreateLeadFromEmail } from '@/components/communications';
 
 interface ConversationDetailProps {
   conversation: Conversation;
@@ -287,7 +289,7 @@ export function ConversationDetail({
         </div>
 
         {/* Linked entities */}
-        {(conversation.deal || conversation.company || conversation.contact) && (
+        {(conversation.deal || conversation.company || conversation.contact) ? (
           <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
             {conversation.deal && (
               <a
@@ -319,6 +321,18 @@ export function ConversationDetail({
                 <ExternalLink className="h-2.5 w-2.5 opacity-50" />
               </a>
             )}
+          </div>
+        ) : messages.length > 0 && (
+          /* Show create lead option for unlinked conversations */
+          <div className="mt-2 pt-2 border-t border-gray-100">
+            <CreateLeadFromEmail
+              communicationId={messages[0].id}
+              onLeadCreated={() => {
+                // Refresh the page to show the new link
+                window.location.reload();
+              }}
+              compact
+            />
           </div>
         )}
 

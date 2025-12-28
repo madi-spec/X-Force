@@ -1,0 +1,218 @@
+'use client';
+
+import { useState } from 'react';
+import { X, Send, Copy, Check, Edit2, Sparkles } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { EmailDraft } from '@/types/commandCenter';
+
+interface EmailDraftModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  draft: EmailDraft;
+  recipientName?: string;
+  recipientEmail?: string;
+  onSend?: (subject: string, body: string) => Promise<void>;
+  onCopyToComposer?: (subject: string, body: string) => void;
+}
+
+export function EmailDraftModal({
+  isOpen,
+  onClose,
+  draft,
+  recipientName,
+  recipientEmail,
+  onSend,
+  onCopyToComposer,
+}: EmailDraftModalProps) {
+  const [subject, setSubject] = useState(draft.subject);
+  const [body, setBody] = useState(draft.body);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSend = async () => {
+    if (!onSend) return;
+    setIsSending(true);
+    try {
+      await onSend(subject, body);
+      onClose();
+    } catch (error) {
+      console.error('Failed to send email:', error);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Handle undefined confidence gracefully
+  const confidence = draft.confidence ?? null;
+  const confidenceColor = confidence === null
+    ? 'text-blue-600 bg-blue-50'
+    : confidence >= 80
+      ? 'text-green-600 bg-green-50'
+      : confidence >= 60
+        ? 'text-amber-600 bg-amber-50'
+        : 'text-gray-600 bg-gray-100';
+  const confidenceLabel = confidence === null
+    ? 'AI Generated'
+    : `${confidence}% confidence`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Sparkles className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900">AI-Generated Response</h2>
+              <p className="text-sm text-gray-500">
+                {recipientName && `For ${recipientName}`}
+                {recipientEmail && ` <${recipientEmail}>`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={cn(
+              'text-xs font-medium px-2 py-1 rounded',
+              confidenceColor
+            )}>
+              {confidenceLabel}
+            </span>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* Subject */}
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+              Subject
+            </label>
+            {isEditing ? (
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+              />
+            ) : (
+              <p className="text-gray-900 font-medium">{subject}</p>
+            )}
+          </div>
+
+          {/* Body */}
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+              Message
+            </label>
+            {isEditing ? (
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={12}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-mono text-sm resize-none"
+              />
+            ) : (
+              <div className="bg-gray-50 rounded-lg p-4 text-gray-800 whitespace-pre-wrap text-sm leading-relaxed">
+                {body}
+              </div>
+            )}
+          </div>
+
+          {/* AI disclaimer */}
+          <p className="text-xs text-gray-400 italic">
+            This draft was generated by AI based on the email context and your relationship history.
+            Review carefully before sending.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+              isEditing
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'text-gray-700 hover:bg-gray-200'
+            )}
+          >
+            <Edit2 className="h-4 w-4" />
+            {isEditing ? 'Done Editing' : 'Edit Draft'}
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-4 w-4 text-green-600" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" />
+                  Copy
+                </>
+              )}
+            </button>
+
+            {onCopyToComposer && (
+              <button
+                onClick={() => {
+                  onCopyToComposer(subject, body);
+                  onClose();
+                }}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              >
+                Open in Composer
+              </button>
+            )}
+
+            {onSend && (
+              <button
+                onClick={handleSend}
+                disabled={isSending}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isSending ? (
+                  <span className="animate-spin">...</span>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Send Email
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

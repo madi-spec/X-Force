@@ -26,10 +26,14 @@ export async function GET(request: NextRequest) {
       ai_action_type,
       our_participants,
       their_participants,
+      excluded_at,
       company:companies!company_id(id, name),
       contact:contacts!contact_id(id, name, email)
     `)
     .order('occurred_at', { ascending: false });
+
+  // Filter out excluded communications
+  query = query.is('excluded_at', null);
 
   // Filter by linked/unlinked status
   if (linkFilter === 'linked') {
@@ -134,8 +138,36 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Get communications that have open attention flags
+  const { data: openFlags } = await supabase
+    .from('attention_flags')
+    .select('source_id')
+    .eq('source_type', 'communication')
+    .eq('status', 'open')
+    .not('source_id', 'is', null);
+
+  const commIdsWithOpenFlags = new Set(
+    (openFlags || []).map(f => f.source_id).filter(Boolean)
+  );
+
+  // Also get communications that are awaiting our response (needsReply in Daily Driver)
+  const { data: awaitingResponse } = await supabase
+    .from('communications')
+    .select('id')
+    .eq('awaiting_our_response', true)
+    .is('responded_at', null);
+
+  const commIdsAwaitingResponse = new Set(
+    (awaitingResponse || []).map(c => c.id)
+  );
+
   // Convert to array and sort by last communication
   const conversations = Array.from(companyMap.values())
+    .map(conv => ({
+      ...conv,
+      has_open_task: commIdsWithOpenFlags.has(conv.last_communication.id) ||
+                     commIdsAwaitingResponse.has(conv.last_communication.id),
+    }))
     .sort((a, b) =>
       new Date(b.last_communication.occurred_at).getTime() -
       new Date(a.last_communication.occurred_at).getTime()

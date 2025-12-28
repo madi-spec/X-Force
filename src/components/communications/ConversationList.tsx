@@ -33,6 +33,7 @@ interface ConversationSummary {
   unread_count?: number;
   communication_count: number;
   tags: string[];
+  has_open_task?: boolean;
 }
 
 const channelIcons: Record<string, React.ElementType> = {
@@ -56,7 +57,7 @@ type LinkFilter = 'linked' | 'unlinked';
 interface ConversationListProps {
   selectedCompanyId: string | null;
   selectedSenderEmail: string | null;
-  onSelectCompany: (companyId: string | null, contactId?: string | null, senderEmail?: string | null) => void;
+  onSelectCompany: (companyId: string | null, contactId?: string | null, senderEmail?: string | null, companyName?: string | null) => void;
   channelFilter: string | null;
   onChannelFilterChange: (channel: string | null) => void;
 }
@@ -96,16 +97,27 @@ export function ConversationList({
   const conversations: ConversationSummary[] = data?.conversations || [];
 
   // Filter by search
-  const filteredConversations = searchQuery
+  const searchFiltered = searchQuery
     ? conversations.filter(c =>
         c.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.contact_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.last_communication?.subject?.toLowerCase().includes(searchQuery.toLowerCase())
+        c.last_communication?.content_preview?.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : conversations;
 
+  // Sort conversations: those with open tasks first, then by date
+  const filteredConversations = [...searchFiltered].sort((a, b) => {
+    // First sort by has_open_task (true comes first)
+    if (a.has_open_task && !b.has_open_task) return -1;
+    if (!a.has_open_task && b.has_open_task) return 1;
+    // Then sort by date (most recent first)
+    const dateA = new Date(a.last_communication?.occurred_at || 0).getTime();
+    const dateB = new Date(b.last_communication?.occurred_at || 0).getTime();
+    return dateB - dateA;
+  });
+
   return (
-    <div className="flex flex-col h-full border-r bg-white">
+    <div className="w-80 flex-shrink-0 flex flex-col h-full border-r bg-white">
       {/* Linked/Unlinked Toggle */}
       <div className="p-3 border-b">
         <div className="flex rounded-lg bg-gray-100 p-1">
@@ -214,35 +226,43 @@ export function ConversationList({
             return (
               <button
                 key={convo.is_unlinked ? `unlinked:${convo.sender_email}` : convo.company_id}
-                onClick={() => onSelectCompany(convo.company_id, null, convo.sender_email)}
+                onClick={() => onSelectCompany(convo.company_id, null, convo.sender_email, convo.company_name)}
                 className={`w-full p-3 text-left border-b hover:bg-gray-50 transition-colors ${
                   isSelected ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  {/* Channel Icon */}
-                  <div className={`p-2 rounded-full ${
-                    convo.is_unlinked
-                      ? 'bg-amber-100'
-                      : convo.last_communication?.is_ai_generated
-                        ? 'bg-purple-100'
-                        : 'bg-gray-100'
-                  }`}>
-                    <Icon className={`w-4 h-4 ${
+                  {/* Channel Icon with Action Dot */}
+                  <div className="relative">
+                    <div className={`p-2 rounded-full ${
                       convo.is_unlinked
-                        ? 'text-amber-600'
+                        ? 'bg-amber-100'
                         : convo.last_communication?.is_ai_generated
-                          ? 'text-purple-600'
-                          : 'text-gray-600'
-                    }`} />
+                          ? 'bg-purple-100'
+                          : 'bg-gray-100'
+                    }`}>
+                      <Icon className={`w-4 h-4 ${
+                        convo.is_unlinked
+                          ? 'text-amber-600'
+                          : convo.last_communication?.is_ai_generated
+                            ? 'text-purple-600'
+                            : 'text-gray-600'
+                      }`} />
+                    </div>
+                    {/* Red Action Dot */}
+                    {convo.has_open_task && (
+                      <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+                    )}
                   </div>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-gray-900 truncate">
-                        {convo.company_name}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-medium text-gray-900 truncate">
+                          {convo.company_name}
+                        </span>
+                      </div>
                       <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
                         {convo.last_communication?.occurred_at
                           ? formatDistanceToNow(new Date(convo.last_communication.occurred_at), { addSuffix: false })
@@ -260,7 +280,7 @@ export function ConversationList({
                       {convo.last_communication?.is_ai_generated && (
                         <span className="text-purple-600 font-medium">AI: </span>
                       )}
-                      {convo.last_communication?.subject || convo.last_communication?.content_preview || 'No subject'}
+                      {convo.last_communication?.content_preview || 'No content'}
                     </p>
 
                     {/* Tags */}

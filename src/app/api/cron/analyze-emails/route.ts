@@ -1,17 +1,19 @@
 /**
- * Cron API: Analyze Inbound Emails with AI
+ * Cron API: Analyze Emails with AI
  *
- * Runs deep AI analysis on unanalyzed inbound emails:
- * - Detects buying signals and concerns
- * - Classifies into priority tiers
- * - Generates response drafts
- * - Creates enriched command center items
+ * Runs deep AI analysis on unanalyzed emails (both inbound and outbound):
+ * - Inbound: Detects buying signals, concerns, creates command center items
+ * - Outbound: Tracks commitments we made
+ * - Both: Updates relationship intelligence
  *
- * Schedule: Every 15 minutes (AI analysis is more expensive)
+ * Schedule: Every 5-15 minutes
  */
 
 import { NextResponse } from 'next/server';
-import { processUnanalyzedEmails } from '@/lib/email';
+import {
+  processUnanalyzedEmails,
+  processAllUnanalyzedEmails,
+} from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes max for AI processing
@@ -30,29 +32,37 @@ export async function GET(request: Request) {
   // Get optional user_id filter from query params
   const url = new URL(request.url);
   const userId = url.searchParams.get('user_id') || undefined;
-  const limit = parseInt(url.searchParams.get('limit') || '10', 10);
+  const inboundLimit = parseInt(url.searchParams.get('inbound_limit') || '10', 10);
+  const outboundLimit = parseInt(url.searchParams.get('outbound_limit') || '5', 10);
 
   try {
-    const result = await processUnanalyzedEmails(userId, limit);
+    const result = await processAllUnanalyzedEmails(userId, inboundLimit, outboundLimit);
 
     const duration = Date.now() - startTime;
 
     console.log(
-      `[Email AI Analysis] Processed ${result.processed} emails, ` +
-      `created ${result.itemsCreated} items, ` +
-      `skipped ${result.skippedAlreadyReplied} replied, ` +
-      `${result.errors.length} errors in ${duration}ms`
+      `[Email AI Analysis] Inbound: ${result.inbound.processed} processed, ` +
+      `${result.inbound.itemsCreated} items created | ` +
+      `Outbound: ${result.outbound.processed} processed, ` +
+      `${result.outbound.commitmentsMade} commitments tracked | ` +
+      `${duration}ms`
     );
 
     return NextResponse.json({
       success: true,
       duration: `${duration}ms`,
-      processed: result.processed,
-      itemsCreated: result.itemsCreated,
-      skippedAlreadyReplied: result.skippedAlreadyReplied,
-      skippedAlreadyAnalyzed: result.skippedAlreadyAnalyzed,
-      errorCount: result.errors.length,
-      errors: result.errors.slice(0, 10), // Limit errors in response
+      inbound: {
+        processed: result.inbound.processed,
+        itemsCreated: result.inbound.itemsCreated,
+        skippedAlreadyReplied: result.inbound.skippedAlreadyReplied,
+        skippedAlreadyAnalyzed: result.inbound.skippedAlreadyAnalyzed,
+        errors: result.inbound.errors.slice(0, 5),
+      },
+      outbound: {
+        processed: result.outbound.processed,
+        commitmentsMade: result.outbound.commitmentsMade,
+        errors: result.outbound.errors.slice(0, 5),
+      },
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

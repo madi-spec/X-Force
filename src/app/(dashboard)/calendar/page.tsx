@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Calendar, Settings } from 'lucide-react';
 import Link from 'next/link';
-import { CalendarClient } from './calendar-client';
+import { UnifiedCalendarClient } from './unified-calendar-client';
 
 export default async function CalendarPage() {
   const supabase = await createClient();
@@ -141,27 +141,7 @@ export default async function CalendarPage() {
 
   return (
     <div className="h-[calc(100vh-8rem)]">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-normal text-gray-900">Calendar</h1>
-          <p className="text-xs text-gray-500 mt-1">
-            {events.length} synced events
-            {microsoftConnection?.last_sync_at && (
-              <span className="text-gray-400">
-                {' '}· Last synced {new Date(microsoftConnection.last_sync_at).toLocaleString()}
-              </span>
-            )}
-          </p>
-        </div>
-        <Link
-          href="/settings/integrations"
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          Manage connection
-        </Link>
-      </div>
-
-      <CalendarClient events={events} />
+      <UnifiedCalendarClient events={events} />
     </div>
   );
 }

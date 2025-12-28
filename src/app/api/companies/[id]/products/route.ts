@@ -16,7 +16,8 @@ export async function GET(
       *,
       product:products(*),
       tier:product_tiers(*),
-      current_stage:product_sales_stages(*)
+      current_stage:product_sales_stages(*),
+      owner:users!company_products_owner_user_id_fkey(id, name, email)
     `)
     .eq('company_id', id)
     .order('created_at');

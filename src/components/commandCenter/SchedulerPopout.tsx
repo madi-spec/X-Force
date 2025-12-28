@@ -12,8 +12,10 @@ import {
   Check,
   MapPin,
   ChevronDown,
+  UserPlus,
 } from 'lucide-react';
 import { CommandCenterItem, ScheduleSuggestions, PrimaryContact } from '@/types/commandCenter';
+import { AddContactModal, NewContact } from './AddContactModal';
 
 // ============================================
 // TYPES
@@ -107,11 +109,18 @@ export function SchedulerPopout({
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
 
+  // Manual contact entry state (when no contacts exist)
+  const [manualContact, setManualContact] = useState<NewContact | null>(null);
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
+
   // Get contact from primary_contact or joined contact data
   const existingContact = item.primary_contact || (item as any).contact as PrimaryContact | undefined;
 
-  // Use selected contact or existing contact
-  const contact = selectedContact || existingContact;
+  // Use selected contact, existing contact, or manual entry
+  const manualContactOption: ContactOption | null = manualContact
+    ? { id: manualContact.id || 'manual', name: manualContact.name, email: manualContact.email, title: manualContact.title }
+    : null;
+  const contact = selectedContact || existingContact || manualContactOption;
 
   // Initialize title from suggestions or item
   useEffect(() => {
@@ -310,11 +319,33 @@ export function SchedulerPopout({
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
-                <User className="h-4 w-4 text-amber-500" />
-                <span className="text-sm text-amber-700">No contacts found for this company</span>
+            ) : manualContact ? (
+              /* Show selected manual contact */
+              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg border border-green-200">
+                <User className="h-4 w-4 text-green-500" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-green-700">{manualContact.name}</span>
+                  <span className="text-sm text-green-600 ml-1">({manualContact.email})</span>
+                  {manualContact.title && (
+                    <span className="text-xs text-green-500 ml-2">{manualContact.title}</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setManualContact(null)}
+                  className="text-xs text-green-600 hover:text-green-800"
+                >
+                  Change
+                </button>
               </div>
+            ) : (
+              /* Add Contact Button */
+              <button
+                onClick={() => setShowAddContactModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                <UserPlus className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-700">Add Contact to Schedule</span>
+              </button>
             )}
           </div>
 
@@ -399,10 +430,10 @@ export function SchedulerPopout({
           </button>
           <button
             onClick={handleSendInvite}
-            disabled={!selectedTime || !title || sending}
+            disabled={!selectedTime || !title || !contact?.email || sending}
             className={cn(
               'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              selectedTime && title && !sending
+              selectedTime && title && contact?.email && !sending
                 ? 'bg-blue-600 hover:bg-blue-700 text-white'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             )}
@@ -421,6 +452,18 @@ export function SchedulerPopout({
           </button>
         </div>
       </div>
+
+      {/* Add Contact Modal */}
+      <AddContactModal
+        isOpen={showAddContactModal}
+        onClose={() => setShowAddContactModal(false)}
+        onContactAdded={(newContact) => {
+          setManualContact(newContact);
+          setShowAddContactModal(false);
+        }}
+        companyId={item.company_id || (item as any).deal?.company_id}
+        companyName={item.company_name || (item as any).deal?.company?.name}
+      />
     </>
   );
 }

@@ -29,6 +29,30 @@ const SEARCH_QUERIES = [
   '"{company}" announcement',
 ];
 
+// Pest control industry specific queries
+const PEST_CONTROL_QUERIES = [
+  '{company} PCT Magazine',
+  '{company} Pest Control Technology',
+  '{company} NPMA award',
+  '{company} PestWorld',
+  '{company} QualityPro certified',
+  '{company} Coalmarch podcast',
+  '{company} "pest control" interview',
+  '{company} Pest Management Professional',
+  '{company} lawn care expansion',
+  '{company} "termite" OR "rodent" OR "mosquito"',
+];
+
+// Priority industry sources
+const INDUSTRY_SOURCES = [
+  'pctonline.com',
+  'pestcontroltech.com',
+  'npmapestworld.org',
+  'pestmanagementprofessional.com',
+  'mypmp.net',
+  'coalmarchproductions.com',
+];
+
 // Keywords for mention type classification
 const TYPE_KEYWORDS: Record<MentionType, string[]> = {
   news: ['news', 'article', 'report', 'breaking', 'latest'],
@@ -143,17 +167,18 @@ export class IndustryCollector extends BaseCollector<IndustryMentionsData, Indus
     const maxResults = options.maxResults || DEFAULT_MAX_RESULTS;
     const customQueries = options.searchQueries || [];
 
-    // Build search queries
+    // Build search queries - include pest control specific queries
     const queries = [
       ...SEARCH_QUERIES.map((q) => q.replace('{company}', companyName)),
+      ...PEST_CONTROL_QUERIES.map((q) => q.replace('{company}', companyName)),
       ...customQueries,
     ];
 
     const allMentions: IndustryMentionItem[] = [];
     const usedQueries: string[] = [];
 
-    // Run searches (limit to avoid rate limits)
-    const queriesToRun = queries.slice(0, 4);
+    // Run searches (limit to avoid rate limits) - increased to 6 for better coverage
+    const queriesToRun = queries.slice(0, 6);
 
     for (const query of queriesToRun) {
       try {

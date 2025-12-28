@@ -198,6 +198,7 @@ export interface SchedulingRequest {
   created_by: string;
   deal_id: string | null;
   company_id: string | null;
+  source_communication_id: string | null;
 
   // Meeting details
   meeting_type: MeetingType;
@@ -394,6 +395,7 @@ export interface CreateSchedulingRequestInput {
 
   deal_id?: string;
   company_id?: string;
+  source_communication_id?: string;
 
   internal_attendees: Array<{
     user_id: string;
@@ -417,6 +419,14 @@ export interface UpdateSchedulingRequestInput {
   outcome_notes?: string;
   next_action_at?: string;
   next_action_type?: string;
+  // Editable fields
+  company_id?: string | null;
+  deal_id?: string | null;
+  title?: string | null;
+  context?: string | null;
+  meeting_type?: MeetingType;
+  duration_minutes?: number;
+  meeting_platform?: MeetingPlatform;
 }
 
 export interface ProposedTimeSlot {

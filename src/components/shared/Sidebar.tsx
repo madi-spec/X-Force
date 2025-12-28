@@ -14,16 +14,18 @@ import {
   Package,
   ListTodo,
   Archive,
+  Brain,
 } from 'lucide-react';
 
 const navigation = [
+  { name: 'Command Center', href: '/ai', icon: Brain },
   { name: 'Daily Driver', href: '/daily', icon: ListTodo },
   { name: 'Communications', href: '/communications', icon: MessageSquare },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
-  { name: 'Calendar', href: '/calendar', icon: Calendar },
+  { name: 'Scheduler', href: '/scheduler', icon: Calendar },
 ];
 
 const bottomNavigation = [

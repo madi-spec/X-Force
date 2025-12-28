@@ -10,12 +10,17 @@ import { googleReviewsCollector } from './collectors/googleReviewsCollector';
 import { apolloCompanyCollector } from './collectors/apolloCompanyCollector';
 import { apolloPeopleCollector } from './collectors/apolloPeopleCollector';
 import { industryCollector } from './collectors/industryCollector';
+import { marketingActivityCollector } from './collectors/marketingActivityCollector';
+import { employeeMediaCollector } from './collectors/employeeMediaCollector';
+import { marketingOrchestrator } from './collectors/marketingOrchestrator';
 import {
   synthesizeIntelligence,
   saveIntelligence,
   getIntelligence,
   isIntelligenceStale,
 } from './synthesis/intelligenceSynthesis';
+import { enrichCompanyFromIntelligence } from './enrichment/companyEnrichment';
+import { enrichExistingContacts } from './enrichment/contactEnrichment';
 import type {
   CollectionRequest,
   CollectionResult,
@@ -28,19 +33,36 @@ import type {
   CollectorResult,
   ApolloPeopleData,
   IndustryMentionsData,
+  FacebookData,
+  EnhancedWebsiteData,
+  MarketingActivityData,
+  EmployeeMediaData,
+  EnhancedApolloPerson,
 } from './types';
 
 // ============================================
 // CONSTANTS
 // ============================================
 
-const ALL_SOURCES: IntelligenceSourceType[] = [
+// Primary sources - collected directly from external APIs
+const PRIMARY_SOURCES: IntelligenceSourceType[] = [
   'website',
   'facebook',
   'google_reviews',
   'linkedin_company',
   'linkedin_people',
   'industry_mentions',
+];
+
+// Synthesis sources - derived from primary source data
+const SYNTHESIS_SOURCES: IntelligenceSourceType[] = [
+  'marketing_activity',
+  'employee_media',
+];
+
+const ALL_SOURCES: IntelligenceSourceType[] = [
+  ...PRIMARY_SOURCES,
+  ...SYNTHESIS_SOURCES,
 ];
 
 // ============================================
@@ -80,18 +102,36 @@ export async function collectIntelligence(
   }
 
   // Create or get intelligence record
-  let intelligence = await getOrCreateIntelligence(companyId);
+  let intelligence: AccountIntelligence;
+  try {
+    intelligence = await getOrCreateIntelligence(companyId);
+  } catch (error) {
+    console.error(`[Orchestrator] Failed to get/create intelligence record:`, error);
+    throw new Error(`Failed to initialize intelligence record: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 
   // Update status to collecting
-  await updateIntelligenceStatus(intelligence.id, 'collecting');
+  try {
+    await updateIntelligenceStatus(intelligence.id, 'collecting');
+  } catch (error) {
+    console.error(`[Orchestrator] Failed to update status:`, error);
+    // Non-fatal, continue
+  }
 
   const sourceResults: CollectionResult['sources'] = [];
   const allContacts: ContactIntelligence[] = [];
   const allMentions: IndustryMention[] = [];
   const collectedSources: IntelligenceSource[] = [];
 
-  // Run collectors
-  for (const sourceType of sources) {
+  // Determine which sources to run
+  const primarySourcesToRun = sources.filter((s) => PRIMARY_SOURCES.includes(s));
+  const synthesisSourcesToRun = sources.filter((s) => SYNTHESIS_SOURCES.includes(s));
+
+  // Track Apollo people data for enrichment
+  let apolloPeopleData: ApolloPeopleData | null = null;
+
+  // Run primary collectors first
+  for (const sourceType of primarySourcesToRun) {
     console.log(`[Orchestrator] Collecting ${sourceType}...`);
 
     try {
@@ -111,8 +151,8 @@ export async function collectIntelligence(
 
         // Handle special cases (contacts, mentions)
         if (sourceType === 'linkedin_people' && result.data) {
-          const peopleData = result.data as ApolloPeopleData;
-          const contacts = await saveContacts(companyId, peopleData);
+          apolloPeopleData = result.data as ApolloPeopleData;
+          const contacts = await saveContacts(companyId, apolloPeopleData);
           allContacts.push(...contacts);
         }
 
@@ -133,6 +173,97 @@ export async function collectIntelligence(
     }
   }
 
+  // Run synthesis collectors (depend on primary data)
+  if (synthesisSourcesToRun.length > 0 && collectedSources.length > 0) {
+    console.log(`[Orchestrator] Running synthesis collectors...`);
+    let marketing: MarketingActivityData | null = null;
+    let employeeMedia: EmployeeMediaData | null = null;
+
+    try {
+      const synthesisResult = await runSynthesisCollectors(companyName, collectedSources);
+      marketing = synthesisResult.marketing;
+      employeeMedia = synthesisResult.employeeMedia;
+    } catch (synthError) {
+      console.error('[Orchestrator] Synthesis collectors failed:', synthError);
+    }
+
+    // Save marketing activity data (or create virtual source if DB save fails)
+    if (marketing && synthesisSourcesToRun.includes('marketing_activity')) {
+      const marketingResult: CollectorResult<MarketingActivityData> = {
+        success: true,
+        data: marketing,
+        error: null,
+        qualityScore: marketingActivityCollector.calculateQualityScore(marketing),
+        durationMs: 0,
+      };
+
+      try {
+        const savedSource = await saveSource(intelligence.id, 'marketing_activity', marketingResult);
+        collectedSources.push(savedSource);
+      } catch (saveError) {
+        // DB constraint may not include this type yet - create virtual source for synthesis
+        console.warn('[Orchestrator] Could not save marketing_activity source, using virtual source for synthesis');
+        collectedSources.push({
+          id: 'virtual-marketing',
+          account_intelligence_id: intelligence.id,
+          source_type: 'marketing_activity',
+          raw_data: marketing as unknown as Record<string, unknown>,
+          processed_data: marketing as unknown as Record<string, unknown>,
+          quality_score: marketingResult.qualityScore,
+          collected_at: new Date().toISOString(),
+          collection_duration_ms: 0,
+          error_message: null,
+          created_at: new Date().toISOString(),
+        } as IntelligenceSource);
+      }
+
+      sourceResults.push({
+        type: 'marketing_activity',
+        success: true,
+        qualityScore: marketingResult.qualityScore,
+        error: null,
+      });
+    }
+
+    // Save employee media data (or create virtual source if DB save fails)
+    if (employeeMedia && synthesisSourcesToRun.includes('employee_media')) {
+      const mediaResult: CollectorResult<EmployeeMediaData> = {
+        success: true,
+        data: employeeMedia,
+        error: null,
+        qualityScore: employeeMediaCollector.calculateQualityScore(employeeMedia),
+        durationMs: 0,
+      };
+
+      try {
+        const savedSource = await saveSource(intelligence.id, 'employee_media', mediaResult);
+        collectedSources.push(savedSource);
+      } catch (saveError) {
+        // DB constraint may not include this type yet - create virtual source for synthesis
+        console.warn('[Orchestrator] Could not save employee_media source, using virtual source for synthesis');
+        collectedSources.push({
+          id: 'virtual-employee-media',
+          account_intelligence_id: intelligence.id,
+          source_type: 'employee_media',
+          raw_data: employeeMedia as unknown as Record<string, unknown>,
+          processed_data: employeeMedia as unknown as Record<string, unknown>,
+          quality_score: mediaResult.qualityScore,
+          collected_at: new Date().toISOString(),
+          collection_duration_ms: 0,
+          error_message: null,
+          created_at: new Date().toISOString(),
+        } as IntelligenceSource);
+      }
+
+      sourceResults.push({
+        type: 'employee_media',
+        success: true,
+        qualityScore: mediaResult.qualityScore,
+        error: null,
+      });
+    }
+  }
+
   // Synthesize intelligence if we have data
   const successfulSources = collectedSources.filter((s) => s.processed_data);
 
@@ -147,6 +278,52 @@ export async function collectIntelligence(
       );
 
       intelligence = await saveIntelligence(companyId, synthesis, contextHash);
+
+      // Auto-enrich company from collected intelligence
+      console.log(`[Orchestrator] Auto-enriching company...`);
+      try {
+        const enrichResult = await enrichCompanyFromIntelligence(
+          companyId,
+          intelligence,
+          successfulSources
+        );
+        if (enrichResult.success && enrichResult.fieldsUpdated.length > 0) {
+          console.log(`[Orchestrator] Enriched company fields: ${enrichResult.fieldsUpdated.join(', ')}`);
+        }
+      } catch (enrichError) {
+        console.error('[Orchestrator] Company enrichment failed:', enrichError);
+      }
+
+      // Collect enhanced marketing intelligence
+      console.log(`[Orchestrator] Collecting marketing intelligence...`);
+      try {
+        const marketingResult = await marketingOrchestrator.collect(
+          companyId,
+          companyName,
+          domain
+        );
+        console.log(`[Orchestrator] Marketing intelligence: Overall score ${marketingResult.scores.overall}`);
+      } catch (marketingError) {
+        console.error('[Orchestrator] Marketing intelligence collection failed:', marketingError);
+      }
+
+      // Auto-enrich contacts from Apollo people data
+      if (apolloPeopleData && apolloPeopleData.people.length > 0) {
+        console.log(`[Orchestrator] Auto-enriching contacts...`);
+        try {
+          const contactEnrichResult = await enrichExistingContacts(
+            companyId,
+            apolloPeopleData.people as unknown as EnhancedApolloPerson[]
+          );
+          if (contactEnrichResult.success) {
+            console.log(
+              `[Orchestrator] Enriched ${contactEnrichResult.enrichedCount} contacts, created ${contactEnrichResult.createdCount} new`
+            );
+          }
+        } catch (contactEnrichError) {
+          console.error('[Orchestrator] Contact enrichment failed:', contactEnrichError);
+        }
+      }
     } catch (error) {
       console.error('[Orchestrator] Synthesis failed:', error);
       await updateIntelligenceStatus(intelligence.id, 'partial', error instanceof Error ? error.message : 'Synthesis failed');
@@ -269,6 +446,12 @@ async function runCollector(
       return apolloPeopleCollector.collect(companyName, domain);
     case 'industry_mentions':
       return industryCollector.collect(companyName, domain);
+    case 'marketing_activity':
+      // Marketing activity is a synthesis collector - returns skeleton
+      return marketingActivityCollector.collect(companyName, domain);
+    case 'employee_media':
+      // Employee media is a synthesis collector - returns skeleton
+      return employeeMediaCollector.collect(companyName, domain);
     default:
       return {
         success: false,
@@ -278,6 +461,60 @@ async function runCollector(
         durationMs: 0,
       };
   }
+}
+
+/**
+ * Run synthesis collectors that depend on primary source data
+ */
+async function runSynthesisCollectors(
+  companyName: string,
+  collectedSources: IntelligenceSource[]
+): Promise<{ marketing: MarketingActivityData | null; employeeMedia: EmployeeMediaData | null }> {
+  let marketing: MarketingActivityData | null = null;
+  let employeeMedia: EmployeeMediaData | null = null;
+
+  // Get primary source data
+  const facebookSource = collectedSources.find((s) => s.source_type === 'facebook');
+  const websiteSource = collectedSources.find((s) => s.source_type === 'website');
+  const linkedinPeopleSource = collectedSources.find((s) => s.source_type === 'linkedin_people');
+
+  // Marketing Activity - synthesized from Facebook and Website data
+  try {
+    const baseResult = await marketingActivityCollector.collect(companyName, null);
+    if (baseResult.success && baseResult.data) {
+      marketing = baseResult.data as MarketingActivityData;
+
+      // Enrich with Facebook data
+      if (facebookSource?.processed_data) {
+        const fbData = facebookSource.processed_data as unknown as FacebookData;
+        marketingActivityCollector.enrichFromFacebook(marketing, fbData);
+      }
+
+      // Enrich with Website data
+      if (websiteSource?.processed_data) {
+        const webData = websiteSource.processed_data as unknown as EnhancedWebsiteData;
+        marketingActivityCollector.enrichFromWebsite(marketing, webData);
+      }
+
+      // Calculate overall maturity
+      marketingActivityCollector.assessMarketingMaturity(marketing);
+    }
+  } catch (error) {
+    console.error('[Orchestrator] Marketing activity synthesis failed:', error);
+  }
+
+  // Employee Media - uses LinkedIn People data
+  try {
+    if (linkedinPeopleSource?.processed_data) {
+      const peopleData = linkedinPeopleSource.processed_data as unknown as ApolloPeopleData;
+      const people = peopleData.people as unknown as EnhancedApolloPerson[];
+      employeeMedia = await employeeMediaCollector.collectForEmployees(companyName, people, 10);
+    }
+  } catch (error) {
+    console.error('[Orchestrator] Employee media collection failed:', error);
+  }
+
+  return { marketing, employeeMedia };
 }
 
 async function saveSource(

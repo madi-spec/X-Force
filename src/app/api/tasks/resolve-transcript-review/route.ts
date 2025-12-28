@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createEntitiesFromTranscript, type ExtractedEntityData } from '@/lib/ai/transcriptEntityMatcher';
+// Migrated to new utility file
+import { createEntitiesFromTranscript, type ExtractedEntityData } from '@/lib/fireflies/transcriptUtils';
 
 export async function POST(request: NextRequest) {
   try {

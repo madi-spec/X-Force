@@ -32,8 +32,14 @@ export class FacebookCollector extends BaseCollector<FacebookData, CollectorOpti
   ): Promise<CollectorResult<FacebookData>> {
     const startTime = Date.now();
 
-    // Try to find Facebook page URL
-    const facebookUrl = await this.findFacebookPage(companyName, domain);
+    // Use known URL if provided (from website scrape), otherwise try to find it
+    let facebookUrl = options.knownUrl || null;
+
+    if (!facebookUrl) {
+      facebookUrl = await this.findFacebookPage(companyName, domain);
+    } else {
+      console.log('[FacebookCollector] Using known URL:', facebookUrl);
+    }
 
     if (!facebookUrl) {
       return this.errorResult(

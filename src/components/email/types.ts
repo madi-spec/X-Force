@@ -54,16 +54,19 @@ export function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function getInitials(name: string): string {
+export function getInitials(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') return '?';
   return name
     .split(' ')
+    .filter(n => n.length > 0)
     .map(n => n[0])
     .join('')
     .toUpperCase()
-    .slice(0, 2);
+    .slice(0, 2) || '?';
 }
 
-export function getAvatarColor(name: string): string {
+export function getAvatarColor(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') name = 'unknown';
   const colors = [
     'bg-red-600',
     'bg-orange-600',

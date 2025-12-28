@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import type { MeetingAnalysis } from '@/types';
 import { getPromptWithVariables } from './promptManager';
+import { SALES_PLAYBOOK } from '@/lib/intelligence/salesPlaybook';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -206,7 +207,11 @@ async function buildAnalysisPrompt(
   }
 
   // Fallback to hardcoded prompt if not in database
-  return `You are an expert sales analyst for a B2B SaaS company that sells voice phone systems and AI solutions to the pest control and lawn care industry. Analyze this meeting transcription and extract actionable intelligence.
+  return `${SALES_PLAYBOOK}
+
+---
+
+You are an expert sales analyst. Analyze this meeting transcription and extract actionable intelligence based on your understanding of our sales process above.
 
 ## Meeting Information
 - Title: ${context.title}
@@ -233,9 +238,23 @@ Analyze this meeting and provide a comprehensive JSON response with this exact s
   "stakeholders": [
     {
       "name": "Person Name",
-      "role": "Their role/title if mentioned or inferred",
+      "role": "Their job role/title if mentioned or inferred",
+      "email": "email@domain.com if explicitly mentioned, otherwise null",
       "sentiment": "positive|neutral|negative",
-      "keyQuotes": ["Notable things they said that reveal their position or concerns"]
+      "dealRole": "decision_maker|champion|influencer|end_user|blocker|null - infer from their authority and engagement",
+      "confidence": 0.85,
+      "keyQuotes": ["Notable things they said that reveal their position or concerns"],
+      "personalFacts": [
+        {
+          "type": "personal|preference|family|interest|communication|concern",
+          "fact": "Clear, concise statement about this person useful for relationship building",
+          "quote": "Supporting quote from transcript if available"
+        }
+      ],
+      "communicationInsights": {
+        "preferredChannel": "email|phone|meeting|text if mentioned, otherwise null",
+        "communicationTone": "formal|casual|technical - based on how they communicate"
+      }
     }
   ],
 
@@ -315,6 +334,23 @@ Important guidelines:
 - If information isn't explicitly stated in the transcript, use null rather than guessing
 - For the confidence score, consider how complete the transcript is and how clear the discussion was (0.0 to 1.0)
 - Ensure all arrays have at least one item if relevant content exists, or empty arrays if none
+
+Stakeholder Detection Guidelines:
+- Extract ALL people mentioned from the prospect/customer organization
+- For dealRole, use these definitions:
+  - decision_maker: Has budget authority, final say on purchase decisions
+  - champion: Internal advocate actively pushing for our solution
+  - influencer: Can sway the decision, provides input but doesn't decide
+  - end_user: Will use the product day-to-day, cares about usability
+  - blocker: Resistant to change, expressing concerns or opposition
+- For personalFacts, actively look for:
+  - Family mentions (kids, spouse, pets, where they live)
+  - Personal interests and hobbies (sports, activities, travel)
+  - Work preferences (meeting times, communication style)
+  - Background or career history mentions
+  - Concerns beyond the business case
+- Each personal fact should be actionable for relationship building
+- Confidence should reflect how certain you are this person exists and their role (0.0 to 1.0)
 
 Respond ONLY with the JSON object inside markdown code blocks, no other text.`;
 }

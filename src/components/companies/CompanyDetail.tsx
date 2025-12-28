@@ -160,6 +160,34 @@ export function CompanyDetail({
   const [refreshingSummary, setRefreshingSummary] = useState(false);
   const [flagModalOpen, setFlagModalOpen] = useState(false);
   const [editingCompanyProduct, setEditingCompanyProduct] = useState<any>(null);
+  const [startingSaleProductId, setStartingSaleProductId] = useState<string | null>(null);
+
+  // Start a new sale for a product (creates company_product with in_sales status)
+  const handleStartSale = async (productId: string) => {
+    setStartingSaleProductId(productId);
+    try {
+      const response = await fetch(`/api/companies/${company.id}/products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: productId,
+          status: 'in_sales',
+        }),
+      });
+
+      if (response.ok) {
+        router.refresh();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to start sale');
+      }
+    } catch (error) {
+      console.error('Error starting sale:', error);
+      alert('Failed to start sale');
+    } finally {
+      setStartingSaleProductId(null);
+    }
+  };
 
   // Sync tab with URL
   useEffect(() => {
@@ -566,12 +594,15 @@ export function CompanyDetail({
                           </p>
                           <p className="text-sm text-gray-600 mt-1">{signal.description}</p>
                         </div>
-                        <Link
-                          href={`/deals/new?company=${company.id}&product=${signal.product?.id}`}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          Create Deal
-                        </Link>
+                        {signal.product?.id && (
+                          <button
+                            onClick={() => handleStartSale(signal.product.id)}
+                            disabled={startingSaleProductId === signal.product.id}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                          >
+                            {startingSaleProductId === signal.product.id ? 'Starting...' : 'Start Sale'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -589,12 +620,13 @@ export function CompanyDetail({
                   {availableProducts.slice(0, 3).map((product: any) => (
                     <div key={product.id} className="flex items-center justify-between py-2 text-sm">
                       <span className="text-gray-600">{product.name}</span>
-                      <Link
-                        href={`/deals/new?company=${company.id}&product=${product.id}`}
-                        className="text-blue-600 hover:text-blue-700"
+                      <button
+                        onClick={() => handleStartSale(product.id)}
+                        disabled={startingSaleProductId === product.id}
+                        className="text-blue-600 hover:text-blue-700 disabled:opacity-50"
                       >
-                        Start Sale
-                      </Link>
+                        {startingSaleProductId === product.id ? 'Starting...' : 'Start Sale'}
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1009,12 +1041,13 @@ export function CompanyDetail({
                             )}
                           </div>
                         </div>
-                        <Link
-                          href={`/deals/new?company=${company.id}&product=${product.id}`}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
+                        <button
+                          onClick={() => handleStartSale(product.id)}
+                          disabled={startingSaleProductId === product.id}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap disabled:opacity-50"
                         >
-                          Start Sale
-                        </Link>
+                          {startingSaleProductId === product.id ? 'Starting...' : 'Start Sale'}
+                        </button>
                       </div>
                     </div>
                   );

@@ -152,6 +152,49 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
   }
   jsonContent = jsonContent.trim();
 
+  // Try to extract just the first JSON object if there's extra text after it
+  // This handles cases where the AI adds explanation text after the JSON
+  const extractFirstJson = (text: string): string => {
+    // Find the first { and track brace depth to find the matching }
+    const start = text.indexOf('{');
+    if (start === -1) return text;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+      const char = text[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"' && !escaped) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') depth++;
+        else if (char === '}') {
+          depth--;
+          if (depth === 0) {
+            return text.substring(start, i + 1);
+          }
+        }
+      }
+    }
+
+    return text; // Return original if no complete JSON found
+  };
+
   try {
     const data = JSON.parse(jsonContent) as T;
     return {
@@ -160,8 +203,20 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
       latencyMs: response.latencyMs,
     };
   } catch (error) {
-    console.error('Failed to parse AI JSON response:', jsonContent);
-    throw new Error(`Failed to parse AI response as JSON: ${error}`);
+    // Try extracting just the first JSON object
+    try {
+      const firstJson = extractFirstJson(jsonContent);
+      const data = JSON.parse(firstJson) as T;
+      console.log('[callAIJson] Extracted first JSON object from response with trailing text');
+      return {
+        data,
+        usage: response.usage,
+        latencyMs: response.latencyMs,
+      };
+    } catch {
+      console.error('Failed to parse AI JSON response:', jsonContent);
+      throw new Error(`Failed to parse AI response as JSON: ${error}`);
+    }
   }
 }
 

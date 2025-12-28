@@ -24,6 +24,8 @@ export interface Stakeholder {
   role: 'decision_maker' | 'champion' | 'influencer' | 'blocker' | 'user';
   sentiment: string;
   notes: string;
+  contact_id?: string;
+  last_interaction?: string;
 }
 
 export interface Preferences {
@@ -383,7 +385,7 @@ export async function addKeyFact(
   const existingFacts = context.key_facts || [];
 
   // Avoid duplicate facts
-  if (!existingFacts.some(f => f.fact === fact.fact)) {
+  if (!existingFacts.some((f: KeyFact) => f.fact === fact.fact)) {
     context.key_facts = [...existingFacts, fact];
     return updateRelationshipIntelligence(relationshipId, { context });
   }
@@ -613,7 +615,7 @@ export async function markConcernResolved(
 
   const signals = { ...current.signals };
   const concernIndex = (signals.concerns || []).findIndex(
-    c => c.concern === concernText && !c.resolved
+    (c: Concern) => c.concern === concernText && !c.resolved
   );
 
   if (concernIndex !== -1) {

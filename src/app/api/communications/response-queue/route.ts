@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
     .from('communications')
     .select(`
       *,
-      company:companies(id, name, domain),
-      contact:contacts(id, name, email)
+      company:companies!company_id(id, name, domain),
+      contact:contacts!contact_id(id, name, email)
     `)
     .eq('awaiting_our_response', true)
     .is('responded_at', null)

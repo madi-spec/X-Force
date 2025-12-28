@@ -1,12 +1,14 @@
 /**
  * Apollo.io People Collector
  * Uses Apollo.io API to find key contacts at a company
+ * Enhanced to return more people with richer contact data
  */
 
 import { BaseCollector } from './base';
 import type {
   ApolloPeopleData,
   ApolloPerson,
+  EnhancedApolloPerson,
   ApolloEmployment,
   ApolloCollectorOptions,
   ContactSeniority,
@@ -17,25 +19,46 @@ import type {
 // CONSTANTS
 // ============================================
 
-const DEFAULT_MAX_PEOPLE = 25;
+// Increased from 25 to 50 for deeper employee discovery
+const DEFAULT_MAX_PEOPLE = 50;
 
-// Target seniority levels for sales outreach
+// Target seniority levels for sales outreach - FOCUSED ON EXECUTIVES ONLY
+// We want decision makers, not all employees
 const TARGET_SENIORITIES: ContactSeniority[] = [
   'c_level',
   'owner',
   'partner',
   'vp',
   'director',
-  'manager',
 ];
 
-// Target departments for pest control software
+// Executive title patterns to identify decision makers
+const EXECUTIVE_TITLE_PATTERNS = [
+  /\bceo\b/i, /\bchief executive/i,
+  /\bpresident\b/i,
+  /\bowner\b/i, /\bfounder\b/i, /\bco-founder\b/i,
+  /\bcoo\b/i, /\bcfo\b/i, /\bcmo\b/i, /\bcto\b/i, /\bcio\b/i,
+  /\bchief\b/i,
+  /\bvice president\b/i, /\bvp\b/i,
+  /\bdirector\b/i,
+  /\bgeneral manager\b/i, /\bgm\b/i,
+  /\bpartner\b/i,
+  /\bprincipal\b/i,
+  /\bevp\b/i, /\bsvp\b/i,
+];
+
+// Target departments - expanded to include all relevant areas
 const TARGET_DEPARTMENTS = [
   'operations',
   'information_technology',
   'finance',
   'executive',
   'master_data',
+  'sales',
+  'marketing',
+  'customer_service',
+  'human_resources',
+  'administrative',
 ];
 
 // ============================================
@@ -140,7 +163,10 @@ export class ApolloPeopleCollector extends BaseCollector<ApolloPeopleData, Apoll
       per_page: Math.min(maxPeople, 100),
     };
 
-    const response = await fetch(`${this.baseUrl}/mixed_people/search`, {
+    console.log('[Apollo] Search params:', JSON.stringify(searchParams, null, 2));
+
+    // Use the new api_search endpoint (mixed_people/search is deprecated)
+    const response = await fetch(`${this.baseUrl}/mixed_people/api_search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -151,15 +177,66 @@ export class ApolloPeopleCollector extends BaseCollector<ApolloPeopleData, Apoll
     });
 
     if (!response.ok) {
-      throw new Error(`Apollo API error: ${response.status}`);
+      const errorBody = await response.text().catch(() => 'Could not read error body');
+      console.error('[Apollo] API error response:', response.status, errorBody);
+      throw new Error(`Apollo API error: ${response.status} - ${errorBody.substring(0, 200)}`);
     }
 
     const data = await response.json();
 
-    // Transform people
-    const people: ApolloPerson[] = (data.people || [])
-      .slice(0, maxPeople)
+    // Transform people to enhanced format and filter to executives only
+    const allPeople: EnhancedApolloPerson[] = (data.people || [])
       .map((person: ApolloPerson_) => this.transformPerson(person));
+
+    // Filter to only include people with executive titles
+    const people = allPeople.filter(person => {
+      const title = person.title || '';
+      const lowerTitle = title.toLowerCase();
+
+      // Always include if seniority is c_level, owner, or partner
+      if (['c_level', 'owner', 'partner'].includes(person.seniority || '')) {
+        return true;
+      }
+
+      // Check if title matches executive patterns (CEO, President, Owner, etc.)
+      const isExecutiveTitle = EXECUTIVE_TITLE_PATTERNS.some(pattern => pattern.test(title));
+      if (isExecutiveTitle) {
+        // But exclude non-executive "Director" titles (project manager, HR, marketing directors)
+        const nonExecutiveDirectors = [
+          'project', 'hr ', 'human resources', 'marketing', 'content', 'video',
+          'social media', 'digital', 'brand', 'creative', 'recruitment', 'talent',
+          'technical', 'safety', 'training', 'learning', 'customer',
+        ];
+        if (lowerTitle.includes('director') && nonExecutiveDirectors.some(t => lowerTitle.includes(t))) {
+          return false;
+        }
+        return true;
+      }
+
+      // Exclude common non-executive titles
+      const nonExecutiveTitles = [
+        'technician', 'specialist', 'analyst', 'coordinator', 'associate',
+        'assistant', 'representative', 'admin', 'clerk', 'support',
+        'plumber', 'driver', 'field', 'service', 'sales rep', 'account manager',
+        'recruiter', 'recruitment', 'hr business partner', 'project manager',
+        'ppc', 'marketing', 'social media', 'content', 'designer', 'developer',
+        'human resources', 'video', 'technical', 'safety', 'training',
+      ];
+
+      if (nonExecutiveTitles.some(t => lowerTitle.includes(t))) {
+        return false;
+      }
+
+      // Only include VPs (not directors unless they matched executive patterns above)
+      if (person.seniority === 'vp') {
+        return true;
+      }
+
+      // Default: exclude to focus on executives
+      return false;
+    }).slice(0, maxPeople);
+
+    console.log(`[Apollo] Filtered ${allPeople.length} people to ${people.length} executives`);
 
     // Sort by seniority (c-level first)
     people.sort((a, b) => {
@@ -187,9 +264,9 @@ export class ApolloPeopleCollector extends BaseCollector<ApolloPeopleData, Apoll
   }
 
   /**
-   * Transform Apollo person to our format
+   * Transform Apollo person to our enhanced format
    */
-  private transformPerson(person: ApolloPerson_): ApolloPerson {
+  private transformPerson(person: ApolloPerson_): EnhancedApolloPerson {
     const seniority = this.mapSeniority(person.seniority);
 
     // Build employment history
@@ -203,7 +280,26 @@ export class ApolloPeopleCollector extends BaseCollector<ApolloPeopleData, Apoll
         current: emp.current || false,
       }));
 
+    // Calculate years at company from employment history
+    const currentJob = employmentHistory.find((e) => e.current);
+    const yearsAtCompany = currentJob?.startDate
+      ? Math.floor((Date.now() - new Date(currentJob.startDate).getTime()) / (365 * 24 * 60 * 60 * 1000))
+      : null;
+
+    // Determine if likely budget authority based on title/seniority
+    const budgetAuthority = this.hasBudgetAuthority(seniority, person.title || '');
+
+    // Determine if tech buyer based on department/title
+    const techBuyer = this.isTechBuyer(person.departments || [], person.title || '');
+
+    // Extract phone numbers
+    const phoneNumbers = person.phone_numbers || [];
+    const directDial = phoneNumbers.find((p) => p.type === 'work_direct')?.sanitized_number || null;
+    const mobilePhone = phoneNumbers.find((p) => p.type === 'mobile')?.sanitized_number || null;
+    const mainPhone = phoneNumbers[0]?.sanitized_number || null;
+
     return {
+      // Base ApolloPerson fields
       apolloId: person.id || '',
       firstName: person.first_name || null,
       lastName: person.last_name || null,
@@ -213,11 +309,75 @@ export class ApolloPeopleCollector extends BaseCollector<ApolloPeopleData, Apoll
       department: person.departments?.[0] || null,
       seniority,
       email: person.email || null,
-      phone: person.phone_numbers?.[0]?.sanitized_number || null,
+      phone: mainPhone,
       linkedinUrl: person.linkedin_url || null,
       photoUrl: person.photo_url || null,
       employmentHistory,
+      // Enhanced fields
+      personalEmail: person.personal_emails?.[0] || null,
+      mobilePhone,
+      directDial,
+      bio: person.headline || null, // Apollo uses headline for bio-like info
+      skills: [], // Apollo doesn't provide skills in basic search
+      certifications: [], // Would require LinkedIn scraping
+      yearsInRole: null, // Would need current job start date which isn't always available
+      yearsAtCompany,
+      budgetAuthority,
+      techBuyer,
+      reportsTo: null, // Not available from Apollo
+      teamSize: null, // Not available from Apollo
+      linkedinActivityLevel: 'none', // Would require LinkedIn scraping
+      recentPosts: 0, // Would require LinkedIn scraping
+      connectionCount: null, // Not available from Apollo
     };
+  }
+
+  /**
+   * Determine if person likely has budget authority
+   */
+  private hasBudgetAuthority(seniority: ContactSeniority | null, title: string): boolean {
+    // C-level, owners, partners always have budget authority
+    if (['c_level', 'owner', 'partner'].includes(seniority || '')) {
+      return true;
+    }
+
+    // VPs and Directors typically have budget authority
+    if (['vp', 'director'].includes(seniority || '')) {
+      return true;
+    }
+
+    // Check title for budget indicators
+    const lowerTitle = title.toLowerCase();
+    const budgetTitles = [
+      'ceo', 'cfo', 'coo', 'cto', 'cio', 'president', 'owner',
+      'chief', 'vice president', 'vp', 'director', 'head of',
+    ];
+
+    return budgetTitles.some((t) => lowerTitle.includes(t));
+  }
+
+  /**
+   * Determine if person is likely a tech buyer
+   */
+  private isTechBuyer(departments: string[], title: string): boolean {
+    const techDepartments = ['information_technology', 'engineering', 'product'];
+    const hasTechDept = departments.some((d) => techDepartments.includes(d));
+
+    const lowerTitle = title.toLowerCase();
+    const techTitles = [
+      'it ', 'technology', 'software', 'systems', 'developer',
+      'engineer', 'technical', 'digital', 'data', 'infrastructure',
+    ];
+
+    const hasTechTitle = techTitles.some((t) => lowerTitle.includes(t));
+
+    // Operations people are tech buyers in pest control (they buy routing software)
+    const isOps = departments.includes('operations') ||
+      lowerTitle.includes('operations') ||
+      lowerTitle.includes('dispatch') ||
+      lowerTitle.includes('fleet');
+
+    return hasTechDept || hasTechTitle || isOps;
   }
 
   /**
@@ -256,10 +416,17 @@ interface ApolloPerson_ {
   seniority?: string;
   departments?: string[];
   email?: string;
-  phone_numbers?: Array<{ sanitized_number?: string }>;
+  personal_emails?: string[];
+  phone_numbers?: Array<{
+    sanitized_number?: string;
+    type?: string; // 'work_direct', 'mobile', 'work', etc.
+  }>;
   linkedin_url?: string;
   photo_url?: string;
   employment_history?: EmploymentHistory_[];
+  city?: string;
+  state?: string;
+  country?: string;
 }
 
 interface EmploymentHistory_ {

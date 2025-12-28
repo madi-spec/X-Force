@@ -8,9 +8,11 @@
  * - Interaction history (emails + meetings)
  * - Recent meeting summaries
  * - Thread context
+ * - Relationship intelligence (notes, signals, concerns, commitments)
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getRelationshipNotes, type RelationshipNote } from '@/lib/intelligence/relationshipStore';
 
 // ============================================
 // TYPES
@@ -90,6 +92,45 @@ export interface ThreadEmail {
   body_preview: string | null;
 }
 
+export interface BuyingSignal {
+  signal: string;
+  quote?: string;
+  strength: 'strong' | 'moderate' | 'weak';
+  date: string;
+}
+
+export interface Concern {
+  concern: string;
+  severity: 'high' | 'medium' | 'low';
+  resolved: boolean;
+  resolution?: string;
+  date: string;
+}
+
+export interface Commitment {
+  commitment: string;
+  made_on: string;
+  due_by?: string;
+  expected_by?: string;
+  status: 'pending' | 'overdue' | 'completed';
+}
+
+export interface SalespersonNote {
+  note: string;
+  context_type: 'strategy' | 'insight' | 'warning' | 'general';
+  added_at: string;
+}
+
+export interface RelationshipIntel {
+  summary: string | null;
+  notes: SalespersonNote[];
+  buyingSignals: BuyingSignal[];
+  concerns: Concern[];
+  ourCommitments: Commitment[];
+  theirCommitments: Commitment[];
+  keyFacts: string[];
+}
+
 export interface EmailContext {
   contact: EnrichedContact | null;
   company: EnrichedCompany | null;
@@ -100,6 +141,7 @@ export interface EmailContext {
   lastContactDays: number | null;
   totalInteractions: number;
   relationshipStage: string;
+  relationshipIntel: RelationshipIntel;
 }
 
 // ============================================
@@ -460,6 +502,113 @@ export async function enrichEmailContext(email: InboundEmail): Promise<EmailCont
   }
 
   // ----------------------------------------
+  // 7. Get relationship intelligence
+  // ----------------------------------------
+  const relationshipIntel: RelationshipIntel = {
+    summary: null,
+    notes: [],
+    buyingSignals: [],
+    concerns: [],
+    ourCommitments: [],
+    theirCommitments: [],
+    keyFacts: [],
+  };
+
+  if (contact?.id || company?.id) {
+    // Get salesperson notes
+    try {
+      const notes = await getRelationshipNotes({
+        contactId: contact?.id,
+        companyId: company?.id,
+        limit: 10,
+      });
+      relationshipIntel.notes = notes.map(n => ({
+        note: n.note,
+        context_type: n.context_type as SalespersonNote['context_type'],
+        added_at: n.added_at,
+      }));
+    } catch (e) {
+      // Notes table may not exist yet
+    }
+
+    // Get relationship intelligence record
+    let riQuery = supabase
+      .from('relationship_intelligence')
+      .select('relationship_summary, signals, open_commitments, context');
+
+    if (contact?.id) {
+      riQuery = riQuery.eq('contact_id', contact.id);
+    } else if (company?.id) {
+      riQuery = riQuery.eq('company_id', company.id);
+    }
+
+    const { data: ri } = await riQuery.single();
+
+    if (ri) {
+      relationshipIntel.summary = ri.relationship_summary;
+
+      // Extract buying signals
+      const signals = ri.signals as {
+        buying_signals?: Array<{ signal: string; quote?: string; strength: string; date: string }>;
+        concerns?: Array<{ concern: string; severity: string; resolved: boolean; resolution?: string; date: string }>;
+      } | null;
+
+      if (signals?.buying_signals) {
+        relationshipIntel.buyingSignals = signals.buying_signals.map(s => ({
+          signal: s.signal,
+          quote: s.quote,
+          strength: s.strength as BuyingSignal['strength'],
+          date: s.date,
+        }));
+      }
+
+      if (signals?.concerns) {
+        relationshipIntel.concerns = signals.concerns.map(c => ({
+          concern: c.concern,
+          severity: c.severity as Concern['severity'],
+          resolved: c.resolved,
+          resolution: c.resolution,
+          date: c.date,
+        }));
+      }
+
+      // Extract commitments
+      const commitments = ri.open_commitments as {
+        ours?: Array<{ commitment: string; made_on: string; due_by?: string; status: string }>;
+        theirs?: Array<{ commitment: string; made_on: string; expected_by?: string; status: string }>;
+      } | null;
+
+      if (commitments?.ours) {
+        relationshipIntel.ourCommitments = commitments.ours
+          .filter(c => c.status === 'pending')
+          .map(c => ({
+            commitment: c.commitment,
+            made_on: c.made_on,
+            due_by: c.due_by,
+            status: c.status as Commitment['status'],
+          }));
+      }
+
+      if (commitments?.theirs) {
+        relationshipIntel.theirCommitments = commitments.theirs
+          .filter(c => c.status === 'pending')
+          .map(c => ({
+            commitment: c.commitment,
+            made_on: c.made_on,
+            expected_by: c.expected_by,
+            status: c.status as Commitment['status'],
+          }));
+      }
+
+      // Extract key facts
+      const context = ri.context as { key_facts?: Array<{ fact: string }> } | null;
+      if (context?.key_facts) {
+        relationshipIntel.keyFacts = context.key_facts.map(f => f.fact);
+      }
+    }
+  }
+
+  // ----------------------------------------
   // Calculate summary metrics
   // ----------------------------------------
   const lastContactDate = history.length > 0 ? history[0].date : null;
@@ -477,6 +626,7 @@ export async function enrichEmailContext(email: InboundEmail): Promise<EmailCont
     lastContactDays,
     totalInteractions,
     relationshipStage,
+    relationshipIntel,
   };
 }
 

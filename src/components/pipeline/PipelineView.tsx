@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { KanbanBoard } from './KanbanBoard';
+import { HumanLeverageMoments } from '@/components/dashboard';
 import type { Deal, SalesTeam } from '@/types';
 
 interface PipelineViewProps {
@@ -143,6 +144,9 @@ export function PipelineView({ initialDeals, currentUserId, users, companies }: 
           </select>
         </div>
       </div>
+
+      {/* Human Leverage Moments */}
+      <HumanLeverageMoments className="mb-4" />
 
       {/* Kanban Board */}
       <div className="flex-1 min-h-0">

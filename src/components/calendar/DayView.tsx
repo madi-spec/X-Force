@@ -7,13 +7,14 @@ interface DayViewProps {
   currentDate: Date;
   events: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
+  onSlotDoubleClick?: (date: Date) => void;
 }
 
 const HOUR_HEIGHT = 60;
 const START_HOUR = 7;
 const END_HOUR = 20;
 
-export function DayView({ currentDate, events, onEventClick }: DayViewProps) {
+export function DayView({ currentDate, events, onEventClick, onSlotDoubleClick }: DayViewProps) {
   const dayEvents = events.filter(event => {
     const eventDate = new Date(event.metadata.start_time || event.occurred_at);
     return isSameDay(eventDate, currentDate);
@@ -129,8 +130,15 @@ export function DayView({ currentDate, events, onEventClick }: DayViewProps) {
             {hours.map((hour) => (
               <div
                 key={hour}
-                className="border-b border-gray-100"
+                className="border-b border-gray-100 cursor-pointer hover:bg-blue-50/50 transition-colors"
                 style={{ height: HOUR_HEIGHT }}
+                onDoubleClick={() => {
+                  if (onSlotDoubleClick) {
+                    const slotDate = new Date(currentDate);
+                    slotDate.setHours(hour, 0, 0, 0);
+                    onSlotDoubleClick(slotDate);
+                  }
+                }}
               />
             ))}
 
