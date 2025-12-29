@@ -288,8 +288,12 @@ export async function GET(
       }, { status: 404 });
     }
 
-    // Get attendees from metadata
-    const attendeeEmails: string[] = meeting.metadata?.attendees || [];
+    // Get attendees from metadata - may be strings or objects with email property
+    const rawAttendees = meeting.metadata?.attendees || [];
+    const attendeeEmails: string[] = rawAttendees.map((a: string | { email?: string }) => {
+      if (typeof a === 'string') return a;
+      return a?.email || '';
+    }).filter((e: string) => e && e.includes('@'));
     const enrichedAttendees = await enrichAttendees(supabase, attendeeEmails, meeting.company_id);
 
     // Get deal context - Supabase returns the joined data; handle both array and object forms

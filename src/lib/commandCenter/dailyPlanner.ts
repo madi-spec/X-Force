@@ -123,6 +123,17 @@ async function getCalendarEventsForDay(
 
     const fetchedEvents = events.value || [];
 
+    console.log(`[DailyPlanner] Calendar events for ${dateStr}:`, {
+      count: fetchedEvents.length,
+      events: fetchedEvents.map((e: CalendarEvent) => ({
+        subject: e.subject,
+        start: e.start?.dateTime,
+        end: e.end?.dateTime,
+        showAs: e.showAs,
+        isCancelled: (e as { isCancelled?: boolean }).isCancelled,
+      })),
+    });
+
     // Sync events to activities table in the background (don't block)
     syncEventsToActivities(userId, fetchedEvents).catch(err => {
       console.error('[DailyPlanner] Background sync error:', err);
@@ -651,18 +662,65 @@ function isInternalEmail(email: string): boolean {
 
 /**
  * Parse Microsoft Graph datetime string correctly
- * Graph returns times like "2025-12-19T15:00:00.0000000" with timeZone: "UTC"
- * But without the 'Z' suffix, new Date() treats it as local time
+ *
+ * Graph returns times in two formats depending on the Prefer header:
+ * 1. With Prefer: outlook.timezone="UTC" -> times are in UTC but without 'Z' suffix
+ * 2. With Prefer: outlook.timezone="America/New_York" -> times are in that timezone
+ *
+ * The timeZone parameter tells us which timezone the datetime string is in.
+ * We need to create a Date object that represents the correct instant in time.
  */
 function parseGraphDateTime(dateTimeStr: string, timeZone?: string): Date {
-  // If the timezone is UTC and there's no Z suffix, add it
-  if (timeZone === 'UTC' && !dateTimeStr.endsWith('Z')) {
-    return new Date(dateTimeStr + 'Z');
+  // If the timezone is UTC, add 'Z' suffix
+  if (timeZone === 'UTC') {
+    if (!dateTimeStr.endsWith('Z')) {
+      return new Date(dateTimeStr + 'Z');
+    }
+    return new Date(dateTimeStr);
   }
-  // If no timezone specified but string lacks timezone info, assume UTC
-  if (!dateTimeStr.includes('Z') && !dateTimeStr.includes('+') && !dateTimeStr.includes('-', 10)) {
-    return new Date(dateTimeStr + 'Z');
+
+  // If it's a named timezone like 'America/New_York', the datetime string
+  // represents time in that timezone. We need to properly convert to UTC.
+  if (timeZone && !dateTimeStr.includes('Z') && !dateTimeStr.includes('+') && !dateTimeStr.includes('-', 10)) {
+    // Parse the datetime components
+    const match = dateTimeStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    if (match) {
+      const [, year, month, day, hour, minute, second] = match.map(Number);
+
+      // Create a Date representing this time in the specified timezone
+      // We use a formatter to find the offset for this specific date/time
+      const tempDate = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+
+      // Get the offset by comparing what time it is in the target timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+
+      // Get the local time components when interpreting tempDate in the target timezone
+      const parts = formatter.formatToParts(tempDate);
+      const getPart = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10);
+      const tzHour = getPart('hour');
+      const tzMinute = getPart('minute');
+
+      // The difference tells us the offset (in minutes)
+      // tempDate is 10:00 UTC, and in Eastern (UTC-5) that shows as 5:00
+      // We WANT a Date that shows as 10:00 in Eastern, which is 15:00 UTC
+      // So we need to add (hour - tzHour) hours to tempDate
+      const offsetMinutes = (hour * 60 + minute) - (tzHour * 60 + tzMinute);
+
+      // Adjust by the offset to get the correct UTC time
+      return new Date(tempDate.getTime() + offsetMinutes * 60 * 1000);
+    }
   }
+
+  // Fallback: parse as-is (may be local time)
   return new Date(dateTimeStr);
 }
 
