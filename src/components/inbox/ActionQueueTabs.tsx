@@ -74,14 +74,14 @@ export function ActionQueueTabs({ counts, activeQueue, onQueueChange }: ActionQu
               {tooltip && (
                 <TooltipContent side="bottom">
                   <div className="max-w-xs space-y-1">
-                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                    <div className="font-medium text-gray-900">
                       {tooltip.title}
                     </div>
-                    <div className="text-gray-600 dark:text-gray-300 text-xs">
+                    <div className="text-gray-600 text-xs">
                       {tooltip.description}
                     </div>
                     {tooltip.notes && tooltip.notes.length > 0 && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-200 dark:border-gray-600">
+                      <div className="text-xs text-gray-500 pt-1 border-t border-gray-200">
                         {tooltip.notes.map((note, i) => (
                           <div key={i}>• {note}</div>
                         ))}

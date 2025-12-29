@@ -423,18 +423,18 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <Mail className="h-5 w-5 text-blue-500" />
-              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">
                 Draft Follow-up
               </h2>
             </div>
             <button
               onClick={onClose}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-1 rounded hover:bg-gray-100 transition-colors"
             >
               <X className="h-5 w-5 text-gray-500" />
             </button>
@@ -460,16 +460,16 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
               <div className="space-y-4">
                 {/* Context Info */}
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                  <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700">
                     {state.data.context.company_name}
                   </span>
                   {state.data.context.contact_name && (
-                    <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                    <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">
                       {state.data.context.contact_name}
                     </span>
                   )}
                   {state.data.context.stage_name && (
-                    <span className="px-2 py-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                    <span className="px-2 py-1 rounded-full bg-purple-100 text-purple-700">
                       {state.data.context.stage_name}
                     </span>
                   )}
@@ -487,15 +487,15 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
                     placeholder="recipient@company.com"
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'placeholder:text-gray-400',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                   />
                   {!editedTo && (
-                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    <p className="mt-1 text-xs text-amber-600">
                       No contact email on file. Enter recipient email to send.
                     </p>
                   )}
@@ -536,9 +536,9 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
                     onChange={(e) => setEditedSubject(e.target.value)}
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                   />
@@ -579,9 +579,9 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
                     rows={8}
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border resize-none',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                   />
@@ -592,12 +592,12 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
 
           {/* Footer */}
           {state.data && !state.isLoading && (
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-[#2a2a2a] space-y-3">
+            <div className="px-6 py-4 border-t border-gray-200 space-y-3">
               {/* Error display */}
               {actionError && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg border border-red-200">
                   <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
-                  <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+                  <p className="text-sm text-red-600">{actionError}</p>
                 </div>
               )}
 
@@ -635,7 +635,7 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
                       className={cn(
                         'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
                         'bg-gray-100 text-gray-700 hover:bg-gray-200',
-                        'dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+                        '',
                         'disabled:opacity-50 disabled:cursor-not-allowed',
                         'transition-colors'
                       )}
@@ -662,7 +662,7 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
                       className={cn(
                         'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
                         'bg-gray-100 text-gray-700 hover:bg-gray-200',
-                        'dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+                        '',
                         'disabled:opacity-50 disabled:cursor-not-allowed',
                         'transition-colors'
                       )}
@@ -691,7 +691,7 @@ function DraftModal({ state, onClose, onMarkSent, onResolve, onSendEmail, onMark
                       className={cn(
                         'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
                         'text-gray-500 hover:text-gray-700 hover:bg-gray-100',
-                        'dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800',
+                        '',
                         'disabled:opacity-50 disabled:cursor-not-allowed',
                         'transition-colors'
                       )}
@@ -1399,10 +1399,10 @@ Next Steps:
 
           {/* Reason - more prominent with background */}
           {item.reason && (
-            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-800 dark:text-amber-200">{item.reason}</p>
+                <p className="text-sm text-amber-800">{item.reason}</p>
               </div>
             </div>
           )}
@@ -1575,10 +1575,10 @@ Next Steps:
 
           {/* Reason - more prominent with background */}
           {item.reason && (
-            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-800 dark:text-amber-200">{item.reason}</p>
+                <p className="text-sm text-amber-800">{item.reason}</p>
               </div>
             </div>
           )}

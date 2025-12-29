@@ -118,7 +118,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
       *,
       company:companies(id, name, domain, city, state),
       current_stage:product_sales_stages(id, name, slug, stage_order),
-      owner:users(id, name)
+      owner_user:users(id, name)
     `)
     .eq('product_id', product.id)
     .eq('status', 'in_sales')
@@ -268,7 +268,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
               className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
                 selectedProcess === 'sales'
                   ? 'bg-yellow-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-yellow-300" />
@@ -279,7 +279,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
               className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
                 selectedProcess === 'onboarding'
                   ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-blue-300" />
@@ -290,7 +290,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
               className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
                 selectedProcess === 'engagement'
                   ? 'bg-green-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-green-300" />

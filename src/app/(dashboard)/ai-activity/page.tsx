@@ -169,15 +169,15 @@ function AIActionCard({
   const communicationSubject = (action.communication as { subject?: string } | null)?.subject;
 
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-4 hover:shadow-md transition-all duration-300">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-all duration-300">
       <div className="flex items-start gap-3">
-        <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800">
-          <SourceIcon className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+        <div className="p-2 rounded-lg bg-gray-100">
+          <SourceIcon className="h-4 w-4 text-gray-600" />
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            <span className="text-sm font-medium text-gray-900">
               {formatActionType(action.action_type)}
             </span>
             <span
@@ -192,7 +192,7 @@ function AIActionCard({
           </div>
 
           {(companyName || contactName || communicationSubject) && (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+            <p className="text-sm text-gray-600 mt-0.5">
               {companyName}
               {contactName && ` - ${contactName}`}
               {communicationSubject && ` - "${communicationSubject}"`}
@@ -200,25 +200,25 @@ function AIActionCard({
           )}
 
           {action.ai_reasoning && (
-            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1 line-clamp-2">
+            <p className="text-xs text-gray-500 mt-1 line-clamp-2">
               {action.ai_reasoning}
             </p>
           )}
 
           {action.error_message && (
-            <p className="text-xs text-red-600 dark:text-red-400 mt-1 line-clamp-2">
+            <p className="text-xs text-red-600 mt-1 line-clamp-2">
               Error: {action.error_message}
             </p>
           )}
 
-          <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">
+          <p className="text-xs text-gray-400 mt-1">
             {formatRelativeTime(action.created_at)}
           </p>
         </div>
 
         <button
           onClick={onViewDetails}
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+          className="p-1 rounded hover:bg-gray-100"
         >
           <ChevronRight className="h-4 w-4 text-gray-400" />
         </button>
@@ -236,14 +236,14 @@ function AIActionDetailsModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#2a2a2a]">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-medium text-gray-900">
             Action Details
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="p-1 rounded hover:bg-gray-100"
           >
             <X className="h-5 w-5 text-gray-500" />
           </button>
@@ -253,11 +253,11 @@ function AIActionDetailsModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider">Source</p>
-              <p className="text-sm text-gray-900 dark:text-gray-100">{action.source}</p>
+              <p className="text-sm text-gray-900">{action.source}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider">Action Type</p>
-              <p className="text-sm text-gray-900 dark:text-gray-100">
+              <p className="text-sm text-gray-900">
                 {formatActionType(action.action_type)}
               </p>
             </div>
@@ -269,7 +269,7 @@ function AIActionDetailsModal({
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider">Created At</p>
-              <p className="text-sm text-gray-900 dark:text-gray-100">
+              <p className="text-sm text-gray-900">
                 {new Date(action.created_at).toLocaleString()}
               </p>
             </div>
@@ -278,7 +278,7 @@ function AIActionDetailsModal({
           {action.ai_reasoning && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">AI Reasoning</p>
-              <p className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+              <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
                 {action.ai_reasoning}
               </p>
             </div>
@@ -287,7 +287,7 @@ function AIActionDetailsModal({
           {action.error_message && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Error</p>
-              <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+              <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3">
                 {action.error_message}
               </p>
             </div>
@@ -296,7 +296,7 @@ function AIActionDetailsModal({
           {action.inputs && Object.keys(action.inputs).length > 0 && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Inputs</p>
-              <pre className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 overflow-x-auto">
+              <pre className="text-xs text-gray-700 bg-gray-50 rounded-lg p-3 overflow-x-auto">
                 {JSON.stringify(action.inputs, null, 2)}
               </pre>
             </div>
@@ -305,7 +305,7 @@ function AIActionDetailsModal({
           {action.outputs && Object.keys(action.outputs).length > 0 && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Outputs</p>
-              <pre className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 overflow-x-auto">
+              <pre className="text-xs text-gray-700 bg-gray-50 rounded-lg p-3 overflow-x-auto">
                 {JSON.stringify(action.outputs, null, 2)}
               </pre>
             </div>
@@ -314,7 +314,7 @@ function AIActionDetailsModal({
           {action.idempotency_key && (
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Idempotency Key</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+              <p className="text-xs text-gray-600 font-mono">
                 {action.idempotency_key}
               </p>
             </div>
@@ -335,7 +335,7 @@ function StatsCard({
   color: string;
 }) {
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-4">
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
       <p className="text-xs text-gray-500 uppercase tracking-wider">{label}</p>
       <p className={cn('text-2xl font-light', color)}>{value.toLocaleString()}</p>
     </div>
@@ -424,7 +424,7 @@ export default function AIActivityPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-normal text-gray-900 dark:text-gray-100">
+          <h1 className="text-xl font-normal text-gray-900">
             AI Activity
           </h1>
           <p className="text-xs text-gray-500">
@@ -434,7 +434,7 @@ export default function AIActivityPage() {
         <button
           onClick={fetchData}
           disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
         >
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           Refresh
@@ -447,7 +447,7 @@ export default function AIActivityPage() {
           <StatsCard
             label="Total Actions"
             value={data.total}
-            color="text-gray-900 dark:text-gray-100"
+            color="text-gray-900"
           />
           <StatsCard
             label="Success"
@@ -483,8 +483,8 @@ export default function AIActivityPage() {
               className={cn(
                 'px-2 py-1 text-xs rounded-lg transition-colors',
                 sources.includes(opt.value)
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               )}
             >
               {opt.label}
@@ -501,8 +501,8 @@ export default function AIActivityPage() {
               className={cn(
                 'px-2 py-1 text-xs rounded-lg transition-colors',
                 statuses.includes(opt.value)
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               )}
             >
               {opt.label}

@@ -607,13 +607,13 @@ export function SchedulingRequestDetailModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <Calendar className="h-5 w-5 text-blue-500" />
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">
                   Scheduling Request
                 </h2>
                 <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -627,7 +627,7 @@ export function SchedulingRequestDetailModal({
                   )}
                   <button
                     onClick={() => setEditingCompany(true)}
-                    className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="p-0.5 rounded hover:bg-gray-100"
                     title="Change company"
                   >
                     <Pencil className="h-3 w-3 text-gray-400" />
@@ -637,14 +637,14 @@ export function SchedulingRequestDetailModal({
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
             >
               <X className="h-5 w-5 text-gray-500" />
             </button>
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 dark:border-[#2a2a2a] px-6">
+          <div className="flex border-b border-gray-200 px-6">
             <button
               onClick={() => setActiveTab('details')}
               className={cn(
@@ -703,14 +703,14 @@ export function SchedulingRequestDetailModal({
                     </button>
 
                     {showStatusDropdown && availableTransitions.length > 0 && (
-                      <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-10 min-w-[180px]">
+                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[180px]">
                         {availableTransitions.map(status => {
                           const config = STATUS_CONFIG[status];
                           return (
                             <button
                               key={status}
                               onClick={() => handleStatusChange(status)}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
                             >
                               <span className={cn('w-2 h-2 rounded-full', config.bgColor)} />
                               {config.label}
@@ -765,7 +765,7 @@ export function SchedulingRequestDetailModal({
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Meeting Type
                     </label>
-                    <p className="text-sm text-gray-900 dark:text-gray-100">
+                    <p className="text-sm text-gray-900">
                       {MEETING_TYPE_LABELS[request.meeting_type] || request.meeting_type}
                     </p>
                   </div>
@@ -774,7 +774,7 @@ export function SchedulingRequestDetailModal({
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Duration
                     </label>
-                    <p className="text-sm text-gray-900 dark:text-gray-100">
+                    <p className="text-sm text-gray-900">
                       {request.duration_minutes} minutes
                     </p>
                   </div>
@@ -783,7 +783,7 @@ export function SchedulingRequestDetailModal({
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Platform
                     </label>
-                    <div className="flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100">
+                    <div className="flex items-center gap-2 text-sm text-gray-900">
                       {request.meeting_platform && PLATFORM_ICONS[request.meeting_platform]}
                       <span className="capitalize">{request.meeting_platform?.replace('_', ' ') || 'Not set'}</span>
                     </div>
@@ -793,7 +793,7 @@ export function SchedulingRequestDetailModal({
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Attempts
                     </label>
-                    <p className="text-sm text-gray-900 dark:text-gray-100">
+                    <p className="text-sm text-gray-900">
                       {request.attempt_count} attempt{request.attempt_count !== 1 ? 's' : ''}
                       {request.no_show_count > 0 && (
                         <span className="text-red-600 ml-2">({request.no_show_count} no-show)</span>
@@ -804,7 +804,7 @@ export function SchedulingRequestDetailModal({
 
                 {/* Source Communication */}
                 {request.source_communication && (
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Mail className="h-4 w-4 text-gray-500" />
@@ -812,7 +812,7 @@ export function SchedulingRequestDetailModal({
                           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                             Source Email
                           </p>
-                          <p className="text-sm text-gray-900 dark:text-gray-100">
+                          <p className="text-sm text-gray-900">
                             {request.source_communication.subject || 'No subject'}
                           </p>
                           <p className="text-xs text-gray-500">
@@ -836,12 +836,12 @@ export function SchedulingRequestDetailModal({
 
                 {/* Scheduled Time */}
                 {request.scheduled_time && (
-                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                    <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-1">
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-2 text-green-700 mb-1">
                       <CheckCircle2 className="h-5 w-5" />
                       <span className="font-medium">Meeting Scheduled</span>
                     </div>
-                    <p className="text-green-900 dark:text-green-300 font-semibold">
+                    <p className="text-green-900 font-semibold">
                       {formatDateTime(request.scheduled_time)}
                     </p>
                     {request.meeting_link && (
@@ -864,7 +864,7 @@ export function SchedulingRequestDetailModal({
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Available Date Range
                     </label>
-                    <p className="text-sm text-gray-900 dark:text-gray-100">
+                    <p className="text-sm text-gray-900">
                       {formatDate(request.date_range_start)} - {formatDate(request.date_range_end)}
                     </p>
                   </div>
@@ -932,7 +932,7 @@ export function SchedulingRequestDetailModal({
 
                   {/* Add External Attendee Search */}
                   {editingExternalAttendees && (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+                    <div className="p-3 bg-blue-50 rounded-lg space-y-2">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <input
@@ -940,7 +940,7 @@ export function SchedulingRequestDetailModal({
                           value={contactSearch}
                           onChange={(e) => setContactSearch(e.target.value)}
                           placeholder="Search contacts..."
-                          className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                          className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg bg-white border-gray-200"
                         />
                         {contactSearchLoading && (
                           <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin" />
@@ -958,7 +958,7 @@ export function SchedulingRequestDetailModal({
                                 onClick={() => handleAddExternalAttendee(contact)}
                                 disabled={isAlreadyAttendee || actionLoading === `add-contact-${contact.id}`}
                                 className={cn(
-                                  'w-full p-2 text-left text-sm rounded hover:bg-white dark:hover:bg-gray-700 flex items-center justify-between',
+                                  'w-full p-2 text-left text-sm rounded hover:bg-white flex items-center justify-between',
                                   isAlreadyAttendee && 'opacity-50'
                                 )}
                               >
@@ -989,14 +989,14 @@ export function SchedulingRequestDetailModal({
                       {externalAttendees.map(attendee => (
                         <div
                           key={attendee.id}
-                          className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg group"
+                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg group"
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
                               <User className="h-4 w-4 text-blue-600" />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                              <p className="text-sm font-medium text-gray-900">
                                 {attendee.name}
                                 {attendee.is_primary_contact && (
                                   <span className="ml-2 text-xs text-blue-600">(Primary)</span>
@@ -1059,7 +1059,7 @@ export function SchedulingRequestDetailModal({
 
                   {/* Add Internal Attendee Search */}
                   {editingInternalAttendees && (
-                    <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg space-y-2">
+                    <div className="p-3 bg-purple-50 rounded-lg space-y-2">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <input
@@ -1067,7 +1067,7 @@ export function SchedulingRequestDetailModal({
                           value={userSearch}
                           onChange={(e) => setUserSearch(e.target.value)}
                           placeholder="Search team members..."
-                          className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                          className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg bg-white border-gray-200"
                         />
                         {userSearchLoading && (
                           <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin" />
@@ -1085,7 +1085,7 @@ export function SchedulingRequestDetailModal({
                                 onClick={() => handleAddInternalAttendee(user)}
                                 disabled={isAlreadyAttendee || actionLoading === `add-user-${user.id}`}
                                 className={cn(
-                                  'w-full p-2 text-left text-sm rounded hover:bg-white dark:hover:bg-gray-700 flex items-center justify-between',
+                                  'w-full p-2 text-left text-sm rounded hover:bg-white flex items-center justify-between',
                                   isAlreadyAttendee && 'opacity-50'
                                 )}
                               >
@@ -1113,7 +1113,7 @@ export function SchedulingRequestDetailModal({
                       {internalAttendees.map(attendee => (
                         <span
                           key={attendee.id}
-                          className="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded text-xs group"
+                          className="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs group"
                         >
                           <User className="h-3 w-3" />
                           {attendee.name}
@@ -1145,7 +1145,7 @@ export function SchedulingRequestDetailModal({
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Context / Notes
                     </label>
-                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
                       {request.context}
                     </p>
                   </div>
@@ -1161,20 +1161,20 @@ export function SchedulingRequestDetailModal({
                 ) : (
                   <div className="relative">
                     {/* Timeline line */}
-                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
+                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
 
                     <div className="space-y-4">
                       {(request?.actions || []).map((action, index) => (
                         <div key={action.id} className="relative pl-10">
                           {/* Timeline dot */}
                           <div className={cn(
-                            'absolute left-2.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-900',
+                            'absolute left-2.5 w-3 h-3 rounded-full border-2 border-white',
                             action.actor === 'ai' ? 'bg-purple-500' : 'bg-blue-500'
                           )} />
 
-                          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                          <div className="bg-gray-50 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                              <span className="text-sm font-medium text-gray-900">
                                 {ACTION_TYPE_LABELS[action.action_type] || action.action_type}
                               </span>
                               <span className="text-xs text-gray-500">
@@ -1197,13 +1197,13 @@ export function SchedulingRequestDetailModal({
                             </div>
 
                             {action.message_subject && (
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                              <p className="text-xs text-gray-600 mb-1">
                                 <span className="font-medium">Subject:</span> {action.message_subject}
                               </p>
                             )}
 
                             {action.ai_reasoning && (
-                              <p className="text-xs text-purple-600 dark:text-purple-400 italic">
+                              <p className="text-xs text-purple-600 italic">
                                 AI: {action.ai_reasoning}
                               </p>
                             )}
@@ -1218,13 +1218,13 @@ export function SchedulingRequestDetailModal({
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
             <div className="text-xs text-gray-500">
               Created {request ? formatDate(request.created_at) : ''}
             </div>
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
               Close
             </button>
@@ -1232,11 +1232,11 @@ export function SchedulingRequestDetailModal({
 
           {/* Company Selection Overlay */}
           {editingCompany && (
-            <div className="absolute inset-0 bg-white dark:bg-[#1a1a1a] flex flex-col rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+            <div className="absolute inset-0 bg-white flex flex-col rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center gap-2">
                   <Building2 className="h-5 w-5 text-blue-500" />
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                  <h3 className="text-base font-semibold text-gray-900">
                     Select Company
                   </h3>
                 </div>
@@ -1245,7 +1245,7 @@ export function SchedulingRequestDetailModal({
                     setEditingCompany(false);
                     setCompanySearch('');
                   }}
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="p-1 rounded hover:bg-gray-100"
                 >
                   <X className="h-5 w-5 text-gray-500" />
                 </button>
@@ -1253,15 +1253,15 @@ export function SchedulingRequestDetailModal({
 
               {/* Current Company */}
               {request?.company && (
-                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-[#2a2a2a]">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
                   <p className="text-xs text-gray-500">
-                    Current: <span className="font-medium text-gray-700 dark:text-gray-300">{request.company.name}</span>
+                    Current: <span className="font-medium text-gray-700">{request.company.name}</span>
                   </p>
                 </div>
               )}
 
               {/* Search */}
-              <div className="p-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+              <div className="p-4 border-b border-gray-200">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input
@@ -1270,7 +1270,7 @@ export function SchedulingRequestDetailModal({
                     onChange={(e) => setCompanySearch(e.target.value)}
                     placeholder="Search companies..."
                     autoFocus
-                    className="w-full pl-10 pr-4 py-2 text-sm rounded-lg border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2 text-sm rounded-lg border bg-white border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   {companySearchLoading && (
                     <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin" />
@@ -1289,7 +1289,7 @@ export function SchedulingRequestDetailModal({
                     No companies found
                   </div>
                 ) : (
-                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                  <div className="divide-y divide-gray-100">
                     {companies.map((company) => {
                       const isCurrent = request?.company_id === company.id;
                       return (
@@ -1299,12 +1299,12 @@ export function SchedulingRequestDetailModal({
                           disabled={actionLoading === 'company' || isCurrent}
                           className={cn(
                             'w-full px-4 py-3 text-left flex items-center justify-between',
-                            'hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors',
-                            isCurrent && 'bg-blue-50 dark:bg-blue-900/20'
+                            'hover:bg-gray-50 transition-colors',
+                            isCurrent && 'bg-blue-50'
                           )}
                         >
                           <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            <p className="text-sm font-medium text-gray-900">
                               {company.name}
                             </p>
                             {company.domain && (

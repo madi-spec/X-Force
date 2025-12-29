@@ -84,6 +84,18 @@ supabase db push
 npm run dev
 ```
 
+## IMPORTANT: No Dark Mode
+
+**This application is light-mode only. Do NOT add dark mode support.**
+
+- Do NOT use `dark:` prefixed Tailwind classes
+- Do NOT add theme toggle components
+- Do NOT add ThemeProvider or useTheme hooks
+- Do NOT add `prefers-color-scheme` media queries
+- Do NOT add `.dark` class styles
+
+If asked to add dark mode, decline and reference this section.
+
 ## Key Files
 
 - `src/types/index.ts` - All TypeScript types
@@ -152,21 +164,13 @@ This is **Jony Ive meets Jensen Huang** - minimalism with a purpose, beauty thro
 Your color system uses HSL (Hue, Saturation, Lightness) for precise control:
 
 ```css
-/* Light Mode Core Palette */
+/* Core Palette (Light Mode Only) */
 --background: 0 0% 100%;         /* Pure white #FFFFFF */
---foreground: 0 0% 3.9%;         /* Near black #0A0A0A (NOT #1A1A1A!) */
+--foreground: 0 0% 3.9%;         /* Near black #0A0A0A */
 --muted: 0 0% 96.1%;             /* #F5F5F5 - Warm gray */
 --muted-foreground: 0 0% 45.1%;  /* #737373 - Mid gray */
 --border: 0 0% 89.8%;            /* #E5E5E5 - Soft border */
-
-/* Dark Mode Transformation */
---background: 0 0% 3.9%;         /* #0A0A0A - Matching foreground! */
---foreground: 0 0% 98%;          /* #FAFAFA - Not pure white */
---muted: 0 0% 14.9%;             /* #262626 - Elevated surface */
---border: 0 0% 14.9%;            /* #262626 - Unified borders */
 ```
-
-**The Genius Move**: Using #0A0A0A instead of pure black and #FAFAFA instead of pure white. This 2-4% deviation from extremes prevents eye strain and adds warmth - the difference between "digital" and "refined."
 
 ### Data Visualization: The Semantic Rainbow
 
@@ -185,16 +189,6 @@ Your color system uses HSL (Hue, Saturation, Lightness) for precise control:
 - **Error**: `#EF4444` (Red-500) - Serious but not scary
 - **Primary**: `#3B82F6` (Blue-500) - Trust and stability
 - **Accent**: `#8B5CF6` (Violet-500) - Premium touches
-
-### Dark Mode: The Sophisticated Inversion
-
-```css
-/* Surface Elevation Strategy */
-bg-gray-50    → dark:bg-[#0a0a0a]      /* Base background */
-bg-white      → dark:bg-[#1a1a1a]      /* Card surface */
-bg-gray-100   → dark:bg-gray-800       /* Elevated elements */
-border-gray-200 → dark:border-[#2a2a2a] /* Subtle borders */
-```
 
 ## Typography: The System Font Symphony
 
@@ -261,11 +255,10 @@ gap-6 (24px) - Section spacing
 
 ```jsx
 <Card className="
-  bg-white dark:bg-[#1a1a1a]           // Elevated surface
+  bg-white                              // Elevated surface
   rounded-xl                            // 12px radius (NOT 8px!)
   p-6                                   // 24px padding standard
-  border border-gray-200
-  dark:border-[#2a2a2a]                // Subtle definition
+  border border-gray-200                // Subtle definition
   shadow-sm                             // Barely-there depth
   hover:shadow-md                       // Gentle elevation
   hover:-translate-y-1                  // Micro lift
@@ -293,7 +286,7 @@ Structure:
 
 - **NO zebra striping** (clean, not busy)
 - **Horizontal borders only** (`border-b`)
-- **Hover state**: `hover:bg-gray-50 dark:hover:bg-gray-800/50`
+- **Hover state**: `hover:bg-gray-50`
 - **Cell padding**: `py-3 px-4` (12px vertical, 16px horizontal)
 - **Headers**: `uppercase text-xs tracking-wider text-gray-500`
 
@@ -369,7 +362,7 @@ Height: ~64px total, creating consistent rhythm
 
 ```jsx
 // Large Metrics
-<div className="text-3xl font-light text-gray-900 dark:text-gray-100">
+<div className="text-3xl font-light text-gray-900">
   {value.toLocaleString()}
 </div>
 
@@ -409,7 +402,6 @@ Height: ~64px total, creating consistent rhythm
 - **Section Spacing**: 24px (`gap-6`) between sections
 - **Color Semantic**: Never decorative, always meaningful
 - **Typography Hierarchy**: Size AND weight create levels
-- **Dark Mode Parity**: Every state works in both modes
 
 ## Design Philosophy Extraction
 
@@ -435,7 +427,6 @@ Before shipping any feature:
 - [ ] Would McKinsey present this to Fortune 500?
 - [ ] Does it work at 3am on 2 hours of sleep?
 - [ ] Can it handle 10x the data gracefully?
-- [ ] Does dark mode feel equally polished?
 - [ ] Are loading states as designed as loaded states?
 
 ## Cultural & Brand Associations
@@ -468,7 +459,6 @@ Before shipping any feature:
 ```typescript
 // Component checklist
 interface ComponentRequirements {
-  darkMode: boolean;              // Both modes from day 1
   loading: SkeletonComponent;     // Never blank
   empty: EmptyState;              // Thoughtful messaging
   error: ErrorBoundary;           // Graceful failures

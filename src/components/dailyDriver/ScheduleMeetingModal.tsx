@@ -277,20 +277,20 @@ export function ScheduleMeetingModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
             <div className="flex items-center gap-2">
               {step === 'email' && (
                 <button
                   onClick={() => setStep('details')}
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors mr-1"
+                  className="p-1 rounded hover:bg-gray-100 transition-colors mr-1"
                 >
                   <ArrowLeft className="h-4 w-4 text-gray-500" />
                 </button>
               )}
               <Calendar className="h-5 w-5 text-blue-500" />
-              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">
                 {step === 'details' ? 'Schedule Meeting' : 'Review Email'}
               </h2>
             </div>
@@ -300,7 +300,7 @@ export function ScheduleMeetingModal({
               </span>
               <button
                 onClick={onClose}
-                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
               >
                 <X className="h-5 w-5 text-gray-500" />
               </button>
@@ -308,9 +308,9 @@ export function ScheduleMeetingModal({
           </div>
 
           {/* Company context */}
-          <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
             <p className="text-xs text-gray-500">
-              Scheduling for: <span className="font-medium text-gray-700 dark:text-gray-300">{companyName}</span>
+              Scheduling for: <span className="font-medium text-gray-700">{companyName}</span>
             </p>
           </div>
 
@@ -320,7 +320,7 @@ export function ScheduleMeetingModal({
               <div className="space-y-4">
                 {/* Contact Email */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Contact Email *
                   </label>
                   <input
@@ -331,9 +331,9 @@ export function ScheduleMeetingModal({
                     placeholder="contact@company.com"
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'placeholder:text-gray-400',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
@@ -342,7 +342,7 @@ export function ScheduleMeetingModal({
 
                 {/* Contact Name */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Contact Name
                   </label>
                   <input
@@ -352,9 +352,9 @@ export function ScheduleMeetingModal({
                     placeholder="John Smith"
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'placeholder:text-gray-400',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
@@ -364,13 +364,13 @@ export function ScheduleMeetingModal({
                 {/* Internal Attendees */}
                 {sortedUsers.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4" />
                         Internal Attendees
                       </div>
                     </label>
-                    <div className="space-y-1 max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                    <div className="space-y-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2">
                       {sortedUsers.map(user => {
                         const isSuggested = suggestedReps.some(r => r.id === user.id);
                         return (
@@ -379,8 +379,8 @@ export function ScheduleMeetingModal({
                             className={cn(
                               'flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors',
                               selectedInternalUsers.includes(user.id)
-                                ? 'bg-blue-50 dark:bg-blue-900/30'
-                                : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                                ? 'bg-blue-50'
+                                : 'hover:bg-gray-50'
                             )}
                           >
                             <input
@@ -390,10 +390,10 @@ export function ScheduleMeetingModal({
                               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                              <p className="text-sm font-medium text-gray-900 truncate">
                                 {user.name}
                                 {isSuggested && (
-                                  <span className="ml-2 text-xs text-blue-600 dark:text-blue-400 font-normal">
+                                  <span className="ml-2 text-xs text-blue-600 font-normal">
                                     (Account Rep)
                                   </span>
                                 )}
@@ -416,7 +416,7 @@ export function ScheduleMeetingModal({
 
                 {/* Meeting Type */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Meeting Type
                   </label>
                   <select
@@ -424,9 +424,9 @@ export function ScheduleMeetingModal({
                     onChange={(e) => setFormData({ ...formData, meeting_type: e.target.value })}
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                   >
@@ -440,7 +440,7 @@ export function ScheduleMeetingModal({
 
                 {/* Duration */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Duration
                   </label>
                   <div className="flex gap-2">
@@ -453,7 +453,7 @@ export function ScheduleMeetingModal({
                           'flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors',
                           formData.duration_minutes === duration.value
                             ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
                         )}
                       >
                         {duration.label}
@@ -464,7 +464,7 @@ export function ScheduleMeetingModal({
 
                 {/* Title */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Meeting Title
                   </label>
                   <input
@@ -474,9 +474,9 @@ export function ScheduleMeetingModal({
                     placeholder="Discovery Call with Acme Corp"
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'placeholder:text-gray-400',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
@@ -485,7 +485,7 @@ export function ScheduleMeetingModal({
 
                 {/* Context */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Context (optional)
                   </label>
                   <textarea
@@ -495,9 +495,9 @@ export function ScheduleMeetingModal({
                     placeholder="Any notes for this meeting..."
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border resize-none',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'placeholder:text-gray-400',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
@@ -508,11 +508,11 @@ export function ScheduleMeetingModal({
               <div className="space-y-4">
                 {/* Availability Warnings */}
                 {availabilityWarnings.length > 0 && (
-                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-                    <p className="text-sm text-amber-800 dark:text-amber-200 font-medium mb-1">
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-800 font-medium mb-1">
                       ⚠️ Calendar Notes
                     </p>
-                    <ul className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                    <ul className="text-xs text-amber-700 space-y-1">
                       {availabilityWarnings.map((warning, i) => (
                         <li key={i}>• {warning}</li>
                       ))}
@@ -522,7 +522,7 @@ export function ScheduleMeetingModal({
 
                 {/* Email Subject */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Subject
                   </label>
                   <input
@@ -531,9 +531,9 @@ export function ScheduleMeetingModal({
                     onChange={(e) => setEditedEmail(prev => prev ? { ...prev, subject: e.target.value } : null)}
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                   />
@@ -542,7 +542,7 @@ export function ScheduleMeetingModal({
                 {/* Email Body */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label className="block text-sm font-medium text-gray-700">
                       Email Body
                     </label>
                     <span className="text-xs text-gray-400 flex items-center gap-1">
@@ -556,9 +556,9 @@ export function ScheduleMeetingModal({
                     rows={12}
                     className={cn(
                       'w-full px-3 py-2 text-sm rounded-lg border font-mono',
-                      'bg-white dark:bg-gray-800',
-                      'border-gray-200 dark:border-gray-700',
-                      'text-gray-900 dark:text-gray-100',
+                      'bg-white',
+                      'border-gray-200',
+                      'text-gray-900',
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                   />
@@ -579,11 +579,11 @@ export function ScheduleMeetingModal({
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end gap-3 px-4 py-3 border-t border-gray-200 dark:border-[#2a2a2a]">
+          <div className="flex justify-end gap-3 px-4 py-3 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
               Cancel
             </button>

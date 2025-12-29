@@ -966,25 +966,25 @@ function TaskResolutionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white dark:bg-[#1a1a1a] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <div className="p-2 bg-red-100 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="font-semibold text-gray-900">
                 {mode === 'draft' ? 'AI Draft Reply' : 'Take Action'}
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-gray-500">
                 {isAwaitingResponse ? 'Response needed' : 'Task on this communication'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -993,7 +993,7 @@ function TaskResolutionModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
           {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm rounded-lg mb-4 flex items-center gap-2">
+            <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg mb-4 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               {error}
             </div>
@@ -1002,23 +1002,23 @@ function TaskResolutionModal({
           {mode === 'actions' ? (
             <div className="space-y-4">
               {/* Communication preview */}
-              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-gray-500">
                     {format(new Date(communication.occurred_at), 'MMM d, h:mm a')}
                   </p>
                   {contactName && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                    <span className="text-xs text-gray-500">
                       from {contactName}
                     </span>
                   )}
                 </div>
                 {communication.subject && (
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
+                  <p className="text-sm font-medium text-gray-900 mb-1">
                     {communication.subject}
                   </p>
                 )}
-                <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
+                <p className="text-sm text-gray-700 line-clamp-3">
                   {communication.content_preview || 'No content'}
                 </p>
               </div>
@@ -1031,13 +1031,13 @@ function TaskResolutionModal({
                   disabled={!!loading}
                   className={cn(
                     'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20',
-                    'hover:border-blue-400 dark:hover:border-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40',
+                    'border-blue-200 bg-blue-50',
+                    'hover:border-blue-400 hover:bg-blue-100',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                 >
-                  <Send className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Reply</span>
+                  <Send className="w-6 h-6 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-700">Reply</span>
                 </button>
 
                 {/* AI Draft Reply */}
@@ -1046,17 +1046,17 @@ function TaskResolutionModal({
                   disabled={!!loading || draftLoading}
                   className={cn(
                     'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20',
-                    'hover:border-purple-400 dark:hover:border-purple-600 hover:bg-purple-100 dark:hover:bg-purple-900/40',
+                    'border-purple-200 bg-purple-50',
+                    'hover:border-purple-400 hover:bg-purple-100',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                 >
                   {draftLoading ? (
-                    <Loader2 className="w-6 h-6 text-purple-600 dark:text-purple-400 animate-spin" />
+                    <Loader2 className="w-6 h-6 text-purple-600 animate-spin" />
                   ) : (
-                    <FileText className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                    <FileText className="w-6 h-6 text-purple-600" />
                   )}
-                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                  <span className="text-sm font-medium text-purple-700">
                     {draftLoading ? 'Drafting...' : 'AI Draft'}
                   </span>
                 </button>
@@ -1067,13 +1067,13 @@ function TaskResolutionModal({
                   disabled={!!loading || !companyId}
                   className={cn(
                     'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20',
-                    'hover:border-amber-400 dark:hover:border-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/40',
+                    'border-amber-200 bg-amber-50',
+                    'hover:border-amber-400 hover:bg-amber-100',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                 >
-                  <Calendar className="w-6 h-6 text-amber-600 dark:text-amber-400" />
-                  <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Schedule</span>
+                  <Calendar className="w-6 h-6 text-amber-600" />
+                  <span className="text-sm font-medium text-amber-700">Schedule</span>
                 </button>
 
                 {/* Mark as Done */}
@@ -1082,17 +1082,17 @@ function TaskResolutionModal({
                   disabled={!!loading || (!isAwaitingResponse && !flagId)}
                   className={cn(
                     'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20',
-                    'hover:border-green-400 dark:hover:border-green-600 hover:bg-green-100 dark:hover:bg-green-900/40',
+                    'border-green-200 bg-green-50',
+                    'hover:border-green-400 hover:bg-green-100',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                 >
                   {loading === 'respond' || loading === 'resolve' ? (
-                    <Loader2 className="w-6 h-6 text-green-600 dark:text-green-400 animate-spin" />
+                    <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-400" />
+                    <CheckCircle2 className="w-6 h-6 text-green-600" />
                   )}
-                  <span className="text-sm font-medium text-green-700 dark:text-green-300">Mark Done</span>
+                  <span className="text-sm font-medium text-green-700">Mark Done</span>
                 </button>
               </div>
             </div>
@@ -1102,7 +1102,7 @@ function TaskResolutionModal({
               {/* Back button */}
               <button
                 onClick={() => setMode('actions')}
-                className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                className="text-sm text-gray-500 hover:text-gray-700"
               >
                 ← Back to actions
               </button>
@@ -1111,7 +1111,7 @@ function TaskResolutionModal({
                 <>
                   {/* To field */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
                       To
                     </label>
                     <input
@@ -1120,9 +1120,9 @@ function TaskResolutionModal({
                       onChange={(e) => setDraftData({ ...draftData, to: e.target.value })}
                       className={cn(
                         'w-full px-3 py-2 text-sm rounded-lg border',
-                        'bg-white dark:bg-gray-800',
-                        'border-gray-200 dark:border-gray-700',
-                        'text-gray-900 dark:text-gray-100',
+                        'bg-white',
+                        'border-gray-200',
+                        'text-gray-900',
                         'focus:outline-none focus:ring-2 focus:ring-blue-500'
                       )}
                     />
@@ -1131,7 +1131,7 @@ function TaskResolutionModal({
                   {/* Subject */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Subject
                       </label>
                       <button
@@ -1139,8 +1139,8 @@ function TaskResolutionModal({
                         className={cn(
                           'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded',
                           copiedField === 'subject'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         )}
                       >
                         {copiedField === 'subject' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
@@ -1153,9 +1153,9 @@ function TaskResolutionModal({
                       onChange={(e) => setDraftData({ ...draftData, subject: e.target.value })}
                       className={cn(
                         'w-full px-3 py-2 text-sm rounded-lg border',
-                        'bg-white dark:bg-gray-800',
-                        'border-gray-200 dark:border-gray-700',
-                        'text-gray-900 dark:text-gray-100',
+                        'bg-white',
+                        'border-gray-200',
+                        'text-gray-900',
                         'focus:outline-none focus:ring-2 focus:ring-blue-500'
                       )}
                     />
@@ -1164,7 +1164,7 @@ function TaskResolutionModal({
                   {/* Body */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Body
                       </label>
                       <button
@@ -1172,8 +1172,8 @@ function TaskResolutionModal({
                         className={cn(
                           'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded',
                           copiedField === 'body'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         )}
                       >
                         {copiedField === 'body' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
@@ -1186,9 +1186,9 @@ function TaskResolutionModal({
                       rows={8}
                       className={cn(
                         'w-full px-3 py-2 text-sm rounded-lg border resize-none',
-                        'bg-white dark:bg-gray-800',
-                        'border-gray-200 dark:border-gray-700',
-                        'text-gray-900 dark:text-gray-100',
+                        'bg-white',
+                        'border-gray-200',
+                        'text-gray-900',
                         'focus:outline-none focus:ring-2 focus:ring-blue-500'
                       )}
                     />
@@ -1200,7 +1200,7 @@ function TaskResolutionModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-gray-200 dark:border-[#2a2a2a]">
+        <div className="flex items-center justify-between p-4 border-t border-gray-200">
           <div className="flex items-center gap-2">
             {mode === 'draft' && draftData && (
               <button
@@ -1208,8 +1208,8 @@ function TaskResolutionModal({
                 className={cn(
                   'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg',
                   copiedField === 'all'
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 )}
               >
                 {copiedField === 'all' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -1222,7 +1222,7 @@ function TaskResolutionModal({
             <button
               onClick={onClose}
               disabled={!!loading}
-              className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
               Cancel
             </button>

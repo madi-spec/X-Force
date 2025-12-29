@@ -122,23 +122,23 @@ export function CommunicationPreviewModal({
       />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-[#1a1a1a] rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <Mail className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Mail className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Email Details</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <h2 className="font-semibold text-gray-900">Email Details</h2>
+              <p className="text-sm text-gray-500">
                 {communication?.direction === 'inbound' ? 'Received email' : 'Sent email'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -152,45 +152,45 @@ export function CommunicationPreviewModal({
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Mail className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
-              <p className="text-gray-500 dark:text-gray-400">{error}</p>
+              <Mail className="h-12 w-12 text-gray-300 mb-3" />
+              <p className="text-gray-500">{error}</p>
             </div>
           ) : communication ? (
             <div className="p-6 space-y-4">
               {/* Subject */}
               <div>
-                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                <h3 className="text-lg font-medium text-gray-900">
                   {communication.subject || '(No subject)'}
                 </h3>
               </div>
 
               {/* Company context */}
               {communication.company && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
                   <Building2 className="h-4 w-4" />
                   <span>{communication.company.name}</span>
                   {communication.company.domain && (
-                    <span className="text-gray-400 dark:text-gray-500">({communication.company.domain})</span>
+                    <span className="text-gray-400">({communication.company.domain})</span>
                   )}
                 </div>
               )}
 
               {/* From/To */}
-              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-2">
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-16 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider pt-0.5">
+                  <div className="flex-shrink-0 w-16 text-xs font-medium text-gray-500 uppercase tracking-wider pt-0.5">
                     From
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                      <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                      <User className="h-4 w-4 text-blue-600" />
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <span className="text-sm font-medium text-gray-900">
                         {sender?.name || 'Unknown'}
                       </span>
                       {sender?.email && (
-                        <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">
+                        <span className="text-sm text-gray-500 ml-1">
                           &lt;{sender.email}&gt;
                         </span>
                       )}
@@ -199,22 +199,22 @@ export function CommunicationPreviewModal({
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-16 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider pt-0.5">
+                  <div className="flex-shrink-0 w-16 text-xs font-medium text-gray-500 uppercase tracking-wider pt-0.5">
                     To
                   </div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                  <div className="text-sm text-gray-700">
                     {recipients.map(r => r.name || r.email).join(', ') || 'Unknown'}
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-16 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider pt-0.5">
+                  <div className="flex-shrink-0 w-16 text-xs font-medium text-gray-500 uppercase tracking-wider pt-0.5">
                     Date
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
                     <Calendar className="h-4 w-4 text-gray-400" />
                     {formatDate(communication.occurred_at)}
-                    <span className="text-gray-400 dark:text-gray-500">
+                    <span className="text-gray-400">
                       ({formatRelativeTime(communication.occurred_at)})
                     </span>
                   </div>
@@ -223,10 +223,10 @@ export function CommunicationPreviewModal({
 
               {/* Body */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
                   Message
                 </label>
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
+                <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
                   {communication.full_content || communication.content_preview || 'No content available'}
                 </div>
               </div>
@@ -235,10 +235,10 @@ export function CommunicationPreviewModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-[#2a2a2a] bg-gray-50 dark:bg-gray-800/50">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
           >
             Close
           </button>
@@ -248,7 +248,7 @@ export function CommunicationPreviewModal({
             {communication?.company && sender?.email && (
               <button
                 onClick={() => setShowAddContact(true)}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
                 title="Add sender as contact"
               >
                 <UserPlus className="h-4 w-4" />
@@ -260,7 +260,7 @@ export function CommunicationPreviewModal({
             {communication?.company && (
               <button
                 onClick={() => setShowManageProducts(true)}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
                 title="Manage products"
               >
                 <Package className="h-4 w-4" />
@@ -284,7 +284,7 @@ export function CommunicationPreviewModal({
             {communication?.company && (
               <a
                 href={`/companies/${communication.company.id}`}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
               >
                 <ExternalLink className="h-4 w-4" />
                 View Company

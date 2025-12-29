@@ -200,27 +200,27 @@ export function ManageProductsModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <Package className="h-5 w-5 text-blue-500" />
-              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">
                 Manage Products
               </h2>
             </div>
             <button
               onClick={onClose}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-1 rounded hover:bg-gray-100 transition-colors"
             >
               <X className="h-5 w-5 text-gray-500" />
             </button>
           </div>
 
           {/* Company context */}
-          <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
             <p className="text-xs text-gray-500">
-              Products for: <span className="font-medium text-gray-700 dark:text-gray-300">{companyName}</span>
+              Products for: <span className="font-medium text-gray-700">{companyName}</span>
             </p>
           </div>
 
@@ -235,7 +235,7 @@ export function ManageProductsModal({
                 {/* Current Products */}
                 {companyProducts.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    <h3 className="text-sm font-medium text-gray-900 mb-2">
                       Current Products
                     </h3>
                     <div className="space-y-2">
@@ -250,7 +250,7 @@ export function ManageProductsModal({
                             key={cp.id}
                             className={cn(
                               'p-3 rounded-lg border',
-                              isEditing ? 'border-blue-200 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700'
+                              isEditing ? 'border-blue-200 bg-blue-50' : 'border-gray-200'
                             )}
                           >
                             {isEditing ? (
@@ -258,7 +258,7 @@ export function ManageProductsModal({
                               <div className="space-y-3">
                                 <div className="flex items-center gap-2">
                                   <span className="text-lg">{cp.product.icon || '📦'}</span>
-                                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                                  <span className="font-medium text-gray-900">
                                     {cp.product.name}
                                   </span>
                                 </div>
@@ -271,7 +271,7 @@ export function ManageProductsModal({
                                     <select
                                       value={editForm.status}
                                       onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                      className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                                      className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white"
                                     >
                                       <option value="inactive">Inactive</option>
                                       <option value="in_sales">In Sales</option>
@@ -291,7 +291,7 @@ export function ManageProductsModal({
                                       value={editForm.mrr}
                                       onChange={(e) => setEditForm({ ...editForm, mrr: e.target.value })}
                                       placeholder="0.00"
-                                      className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                                      className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white"
                                     />
                                   </div>
                                 </div>
@@ -323,7 +323,7 @@ export function ManageProductsModal({
                                 <div className="flex items-center gap-3">
                                   <span className="text-lg">{cp.product.icon || '📦'}</span>
                                   <div>
-                                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                                    <span className="font-medium text-gray-900">
                                       {cp.product.name}
                                     </span>
                                     <div className="flex items-center gap-2 mt-0.5">
@@ -358,7 +358,7 @@ export function ManageProductsModal({
                 {/* Available Products */}
                 {availableProducts.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    <h3 className="text-sm font-medium text-gray-900 mb-2">
                       Add Product
                     </h3>
                     <div className="space-y-2">
@@ -368,7 +368,7 @@ export function ManageProductsModal({
                         return (
                           <div
                             key={product.id}
-                            className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-between"
+                            className="p-3 rounded-lg border border-gray-200 flex items-center justify-between"
                           >
                             <div className="flex items-center gap-3">
                               <span className="text-lg opacity-50">{product.icon || '📦'}</span>
@@ -404,10 +404,10 @@ export function ManageProductsModal({
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-3 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-end">
+          <div className="px-4 py-3 border-t border-gray-200 flex justify-end">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
               Done
             </button>

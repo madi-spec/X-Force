@@ -113,18 +113,18 @@ export function AssignCompanyModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl w-full max-w-md max-h-[80vh] overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-blue-500" />
-              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">
                 Assign Company
               </h2>
             </div>
             <button
               onClick={onClose}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-1 rounded hover:bg-gray-100 transition-colors"
             >
               <X className="h-5 w-5 text-gray-500" />
             </button>
@@ -132,15 +132,15 @@ export function AssignCompanyModal({
 
           {/* Current assignment */}
           {currentCompanyName && (
-            <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-[#2a2a2a]">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
               <p className="text-xs text-gray-500">
-                Currently assigned to: <span className="font-medium text-gray-700 dark:text-gray-300">{currentCompanyName}</span>
+                Currently assigned to: <span className="font-medium text-gray-700">{currentCompanyName}</span>
               </p>
             </div>
           )}
 
           {/* Search */}
-          <div className="p-4 border-b border-gray-200 dark:border-[#2a2a2a]">
+          <div className="p-4 border-b border-gray-200">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
@@ -151,9 +151,9 @@ export function AssignCompanyModal({
                 autoFocus
                 className={cn(
                   'w-full pl-10 pr-4 py-2 text-sm rounded-lg border',
-                  'bg-white dark:bg-gray-800',
-                  'border-gray-200 dark:border-gray-700',
-                  'text-gray-900 dark:text-gray-100',
+                  'bg-white',
+                  'border-gray-200',
+                  'text-gray-900',
                   'placeholder:text-gray-400',
                   'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                 )}
@@ -183,7 +183,7 @@ export function AssignCompanyModal({
                 </a>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+              <div className="divide-y divide-gray-100">
                 {companies.map((company) => {
                   const isSelected = selectedCompanyId === company.id;
                   const isCurrent = currentCompanyId === company.id;
@@ -195,13 +195,13 @@ export function AssignCompanyModal({
                       disabled={isAssigning || isCurrent}
                       className={cn(
                         'w-full px-4 py-3 text-left flex items-center justify-between',
-                        'hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors',
+                        'hover:bg-gray-50 transition-colors',
                         'disabled:opacity-50 disabled:cursor-not-allowed',
-                        isCurrent && 'bg-blue-50 dark:bg-blue-900/20'
+                        isCurrent && 'bg-blue-50'
                       )}
                     >
                       <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        <p className="text-sm font-medium text-gray-900">
                           {company.name}
                         </p>
                         {company.domain && (

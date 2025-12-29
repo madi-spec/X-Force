@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useLens } from '@/lib/lens';
 import {
   ArrowLeft,
   Building2,
@@ -153,8 +154,12 @@ export function CompanyDetail({
 }: CompanyDetailProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { config: lensConfig } = useLens();
   const tabFromUrl = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState(tabFromUrl || 'overview');
+
+  // Use lens's default tab if no tab is specified in URL
+  const defaultTab = lensConfig.defaultCustomerTab;
+  const [activeTab, setActiveTab] = useState(tabFromUrl || defaultTab);
   const [relationshipData, setRelationshipData] = useState<any>(null);
   const [relationshipLoading, setRelationshipLoading] = useState(false);
   const [refreshingSummary, setRefreshingSummary] = useState(false);
@@ -670,11 +675,11 @@ export function CompanyDetail({
       {activeTab === 'relationship' && (
         <div className="space-y-6">
           {relationshipLoading ? (
-            <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
               <div className="animate-pulse space-y-4">
-                <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
-                <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-full" />
-                <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-2/3" />
+                <div className="h-6 bg-gray-200 rounded w-1/3" />
+                <div className="h-4 bg-gray-100 rounded w-full" />
+                <div className="h-4 bg-gray-100 rounded w-2/3" />
               </div>
             </div>
           ) : relationshipData ? (
@@ -724,7 +729,7 @@ export function CompanyDetail({
               />
             </>
           ) : (
-            <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] p-6 text-center">
+            <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
               <p className="text-sm text-gray-500">
                 No relationship intelligence available yet. This will be populated as you interact with the company through emails and meetings.
               </p>

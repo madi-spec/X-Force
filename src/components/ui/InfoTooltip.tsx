@@ -24,36 +24,36 @@ function TooltipBody({ definition }: TooltipBodyProps) {
   };
 
   const thresholdBgColors: Record<string, string> = {
-    green: 'bg-emerald-50 dark:bg-emerald-900/20',
-    yellow: 'bg-amber-50 dark:bg-amber-900/20',
-    red: 'bg-red-50 dark:bg-red-900/20',
-    blue: 'bg-blue-50 dark:bg-blue-900/20',
-    gray: 'bg-gray-50 dark:bg-gray-800',
+    green: 'bg-emerald-50',
+    yellow: 'bg-amber-50',
+    red: 'bg-red-50',
+    blue: 'bg-blue-50',
+    gray: 'bg-gray-50',
   };
 
   const thresholdTextColors: Record<string, string> = {
-    green: 'text-emerald-700 dark:text-emerald-300',
-    yellow: 'text-amber-700 dark:text-amber-300',
-    red: 'text-red-700 dark:text-red-300',
-    blue: 'text-blue-700 dark:text-blue-300',
-    gray: 'text-gray-700 dark:text-gray-300',
+    green: 'text-emerald-700',
+    yellow: 'text-amber-700',
+    red: 'text-red-700',
+    blue: 'text-blue-700',
+    gray: 'text-gray-700',
   };
 
   return (
     <div className="max-w-sm space-y-3 p-1">
       {/* Header */}
       <div>
-        <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+        <h4 className="font-semibold text-sm text-gray-900">
           {definition.title}
         </h4>
-        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">
+        <p className="text-xs text-gray-600 mt-1 leading-relaxed">
           {definition.description}
         </p>
       </div>
 
       {/* Formula Box */}
       {definition.formula && (
-        <div className="rounded-lg bg-gray-900 dark:bg-gray-950 px-3 py-2 border border-gray-800">
+        <div className="rounded-lg bg-gray-900 px-3 py-2 border border-gray-800">
           <code className="text-xs text-emerald-400 font-mono">
             {definition.formula}
           </code>
@@ -64,7 +64,7 @@ function TooltipBody({ definition }: TooltipBodyProps) {
       {definition.example && (
         <div className="flex items-start gap-2 text-xs">
           <span className="text-gray-400 shrink-0">e.g.</span>
-          <span className="text-gray-600 dark:text-gray-400 italic">
+          <span className="text-gray-600 italic">
             {definition.example}
           </span>
         </div>
@@ -74,11 +74,11 @@ function TooltipBody({ definition }: TooltipBodyProps) {
       {definition.thresholds && definition.thresholds.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+            <div className="h-px flex-1 bg-gray-200" />
             <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
               Levels
             </span>
-            <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+            <div className="h-px flex-1 bg-gray-200" />
           </div>
           <div className="grid gap-1.5">
             {definition.thresholds.map((threshold, i) => (
@@ -100,7 +100,7 @@ function TooltipBody({ definition }: TooltipBodyProps) {
                     {threshold.label}
                   </span>
                 </div>
-                <span className="text-gray-500 dark:text-gray-400 text-[11px]">
+                <span className="text-gray-500 text-[11px]">
                   {threshold.value}
                 </span>
               </div>
@@ -111,10 +111,10 @@ function TooltipBody({ definition }: TooltipBodyProps) {
 
       {/* Notes */}
       {definition.notes && definition.notes.length > 0 && (
-        <div className="space-y-1.5 pt-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="space-y-1.5 pt-2 border-t border-gray-200">
           {definition.notes.map((note, i) => (
-            <div key={i} className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span className="text-gray-300 dark:text-gray-600 mt-0.5">→</span>
+            <div key={i} className="flex items-start gap-2 text-xs text-gray-500">
+              <span className="text-gray-300 mt-0.5">→</span>
               <span>{note}</span>
             </div>
           ))}
@@ -163,7 +163,7 @@ export function InfoTooltip({
             type="button"
             className={cn(
               'inline-flex items-center justify-center rounded-full',
-              'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300',
+              'text-gray-400 hover:text-gray-600',
               'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
               'transition-colors',
               className
@@ -207,7 +207,7 @@ export function MetricLabel({
   if (!definition) {
     // Just render the label without tooltip
     return (
-      <span className={cn('text-gray-500 dark:text-gray-400', className)}>
+      <span className={cn('text-gray-500', className)}>
         {label}
       </span>
     );
@@ -220,7 +220,7 @@ export function MetricLabel({
           <span
             className={cn(
               'inline-flex items-center gap-1 cursor-help',
-              'text-gray-500 dark:text-gray-400',
+              'text-gray-500',
               className
             )}
           >
@@ -228,7 +228,7 @@ export function MetricLabel({
             {showIcon && (
               <Info
                 size={12}
-                className="text-gray-400 dark:text-gray-500"
+                className="text-gray-400"
               />
             )}
           </span>
@@ -282,7 +282,7 @@ export function TableHeaderWithInfo({
       {definition && (
         <Info
           size={12}
-          className="text-gray-400 dark:text-gray-500 opacity-60 group-hover:opacity-100 transition-opacity"
+          className="text-gray-400 opacity-60 group-hover:opacity-100 transition-opacity"
         />
       )}
     </span>
