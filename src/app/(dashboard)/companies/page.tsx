@@ -5,6 +5,7 @@ export default async function CompaniesPage() {
   const supabase = await createClient();
 
   // Get companies with related data
+  // Note: Supabase defaults to 1000 rows, so we explicitly set a higher limit
   const { data: companies } = await supabase
     .from('companies')
     .select(`
@@ -12,7 +13,8 @@ export default async function CompaniesPage() {
       contacts:contacts(id, name, is_primary),
       deals:deals(id, name, stage, estimated_value)
     `)
-    .order('name');
+    .order('name')
+    .limit(5000);
 
   // Get company products for each company
   const { data: companyProducts } = await supabase
