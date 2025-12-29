@@ -19,12 +19,16 @@ import {
   ExternalLink,
   TrendingUp,
   Sparkles,
-  Phone
+  Phone,
+  Plus,
+  Edit2
 } from 'lucide-react';
 import { CreateLeadFromEmail } from './CreateLeadFromEmail';
 import { ComposeModal } from '@/components/inbox/ComposeModal';
 import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
 import { QuickBookModal } from '@/components/scheduler/QuickBookModal';
+import { AddContactModal, NewContact } from '@/components/commandCenter/AddContactModal';
+import { ManageProductsModal } from '@/components/dailyDriver/ManageProductsModal';
 import { cn } from '@/lib/utils';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -118,6 +122,9 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
   const [showScheduleMenu, setShowScheduleMenu] = useState(false);
   const [showAIScheduler, setShowAIScheduler] = useState(false);
   const [showQuickBook, setShowQuickBook] = useState(false);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [showManageProducts, setShowManageProducts] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
   // Fetch company details
   const { data: companyData } = useSWR<{ company: Company }>(
@@ -126,13 +133,13 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
   );
 
   // Fetch contacts for this company
-  const { data: contactsData } = useSWR<{ contacts: Contact[] }>(
+  const { data: contactsData, mutate: mutateContacts } = useSWR<{ contacts: Contact[] }>(
     companyId ? `/api/contacts?company_id=${companyId}` : null,
     fetcher
   );
 
   // Fetch company products
-  const { data: productsData } = useSWR<{ companyProducts: CompanyProduct[] }>(
+  const { data: productsData, mutate: mutateProducts } = useSWR<{ companyProducts: CompanyProduct[] }>(
     companyId ? `/api/companies/${companyId}/products` : null,
     fetcher
   );
@@ -286,13 +293,22 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
 
       {/* Contacts Section */}
       <div className="p-4 border-b border-gray-200">
-        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Users className="w-3.5 h-3.5" />
-          Contacts
-          {contacts.length > 0 && (
-            <span className="ml-auto text-gray-400">{contacts.length}</span>
-          )}
-        </h4>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
+            <Users className="w-3.5 h-3.5" />
+            Contacts
+            {contacts.length > 0 && (
+              <span className="text-gray-400">{contacts.length}</span>
+            )}
+          </h4>
+          <button
+            onClick={() => setShowAddContact(true)}
+            className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            title="Add contact"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
 
         {contacts.length === 0 ? (
           <p className="text-sm text-gray-400 italic">No contacts</p>
@@ -302,7 +318,7 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
               <div
                 key={contact.id}
                 className={cn(
-                  'p-2 rounded-lg',
+                  'p-2 rounded-lg group',
                   contact.is_primary
                     ? 'bg-blue-50 border border-blue-200'
                     : 'bg-gray-50'
@@ -320,6 +336,13 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
                       <p className="text-xs text-gray-500 truncate">{contact.title}</p>
                     )}
                   </div>
+                  <button
+                    onClick={() => setEditingContact(contact)}
+                    className="p-1 text-gray-300 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Edit contact"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
                 </div>
                 {contact.email && (
                   <a
@@ -351,11 +374,20 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
       {/* Active Products Section */}
       {activeProducts.length > 0 && (
         <div className="p-4 border-b border-gray-200">
-          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Package className="w-3.5 h-3.5" />
-            Active Products
-            <span className="ml-auto text-gray-400">{activeProducts.length}</span>
-          </h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
+              <Package className="w-3.5 h-3.5" />
+              Active Products
+              <span className="text-gray-400">{activeProducts.length}</span>
+            </h4>
+            <button
+              onClick={() => setShowManageProducts(true)}
+              className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+              title="Manage products"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
 
           <div className="space-y-2">
             {activeProducts.map((cp) => (
@@ -440,10 +472,19 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
       {/* Show empty state if no products at all */}
       {products.length === 0 && (
         <div className="p-4 border-b border-gray-200">
-          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Package className="w-3.5 h-3.5" />
-            Products
-          </h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
+              <Package className="w-3.5 h-3.5" />
+              Products
+            </h4>
+            <button
+              onClick={() => setShowManageProducts(true)}
+              className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+              title="Manage products"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
           <p className="text-sm text-gray-400 italic">No products</p>
         </div>
       )}
@@ -598,6 +639,40 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
         contactName={primaryContact?.name}
         contactEmail={primaryContact?.email}
       />
+
+      {/* Add/Edit Contact Modal */}
+      <AddContactModal
+        isOpen={showAddContact || !!editingContact}
+        onClose={() => {
+          setShowAddContact(false);
+          setEditingContact(null);
+        }}
+        onContactAdded={() => {
+          mutateContacts();
+          setShowAddContact(false);
+          setEditingContact(null);
+        }}
+        companyId={companyId || undefined}
+        companyName={company?.name}
+        contact={editingContact ? {
+          id: editingContact.id,
+          name: editingContact.name,
+          email: editingContact.email || '',
+          title: editingContact.title,
+          phone: editingContact.phone,
+        } : null}
+      />
+
+      {/* Manage Products Modal */}
+      {companyId && company && (
+        <ManageProductsModal
+          isOpen={showManageProducts}
+          onClose={() => setShowManageProducts(false)}
+          companyId={companyId}
+          companyName={company.name}
+          onUpdated={() => mutateProducts()}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import {
   X,
@@ -11,6 +11,7 @@ import {
   Building2,
   Loader2,
   UserPlus,
+  Edit2,
 } from 'lucide-react';
 
 interface AddContactModalProps {
@@ -21,6 +22,7 @@ interface AddContactModalProps {
   companyName?: string;
   initialEmail?: string;
   initialName?: string;
+  contact?: NewContact | null; // For edit mode
 }
 
 export interface NewContact {
@@ -41,7 +43,9 @@ export function AddContactModal({
   companyName,
   initialEmail = '',
   initialName = '',
+  contact = null,
 }: AddContactModalProps) {
+  const isEditMode = !!contact?.id;
   const [name, setName] = useState(initialName);
   const [email, setEmail] = useState(initialEmail);
   const [title, setTitle] = useState('');
@@ -50,6 +54,23 @@ export function AddContactModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveToDatabase, setSaveToDatabase] = useState(true);
+
+  // Populate fields when editing
+  useEffect(() => {
+    if (isOpen && contact) {
+      setName(contact.name || '');
+      setEmail(contact.email || '');
+      setTitle(contact.title || '');
+      setRole(contact.role || '');
+      setPhone(contact.phone || '');
+    } else if (isOpen && !contact) {
+      setName(initialName);
+      setEmail(initialEmail);
+      setTitle('');
+      setRole('');
+      setPhone('');
+    }
+  }, [isOpen, contact, initialName, initialEmail]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -79,25 +100,28 @@ export function AddContactModal({
     };
 
     // If saving to database, make the API call
-    if (saveToDatabase && companyId) {
+    if (saveToDatabase && (companyId || isEditMode)) {
       setSaving(true);
       try {
-        const response = await fetch('/api/contacts', {
-          method: 'POST',
+        const url = isEditMode ? `/api/contacts/${contact!.id}` : '/api/contacts';
+        const method = isEditMode ? 'PATCH' : 'POST';
+
+        const response = await fetch(url, {
+          method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newContact),
         });
 
         if (!response.ok) {
           const data = await response.json();
-          throw new Error(data.error || 'Failed to save contact');
+          throw new Error(data.error || `Failed to ${isEditMode ? 'update' : 'save'} contact`);
         }
 
         const savedContact = await response.json();
         newContact.id = savedContact.id;
       } catch (err) {
         console.error('[AddContactModal] Error saving contact:', err);
-        setError(err instanceof Error ? err.message : 'Failed to save contact');
+        setError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'save'} contact`);
         setSaving(false);
         return;
       }
@@ -134,8 +158,14 @@ export function AddContactModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-blue-600" />
-            <h2 className="text-lg font-medium text-gray-900">Add Contact</h2>
+            {isEditMode ? (
+              <Edit2 className="h-5 w-5 text-blue-600" />
+            ) : (
+              <UserPlus className="h-5 w-5 text-blue-600" />
+            )}
+            <h2 className="text-lg font-medium text-gray-900">
+              {isEditMode ? 'Edit Contact' : 'Add Contact'}
+            </h2>
           </div>
           <button
             onClick={handleClose}
@@ -246,8 +276,8 @@ export function AddContactModal({
             </div>
           </div>
 
-          {/* Save to database checkbox */}
-          {companyId && (
+          {/* Save to database checkbox - hide in edit mode */}
+          {companyId && !isEditMode && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -288,12 +318,16 @@ export function AddContactModal({
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Saving...
+                {isEditMode ? 'Updating...' : 'Saving...'}
               </>
             ) : (
               <>
-                <UserPlus className="h-4 w-4" />
-                Add Contact
+                {isEditMode ? (
+                  <Edit2 className="h-4 w-4" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+                {isEditMode ? 'Update Contact' : 'Add Contact'}
               </>
             )}
           </button>

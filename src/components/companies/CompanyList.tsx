@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { Plus, MapPin, Users, Search, Phone, Zap, Bot, DollarSign } from 'lucide-react';
+import { Plus, MapPin, Users, Search, Phone, Zap, Bot, DollarSign, Copy } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import type { CompanyStatus, Segment } from '@/types';
+import { DuplicateManager } from '@/components/duplicates';
 
 interface CompanyWithRelations {
   id: string;
@@ -80,6 +81,24 @@ export function CompanyList({ companies }: CompanyListProps) {
   const [statusFilter, setStatusFilter] = useState<CompanyStatus | 'all'>('all');
   const [segmentFilter, setSegmentFilter] = useState<Segment | 'all'>('all');
   const [teamFilter, setTeamFilter] = useState<'all' | 'voice' | 'xrai'>('all');
+  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [showDuplicateManager, setShowDuplicateManager] = useState(false);
+
+  // Fetch duplicate count on mount
+  useEffect(() => {
+    const fetchDuplicateCount = async () => {
+      try {
+        const res = await fetch('/api/duplicates?entityType=company&status=pending');
+        if (res.ok) {
+          const data = await res.json();
+          setDuplicateCount(data.groups?.length || 0);
+        }
+      } catch (err) {
+        console.error('Failed to fetch duplicate count:', err);
+      }
+    };
+    fetchDuplicateCount();
+  }, []);
 
   const filteredCompanies = useMemo(() => {
     return companies.filter(company => {
@@ -137,13 +156,32 @@ export function CompanyList({ companies }: CompanyListProps) {
             {filteredCompanies.length} of {companies.length} companies
           </p>
         </div>
-        <Link
-          href="/companies/new"
-          className="inline-flex items-center gap-2 h-9 px-4 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          New Company
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowDuplicateManager(true)}
+            className={cn(
+              'inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+              duplicateCount > 0
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
+          >
+            <Copy className="h-4 w-4" />
+            Duplicates
+            {duplicateCount > 0 && (
+              <span className="bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                {duplicateCount}
+              </span>
+            )}
+          </button>
+          <Link
+            href="/companies/new"
+            className="inline-flex items-center gap-2 h-9 px-4 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            New Company
+          </Link>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -363,6 +401,22 @@ export function CompanyList({ companies }: CompanyListProps) {
           </tbody>
         </table>
       </div>
+
+      {/* Duplicate Manager Modal */}
+      {showDuplicateManager && (
+        <DuplicateManager
+          entityType="company"
+          onClose={() => {
+            setShowDuplicateManager(false);
+            // Refresh count after closing
+            fetch('/api/duplicates?entityType=company&status=pending')
+              .then((res) => res.json())
+              .then((data) => setDuplicateCount(data.groups?.length || 0))
+              .catch(() => {});
+          }}
+          isModal
+        />
+      )}
     </div>
   );
 }

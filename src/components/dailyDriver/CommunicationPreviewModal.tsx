@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Mail, ExternalLink, Loader2, User, Calendar, Building2 } from 'lucide-react';
+import { X, Mail, ExternalLink, Loader2, User, Calendar, Building2, UserPlus, Package } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/lib/utils';
+import { AddContactModal } from '@/components/commandCenter/AddContactModal';
+import { ManageProductsModal } from '@/components/dailyDriver/ManageProductsModal';
 
 interface CommunicationData {
   id: string;
@@ -34,6 +36,8 @@ export function CommunicationPreviewModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [communication, setCommunication] = useState<CommunicationData | null>(null);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [showManageProducts, setShowManageProducts] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !communicationId) return;
@@ -240,6 +244,30 @@ export function CommunicationPreviewModal({
           </button>
 
           <div className="flex items-center gap-2">
+            {/* Add Contact - only show when we have company context and sender email */}
+            {communication?.company && sender?.email && (
+              <button
+                onClick={() => setShowAddContact(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Add sender as contact"
+              >
+                <UserPlus className="h-4 w-4" />
+                Add Contact
+              </button>
+            )}
+
+            {/* Manage Products - only show when we have company context */}
+            {communication?.company && (
+              <button
+                onClick={() => setShowManageProducts(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Manage products"
+              >
+                <Package className="h-4 w-4" />
+                Products
+              </button>
+            )}
+
             {onReply && replyToEmail && (
               <button
                 onClick={() => {
@@ -264,6 +292,30 @@ export function CommunicationPreviewModal({
             )}
           </div>
         </div>
+
+        {/* Add Contact Modal */}
+        {communication?.company && (
+          <AddContactModal
+            isOpen={showAddContact}
+            onClose={() => setShowAddContact(false)}
+            onContactAdded={() => setShowAddContact(false)}
+            companyId={communication.company.id}
+            companyName={communication.company.name}
+            initialEmail={sender?.email}
+            initialName={sender?.name !== sender?.email ? sender?.name : ''}
+          />
+        )}
+
+        {/* Manage Products Modal */}
+        {communication?.company && (
+          <ManageProductsModal
+            isOpen={showManageProducts}
+            onClose={() => setShowManageProducts(false)}
+            companyId={communication.company.id}
+            companyName={communication.company.name}
+            onUpdated={() => {}}
+          />
+        )}
       </div>
     </div>
   );
