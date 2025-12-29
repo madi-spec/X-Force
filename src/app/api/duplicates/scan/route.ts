@@ -48,17 +48,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ScanResul
     let created = 0;
 
     for (const match of matches) {
-      // Check if group already exists (to avoid re-creating the same group)
+      // Check if group already exists (to avoid re-creating resolved groups)
+      // Include pending, merged, and marked_separate to prevent re-detecting
       const { data: existing } = await supabase
         .from('duplicate_groups')
-        .select('id')
+        .select('id, status')
         .eq('entity_type', entityType)
-        .eq('status', 'pending')
+        .in('status', ['pending', 'merged', 'marked_separate'])
         .contains('match_fields', match.matchFields)
         .limit(1);
 
       if (existing && existing.length > 0) {
-        console.log(`[duplicates/scan] Group already exists for match: ${match.matchReason}`);
+        console.log(`[duplicates/scan] Group already exists (${existing[0].status}) for match: ${match.matchReason}`);
         continue;
       }
 
