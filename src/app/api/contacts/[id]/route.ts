@@ -31,11 +31,6 @@ export async function GET(
       title,
       role,
       company_id,
-      linkedin_url,
-      seniority,
-      department,
-      source,
-      notes,
       company:companies(id, name)
     `)
     .eq('id', id)
@@ -59,11 +54,7 @@ export async function GET(
  *   email?: string,
  *   phone?: string,
  *   title?: string,
- *   role?: string,
- *   linkedin_url?: string,
- *   seniority?: string,
- *   department?: string,
- *   notes?: string
+ *   role?: string
  * }
  */
 export async function PATCH(
@@ -88,10 +79,6 @@ export async function PATCH(
     'phone',
     'title',
     'role',
-    'linkedin_url',
-    'seniority',
-    'department',
-    'notes',
   ];
 
   const updates: Record<string, unknown> = {};
@@ -122,11 +109,6 @@ export async function PATCH(
       title,
       role,
       company_id,
-      linkedin_url,
-      seniority,
-      department,
-      source,
-      notes,
       company:companies(id, name)
     `)
     .single();

@@ -69,12 +69,7 @@ export async function GET(request: NextRequest) {
  *   phone?: string,
  *   title?: string,
  *   role?: string,
- *   company_id: string,
- *   linkedin_url?: string,
- *   seniority?: string,
- *   department?: string,
- *   source?: string,
- *   notes?: string
+ *   company_id: string
  * }
  */
 export async function POST(request: NextRequest) {
@@ -94,11 +89,6 @@ export async function POST(request: NextRequest) {
     title,
     role,
     company_id,
-    linkedin_url,
-    seniority,
-    department,
-    source,
-    notes,
   } = body;
 
   if (!name) {
@@ -150,11 +140,6 @@ export async function POST(request: NextRequest) {
       title: title || null,
       role: role || null,
       company_id,
-      linkedin_url: linkedin_url || null,
-      seniority: seniority || null,
-      department: department || null,
-      source: source || null,
-      notes: notes || null,
     })
     .select(`
       id,
@@ -164,16 +149,20 @@ export async function POST(request: NextRequest) {
       title,
       role,
       company_id,
-      linkedin_url,
-      seniority,
-      department,
       company:companies(id, name)
     `)
     .single();
 
   if (error) {
     console.error('Error creating contact:', error);
-    return NextResponse.json({ error: 'Failed to create contact' }, { status: 500 });
+    // Return more detailed error message
+    if (error.code === '23505') {
+      return NextResponse.json({ error: 'A contact with this email already exists' }, { status: 409 });
+    }
+    if (error.code === '23503') {
+      return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+    }
+    return NextResponse.json({ error: error.message || 'Failed to create contact' }, { status: 500 });
   }
 
   return NextResponse.json(contact);
