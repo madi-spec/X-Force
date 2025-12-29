@@ -175,7 +175,14 @@ export async function syncEmails(userId: string, options: EmailSyncOptions = {})
         // Use matched company or leave as null (unlinked)
         const companyId = matchedContact?.company_id || null;
 
-        // Create activity record (company_id can be null for unlinked emails)
+        // Skip emails without company_id for now (activities table requires it)
+        // These will be synced separately to communications table
+        if (!companyId) {
+          result.skipped++;
+          continue;
+        }
+
+        // Create activity record
         const activityData = {
           type: message.direction === 'inbound' ? 'email_received' as const : 'email_sent' as const,
           subject: message.subject || '(No subject)',
@@ -411,7 +418,14 @@ export async function syncAllFolderEmails(
         // Use matched company or leave as null (unlinked)
         const companyId = matchedContact?.company_id || null;
 
-        // Create activity record (company_id can be null for unlinked emails)
+        // Skip emails without company_id for now (activities table requires it)
+        // These will be synced separately to communications table
+        if (!companyId) {
+          result.skipped++;
+          continue;
+        }
+
+        // Create activity record
         const activityData = {
           type: message.direction === 'inbound' ? 'email_received' as const : 'email_sent' as const,
           subject: message.subject || '(No subject)',
