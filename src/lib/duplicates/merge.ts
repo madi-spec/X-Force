@@ -133,13 +133,109 @@ export async function mergeCompanies(
       .select('id');
     relocationCounts.activities = activitiesUpdated?.length || 0;
 
-    // Relocate communications
-    const { data: communicationsUpdated } = await supabase
+    // Relocate communications (with deduplication by normalized external_id)
+    const { data: dupComms } = await supabase
       .from('communications')
-      .update({ company_id: primaryId })
-      .in('company_id', duplicateIds)
-      .select('id');
-    relocationCounts.communications = communicationsUpdated?.length || 0;
+      .select('id, external_id')
+      .in('company_id', duplicateIds);
+
+    const { data: primaryComms } = await supabase
+      .from('communications')
+      .select('id, external_id')
+      .eq('company_id', primaryId);
+
+    // Normalize external_id by stripping common prefixes
+    const normalizeExternalId = (externalId: string | null): string | null => {
+      if (!externalId) return null;
+      return externalId
+        .replace(/^ms_email_/, '')
+        .replace(/^ms_calendar_/, '')
+        .replace(/^fireflies_/, '');
+    };
+
+    // Build set of normalized external_ids already on primary
+    const primaryNormalizedIds = new Set(
+      (primaryComms || [])
+        .map((c) => normalizeExternalId(c.external_id))
+        .filter(Boolean)
+    );
+
+    let communicationsRelocated = 0;
+    let communicationsDuplicatesDeleted = 0;
+
+    for (const comm of dupComms || []) {
+      const normalizedId = normalizeExternalId(comm.external_id);
+
+      if (!normalizedId || !primaryNormalizedIds.has(normalizedId)) {
+        // Move communication to primary (no duplicate exists)
+        await supabase
+          .from('communications')
+          .update({ company_id: primaryId })
+          .eq('id', comm.id);
+        communicationsRelocated++;
+
+        // Add to set to prevent moving duplicates from other duplicate companies
+        if (normalizedId) {
+          primaryNormalizedIds.add(normalizedId);
+        }
+      } else {
+        // Duplicate exists - need to handle foreign keys before deleting
+        // Update any promises pointing to this communication
+        const { data: commAnalysis } = await supabase
+          .from('communication_analysis')
+          .select('id')
+          .eq('communication_id', comm.id)
+          .single();
+
+        if (commAnalysis) {
+          // Find the kept communication's analysis to redirect promises
+          const keptComm = (primaryComms || []).find(
+            (c) => normalizeExternalId(c.external_id) === normalizedId
+          );
+          if (keptComm) {
+            const { data: keptAnalysis } = await supabase
+              .from('communication_analysis')
+              .select('id')
+              .eq('communication_id', keptComm.id)
+              .single();
+
+            if (keptAnalysis) {
+              // Update promises to point to kept analysis
+              await supabase
+                .from('promises')
+                .update({ source_analysis_id: keptAnalysis.id })
+                .eq('source_analysis_id', commAnalysis.id);
+            }
+          }
+
+          // Delete the duplicate analysis
+          await supabase
+            .from('communication_analysis')
+            .delete()
+            .eq('id', commAnalysis.id);
+        }
+
+        // Update promises pointing directly to this communication
+        const keptComm = (primaryComms || []).find(
+          (c) => normalizeExternalId(c.external_id) === normalizedId
+        );
+        if (keptComm) {
+          await supabase
+            .from('promises')
+            .update({ source_communication_id: keptComm.id })
+            .eq('source_communication_id', comm.id);
+        }
+
+        // Now delete the duplicate communication
+        await supabase
+          .from('communications')
+          .delete()
+          .eq('id', comm.id);
+        communicationsDuplicatesDeleted++;
+      }
+    }
+    relocationCounts.communications = communicationsRelocated;
+    relocationCounts.communications_duplicates_deleted = communicationsDuplicatesDeleted;
 
     // Handle company_products (avoid duplicates)
     const { data: dupProducts } = await supabase
@@ -169,6 +265,14 @@ export async function mergeCompanies(
       }
     }
     relocationCounts.company_products = productsRelocated;
+
+    // Relocate scheduling_requests
+    const { data: schedulingUpdated } = await supabase
+      .from('scheduling_requests')
+      .update({ company_id: primaryId })
+      .in('company_id', duplicateIds)
+      .select('id');
+    relocationCounts.scheduling_requests = schedulingUpdated?.length || 0;
 
     // 6. Delete duplicate records
     const { error: deleteError } = await supabase

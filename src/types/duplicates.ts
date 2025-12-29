@@ -69,6 +69,8 @@ export interface RelocationCounts {
   activities?: number;
   company_products?: number;
   communications?: number;
+  communications_duplicates_deleted?: number;
+  scheduling_requests?: number;
 }
 
 /**
