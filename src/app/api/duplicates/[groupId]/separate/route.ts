@@ -58,12 +58,13 @@ export async function POST(
     }
 
     // Update group status to marked_separate
+    // Note: resolved_by has FK to users table which doesn't match auth.users IDs,
+    // so we omit it to avoid constraint violations
     const { error: updateError } = await supabase
       .from('duplicate_groups')
       .update({
         status: 'marked_separate',
         resolved_at: new Date().toISOString(),
-        resolved_by: user.id,
         resolution_notes: notes || 'User confirmed records are intentionally separate',
       })
       .eq('id', groupId);

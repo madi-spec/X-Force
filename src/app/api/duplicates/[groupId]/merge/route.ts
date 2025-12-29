@@ -108,13 +108,14 @@ export async function POST(
     }
 
     // Update group status
+    // Note: resolved_by has FK to users table which doesn't match auth.users IDs,
+    // so we omit it to avoid constraint violations
     const { error: updateError } = await supabase
       .from('duplicate_groups')
       .update({
         status: 'merged',
         primary_record_id: primary,
         resolved_at: new Date().toISOString(),
-        resolved_by: user.id,
       })
       .eq('id', groupId);
 
@@ -123,6 +124,8 @@ export async function POST(
     }
 
     // Log the merge for potential undo
+    // Note: merged_by has FK to users table which doesn't match auth.users IDs,
+    // so we omit it to avoid constraint violations
     const deletedSnapshots = members
       .filter((m) => m.record_id !== primary)
       .map((m) => m.record_snapshot);
@@ -134,7 +137,6 @@ export async function POST(
       merged_data: result.mergedFields,
       deleted_data: deletedSnapshots,
       relocation_counts: result.relocationCounts,
-      merged_by: user.id,
     });
 
     if (logError) {
