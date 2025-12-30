@@ -7,6 +7,9 @@
 // Types
 export * from './types';
 
+// Events (Work Integration)
+export * from './events';
+
 // Services
 export { SchedulingService, schedulingService, adminSchedulingService } from './schedulingService';
 

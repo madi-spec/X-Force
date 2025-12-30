@@ -44,6 +44,9 @@ interface ProcessingStats {
 // MAIN PROCESSOR
 // ============================================
 
+// TEMPORARY KILL SWITCH - Set to true to disable all scheduler automation
+const SCHEDULER_AUTOMATION_DISABLED = false;
+
 /**
  * Process all scheduling requests that need automated action
  */
@@ -58,6 +61,12 @@ export async function processSchedulingAutomation(
     noShowsHandled: 0,
     errors: [],
   };
+
+  // Kill switch - return early if automation is disabled
+  if (SCHEDULER_AUTOMATION_DISABLED) {
+    console.log('[AutomationProcessor] DISABLED - Scheduler automation is temporarily turned off');
+    return stats;
+  }
 
   const supabase = createAdminClient();
 

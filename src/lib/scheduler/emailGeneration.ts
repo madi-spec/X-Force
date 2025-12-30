@@ -6,6 +6,7 @@
  */
 
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPrompt } from '@/lib/ai/promptManager';
 import {
   SchedulingEmailContext,
   GeneratedEmail,
@@ -62,6 +63,7 @@ export async function generateSchedulingEmail(
   input: EmailGenerationInput
 ): Promise<{ email: GeneratedEmail; reasoning: string }> {
   const prompt = buildEmailPrompt(input);
+  const promptConfig = await getSchedulerEmailSystemPrompt();
 
   const response = await callAIJson<{
     subject: string;
@@ -69,13 +71,14 @@ export async function generateSchedulingEmail(
     reasoning: string;
   }>({
     prompt,
-    systemPrompt: SCHEDULING_EMAIL_SYSTEM_PROMPT,
+    systemPrompt: promptConfig.prompt,
+    model: promptConfig.model as 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307' | 'claude-opus-4-20250514' | undefined,
+    maxTokens: promptConfig.maxTokens || 2000,
     schema: `{
       "subject": "Email subject line (concise, professional)",
       "body": "Full email body with proper formatting",
       "reasoning": "Brief explanation of approach taken"
     }`,
-    maxTokens: 2000,
     temperature: 0.7,
   });
 
@@ -96,12 +99,14 @@ export async function generateEmailVariants(
   count: number = 3
 ): Promise<GeneratedEmail[]> {
   const prompt = buildEmailPrompt(input, true, count);
+  const promptConfig = await getSchedulerEmailSystemPrompt();
 
   const response = await callAIJson<{
     variants: Array<{ subject: string; body: string }>;
   }>({
     prompt,
-    systemPrompt: SCHEDULING_EMAIL_SYSTEM_PROMPT,
+    systemPrompt: promptConfig.prompt,
+    model: promptConfig.model as 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307' | 'claude-opus-4-20250514' | undefined,
     schema: `{
       "variants": [
         { "subject": "...", "body": "..." },
@@ -116,10 +121,11 @@ export async function generateEmailVariants(
 }
 
 // ============================================
-// PROMPT BUILDERS
+// PROMPT MANAGEMENT
 // ============================================
 
-const SCHEDULING_EMAIL_SYSTEM_PROMPT = `You are an expert B2B sales email writer specializing in meeting scheduling.
+// Default fallback prompt (used if database prompt not available)
+const DEFAULT_SCHEDULING_EMAIL_SYSTEM_PROMPT = `You are an expert B2B sales email writer specializing in meeting scheduling.
 
 Your emails are:
 - Professional yet warm and approachable
@@ -141,26 +147,35 @@ Email structure best practices:
 - Close: Single clear call to action
 - Signature: Professional but brief
 
-For time proposals:
-- Always include day of week for clarity
-- Use 12-hour format with timezone
-- Offer 3-4 options spanning different days/times
-- Present in an easy-to-scan format
-
-CRITICAL DATE HANDLING - READ CAREFULLY:
-- The current date and year is provided in the prompt - USE IT EXACTLY
-- The proposed times show VERIFIED day/date pairs - they are CORRECT
-- When you write the email, use the EXACT same dates provided
-- Do NOT add 1 to dates. Do NOT "fix" dates. Trust the input.
-
-CRITICAL YEAR HANDLING:
-- Look at TODAY'S DATE in the prompt. Use THAT year in any seasonal greetings.
-- If today is December 2025, write "end of 2025", NOT "end of 2024"
-- If today is January 2026, write "start of 2026" or "new year", NOT "2025"
-- NEVER guess the year - ALWAYS check the TODAY'S DATE provided in the prompt
-- Around the holidays, be especially careful: "Hope you're having a great holiday season" is safer than referencing a specific year incorrectly.
-
 IMPORTANT: Generate actual email content, not placeholders. Use the provided context to personalize.`;
+
+/**
+ * Get the scheduling email system prompt from database with fallback
+ */
+async function getSchedulerEmailSystemPrompt(): Promise<{ prompt: string; model: string; maxTokens: number }> {
+  try {
+    const dbPrompt = await getPrompt('scheduler_email_system');
+    if (dbPrompt) {
+      return {
+        prompt: dbPrompt.prompt_template,
+        model: dbPrompt.model || 'claude-sonnet-4-20250514',
+        maxTokens: dbPrompt.max_tokens || 2000,
+      };
+    }
+  } catch (error) {
+    console.warn('[EmailGeneration] Failed to load prompt from database, using default:', error);
+  }
+
+  return {
+    prompt: DEFAULT_SCHEDULING_EMAIL_SYSTEM_PROMPT,
+    model: 'claude-sonnet-4-20250514',
+    maxTokens: 2000,
+  };
+}
+
+// ============================================
+// PROMPT BUILDERS
+// ============================================
 
 function buildEmailPrompt(
   input: EmailGenerationInput,
@@ -471,6 +486,9 @@ export function generateProposedTimes(
 
 /**
  * Parses an incoming email to detect scheduling intent
+ *
+ * Now includes confusion detection to stop auto-replies when the prospect
+ * is expressing frustration or misunderstanding.
  */
 export async function parseSchedulingResponse(
   emailBody: string,
@@ -482,6 +500,8 @@ export async function parseSchedulingResponse(
   question?: string;
   sentiment: 'positive' | 'neutral' | 'negative';
   reasoning: string;
+  isConfused?: boolean;
+  confusionReason?: string;
 }> {
   // Build date context for year awareness
   const today = new Date();
@@ -528,7 +548,20 @@ Determine:
    - IMPORTANT: When they say "Monday the 5th" - the NUMBER 5th is the key, find the month where the 5th is (near) a Monday
    - If they say "11am on Monday the 5th" and January 5, ${nextYear} is a Monday, return "${nextYear}-01-05T11:00:00"
 4. If questioning: What is their question?
-5. Overall sentiment toward the meeting`;
+5. Overall sentiment toward the meeting
+6. CRITICAL - Confusion Detection: Is the person expressing confusion, frustration, or correcting a mistake?
+   Look for phrases like:
+   - "That's not what I said"
+   - "I didn't say that"
+   - "I don't understand"
+   - "You misunderstood"
+   - "That's wrong"
+   - "I said X not Y"
+   - "Wait, no"
+   - "I'm confused"
+   - "That doesn't make sense"
+   - "What are you talking about"
+   - Any correction of a previous statement`;
 
   const response = await callAIJson<{
     intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'unclear';
@@ -537,17 +570,21 @@ Determine:
     question?: string;
     sentiment: 'positive' | 'neutral' | 'negative';
     reasoning: string;
+    isConfused?: boolean;
+    confusionReason?: string;
   }>({
     prompt,
     systemPrompt:
-      'You are an expert at understanding email intent, especially for scheduling contexts. Analyze carefully and extract structured information.',
+      'You are an expert at understanding email intent, especially for scheduling contexts. Analyze carefully and extract structured information. PAY SPECIAL ATTENTION to signs of confusion or frustration - if the person seems to be correcting a mistake or expressing that they were misunderstood, set isConfused to true.',
     schema: `{
       "intent": "accept|decline|counter_propose|question|unclear",
       "selectedTime": "ISO timestamp if they selected a specific time",
       "counterProposedTimes": ["Array of times they suggested if counter-proposing"],
       "question": "Their question if asking one",
       "sentiment": "positive|neutral|negative",
-      "reasoning": "Brief explanation of your analysis"
+      "reasoning": "Brief explanation of your analysis",
+      "isConfused": "true if the person is expressing confusion, frustration, or correcting a mistake",
+      "confusionReason": "If isConfused is true, explain what they seem confused about"
     }`,
     maxTokens: 1000,
     temperature: 0.3,

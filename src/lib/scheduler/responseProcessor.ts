@@ -20,6 +20,17 @@ import {
   ConversationMessage,
   MEETING_PLATFORMS,
 } from './types';
+import {
+  normalizeTimezone,
+  parseLocalTimeToUTC,
+  formatForDisplay,
+  formatForGraphAPI,
+  buildDateContextForAI,
+  normalizeAITimestamp,
+  getAITimestampInstructions,
+  DEFAULT_TIMEZONE,
+  addMinutes,
+} from './timezone';
 
 // ============================================
 // TYPES
@@ -53,6 +64,8 @@ interface ResponseAnalysis {
   question?: string;
   sentiment: 'positive' | 'neutral' | 'negative';
   reasoning: string;
+  isConfused?: boolean;
+  confusionReason?: string;
 }
 
 // ============================================
@@ -130,6 +143,13 @@ export async function findMatchingSchedulingRequest(
 // RESPONSE PROCESSING
 // ============================================
 
+// TEMPORARY KILL SWITCH - Set to true to disable all scheduler auto-replies
+const SCHEDULER_AUTO_REPLY_DISABLED = false;
+
+// Minimum delay in milliseconds before responding to a scheduling email
+// This prevents instant robotic-feeling responses and gives time for human review
+const RESPONSE_DELAY_MS = 3 * 60 * 1000; // 3 minutes
+
 /**
  * Process an incoming email response to a scheduling request
  */
@@ -137,7 +157,74 @@ export async function processSchedulingResponse(
   email: IncomingEmail,
   schedulingRequest: SchedulingRequest
 ): Promise<ProcessingResult> {
+  // Kill switch - don't send any automatic replies
+  if (SCHEDULER_AUTO_REPLY_DISABLED) {
+    console.log('[processSchedulingResponse] DISABLED - Auto-reply is temporarily turned off');
+    return {
+      processed: false,
+      error: 'Scheduler auto-reply temporarily disabled',
+    };
+  }
+
   const supabase = createAdminClient();
+
+  // Check if we should delay the response
+  // This prevents instant robotic-feeling auto-replies
+  const lastActionTime = schedulingRequest.last_action_at
+    ? new Date(schedulingRequest.last_action_at)
+    : null;
+  const emailReceivedTime = new Date(email.receivedDateTime);
+  const now = new Date();
+
+  // If we sent something recently (within the delay window), defer processing
+  if (lastActionTime) {
+    const timeSinceLastAction = now.getTime() - lastActionTime.getTime();
+    if (timeSinceLastAction < RESPONSE_DELAY_MS) {
+      const delayRemaining = RESPONSE_DELAY_MS - timeSinceLastAction;
+      console.log(`[processSchedulingResponse] Deferring response by ${Math.round(delayRemaining / 1000)}s to avoid instant reply`);
+
+      // Schedule the processing for later
+      const processAt = new Date(now.getTime() + delayRemaining);
+      await supabase
+        .from('scheduling_requests')
+        .update({
+          next_action_at: processAt.toISOString(),
+          next_action_type: 'process_response',
+        })
+        .eq('id', schedulingRequest.id);
+
+      return {
+        processed: false,
+        schedulingRequestId: schedulingRequest.id,
+        action: 'deferred',
+        error: `Response deferred until ${processAt.toISOString()} to avoid instant reply`,
+      };
+    }
+  }
+
+  // Also check time since email was received - don't respond to very recent emails
+  const timeSinceEmail = now.getTime() - emailReceivedTime.getTime();
+  if (timeSinceEmail < RESPONSE_DELAY_MS) {
+    const delayRemaining = RESPONSE_DELAY_MS - timeSinceEmail;
+    console.log(`[processSchedulingResponse] Email received ${Math.round(timeSinceEmail / 1000)}s ago, deferring by ${Math.round(delayRemaining / 1000)}s`);
+
+    // Schedule the processing for later
+    const processAt = new Date(now.getTime() + delayRemaining);
+    await supabase
+      .from('scheduling_requests')
+      .update({
+        next_action_at: processAt.toISOString(),
+        next_action_type: 'process_response',
+      })
+      .eq('id', schedulingRequest.id);
+
+    return {
+      processed: false,
+      schedulingRequestId: schedulingRequest.id,
+      action: 'deferred',
+      error: `Response deferred until ${processAt.toISOString()} to avoid instant reply`,
+    };
+  }
 
   try {
     // Parse the response using AI
@@ -166,6 +253,36 @@ export async function processSchedulingResponse(
       actor: 'prospect',
       ai_reasoning: analysis.reasoning,
     });
+
+    // GUARDRAIL: Check for confusion/frustration and stop auto-reply
+    if (analysis.isConfused) {
+      console.log('[processSchedulingResponse] CONFUSION DETECTED - stopping auto-reply');
+      console.log('[processSchedulingResponse] Confusion reason:', analysis.confusionReason);
+
+      // Pause the request for human review
+      await supabase
+        .from('scheduling_requests')
+        .update({
+          status: SCHEDULING_STATUS.PAUSED,
+          next_action_type: 'human_review_confusion',
+          next_action_at: new Date().toISOString(),
+        })
+        .eq('id', schedulingRequest.id);
+
+      await adminSchedulingService.logAction(schedulingRequest.id, {
+        action_type: ACTION_TYPES.STATUS_CHANGED,
+        message_content: `Auto-reply stopped due to confusion detection: ${analysis.confusionReason}`,
+        actor: 'ai',
+        ai_reasoning: 'Prospect appears confused or frustrated. Human review required.',
+      });
+
+      return {
+        processed: false,
+        schedulingRequestId: schedulingRequest.id,
+        action: 'paused_confusion_detected',
+        error: `Confusion detected: ${analysis.confusionReason}. Auto-reply disabled for human review.`,
+      };
+    }
 
     // Add X-FORCE category to the inbound email
     try {
@@ -279,7 +396,8 @@ async function handleTimeAccepted(
     request.created_by,
     internalEmails,
     selectedDate,
-    request.duration_minutes || 30
+    request.duration_minutes || 30,
+    request.timezone || DEFAULT_TIMEZONE
   );
 
   if (availabilityResult.error) {
@@ -302,13 +420,14 @@ async function handleTimeAccepted(
       ai_reasoning: 'Time was booked by another meeting since we proposed it. Sending alternative times.',
     });
 
-    // Send alternative times
+    // Send alternative times (as reply to maintain thread)
     const alternativeResult = await sendAlternativeTimes(
       request,
       externalAttendee.email,
       externalAttendee.name || 'there',
       request.created_by,
-      selectedDate.toISOString()
+      selectedDate.toISOString(),
+      email.id
     );
 
     if (alternativeResult.success) {
@@ -433,9 +552,10 @@ async function handleCounterProposal(
 
   // Parse the first proposed time using AI
   const timeDescription = proposedTimeDescriptions[0];
-  console.log('[handleCounterProposal] Parsing time:', timeDescription);
+  const userTimezone = request.timezone || DEFAULT_TIMEZONE;
+  console.log('[handleCounterProposal] Parsing time:', timeDescription, 'in timezone:', userTimezone);
 
-  const parsedTime = await parseProposedDateTime(timeDescription, email.body);
+  const parsedTime = await parseProposedDateTime(timeDescription, email.body, userTimezone);
   console.log('[handleCounterProposal] Parsed result:', parsedTime);
 
   if (!parsedTime.isoTimestamp || parsedTime.confidence === 'low') {
@@ -452,7 +572,8 @@ async function handleCounterProposal(
     request.created_by,
     internalEmails,
     proposedDate,
-    request.duration_minutes || 30
+    request.duration_minutes || 30,
+    userTimezone
   );
 
   if (availabilityResult.error) {
@@ -469,7 +590,8 @@ async function handleCounterProposal(
       proposedDate,
       externalAttendee.email,
       externalAttendee.name || 'there',
-      request.created_by
+      request.created_by,
+      email.id
     );
 
     if (bookResult.success) {
@@ -503,7 +625,8 @@ async function handleCounterProposal(
       externalAttendee.email,
       externalAttendee.name || 'there',
       request.created_by,
-      formattedRequestedTime
+      formattedRequestedTime,
+      email.id
     );
 
     if (alternativeResult.success) {
@@ -742,6 +865,9 @@ async function addCategoryToEmail(
 /**
  * Send an email with the X-FORCE category badge
  * Uses draft-then-send approach to add category before sending
+ *
+ * If replyToMessageId is provided, creates a reply to that message (preserving thread)
+ * Otherwise creates a new message
  */
 async function sendEmailWithCategory(
   token: string,
@@ -749,23 +875,38 @@ async function sendEmailWithCategory(
     subject: string;
     body: { contentType: 'Text' | 'HTML'; content: string };
     toRecipients: Array<{ emailAddress: { address: string; name?: string } }>;
-  }
+  },
+  replyToMessageId?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    // Step 1: Create a draft message
-    const draftResponse = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        subject: message.subject,
-        body: message.body,
-        toRecipients: message.toRecipients,
-        categories: ['X-FORCE'], // Add category when creating
-      }),
-    });
+    let draftResponse: Response;
+
+    if (replyToMessageId) {
+      // Step 1a: Create a reply draft (preserves thread/conversation)
+      console.log('[sendEmailWithCategory] Creating reply to message:', replyToMessageId);
+      draftResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${replyToMessageId}/createReply`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+    } else {
+      // Step 1b: Create a new draft message
+      draftResponse = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subject: message.subject,
+          body: message.body,
+          toRecipients: message.toRecipients,
+          categories: ['X-FORCE'],
+        }),
+      });
+    }
 
     if (!draftResponse.ok) {
       const errorText = await draftResponse.text();
@@ -775,7 +916,28 @@ async function sendEmailWithCategory(
     const draft = await draftResponse.json();
     const messageId = draft.id;
 
-    // Step 2: Send the draft
+    // Step 2: Update the draft with our content and category
+    if (replyToMessageId) {
+      // For replies, we need to update the body and add category
+      const updateResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          body: message.body,
+          categories: ['X-FORCE'],
+        }),
+      });
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        return { success: false, error: `Failed to update reply draft: ${errorText}` };
+      }
+    }
+
+    // Step 3: Send the draft
     const sendResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}/send`, {
       method: 'POST',
       headers: {
@@ -789,7 +951,7 @@ async function sendEmailWithCategory(
       return { success: false, error: `Failed to send: ${errorText}` };
     }
 
-    console.log('[sendEmailWithCategory] Email sent with X-FORCE category:', messageId);
+    console.log(`[sendEmailWithCategory] Email ${replyToMessageId ? 'reply' : 'new'} sent with X-FORCE category:`, messageId);
     return { success: true, messageId };
   } catch (err) {
     console.error('[sendEmailWithCategory] Error:', err);
@@ -803,45 +965,26 @@ async function sendEmailWithCategory(
 
 /**
  * Parse natural language time descriptions into ISO timestamps using AI
+ *
+ * CRITICAL: This function now properly handles timezone conversion.
+ * - AI returns times in the user's local timezone
+ * - We convert to UTC for storage and comparison
+ * - The returned isoTimestamp is ALWAYS in UTC (ends with Z)
  */
 async function parseProposedDateTime(
   timeDescription: string,
-  emailBody: string
+  emailBody: string,
+  userTimezone: string = DEFAULT_TIMEZONE
 ): Promise<{ isoTimestamp: string | null; confidence: 'high' | 'medium' | 'low'; reasoning: string }> {
-  const today = new Date();
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth() + 1; // 1-indexed
-  const todayFormatted = today.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-  // Determine the year to use for future scheduling
-  const nextYear = currentYear + 1;
-
-  // Build explicit year rules based on current date
-  let yearGuidance = '';
-  if (currentMonth === 12) {
-    // December - any January/February/March date MUST be next year
-    yearGuidance = `CRITICAL: Today is ${todayFormatted}. We are in DECEMBER ${currentYear}.
-- ANY date in January, February, or March MUST use year ${nextYear} (NOT ${currentYear})
-- January ${currentYear} is IN THE PAST and invalid
-- January ${nextYear} is the NEXT January and correct
-- Example: "January 5" = January 5, ${nextYear}
-- Example: "Monday the 5th" in January = January 5, ${nextYear}`;
-  } else if (currentMonth >= 10) {
-    yearGuidance = `Since we're in ${today.toLocaleDateString('en-US', { month: 'long' })} ${currentYear}, if they mention January, February, or March without a year, use ${nextYear}.`;
-  } else {
-    yearGuidance = `Use ${currentYear} for dates that are still in the future.`;
-  }
+  const tz = normalizeTimezone(userTimezone);
+  const dateContext = buildDateContextForAI(tz);
+  const timestampInstructions = getAITimestampInstructions(tz);
 
   const prompt = `Parse this proposed meeting time into an ISO timestamp.
 
-TODAY'S DATE: ${todayFormatted}
-CURRENT YEAR: ${currentYear}
-TIMEZONE: America/New_York (Eastern Time)
+TODAY'S DATE: ${dateContext.todayFormatted}
+CURRENT YEAR: ${dateContext.currentYear}
+${dateContext.timezoneInfo}
 
 TIME DESCRIPTION: "${timeDescription}"
 
@@ -854,30 +997,26 @@ RULE 1 - SPECIFIC DATE NUMBER TAKES PRIORITY:
 When someone says "[day] the [number]" (e.g., "Monday the 5th", "Tuesday the 14th"):
 - The NUMBER is the most important part - they mean the Xth day of a month
 - Find the NEAREST FUTURE date where the Xth falls on that day of week
-- Example: Today is Dec 27, 2025. "Monday the 5th" = January 5, ${nextYear} (because Jan 5, ${nextYear} is a Monday)
+- Example: Today is Dec 27, 2025. "Monday the 5th" = January 5, ${dateContext.nextYear} (because Jan 5, ${dateContext.nextYear} is a Monday)
 - Do NOT interpret this as just "next Monday" - the person explicitly mentioned "the 5th"
 
 RULE 2 - YEAR DETERMINATION:
 - The meeting MUST be in the FUTURE. Never return a date in the past.
-- ${yearGuidance}
-- If we're in late December and they mention early January dates, use ${nextYear}.
-- ALWAYS double-check: Is the resulting date AFTER ${todayFormatted}? If not, add a year.
+- ${dateContext.yearGuidance}
+- If we're in late December and they mention early January dates, use ${dateContext.nextYear}.
+- ALWAYS double-check: Is the resulting date AFTER ${dateContext.todayFormatted}? If not, add a year.
 
 RULE 3 - DAY/DATE MISMATCH:
 - If they say "Monday the 5th" and the 5th isn't actually a Monday in the nearest month, prioritize the DATE NUMBER over the day name
 - People often get day names wrong but rarely get date numbers wrong
-- Example: If they say "Tuesday the 5th" but Jan 5 is a Monday, assume they mean January 5 (they probably just mixed up the day)
 
-OTHER RULES:
-1. If no specific time is given, return null
-2. If the time is ambiguous (e.g., "next week"), return null with low confidence
-3. Times like "11am" should be interpreted in Eastern Time
-4. Return the time as an ISO 8601 timestamp (e.g., "${nextYear}-01-05T11:00:00-05:00")
+RULE 4 - TIMEZONE HANDLING (CRITICAL):
+${timestampInstructions}
 
 Return a JSON object with:
-- isoTimestamp: The ISO timestamp string, or null if unparseable
+- isoTimestamp: The ISO timestamp string WITH TIMEZONE (e.g., "${dateContext.nextYear}-01-05T14:00:00-05:00" for 2pm EST), or null if unparseable
 - confidence: "high", "medium", or "low"
-- reasoning: Brief explanation including what year you chose and why`;
+- reasoning: Brief explanation including the timezone interpretation`;
 
   try {
     const response = await callAIJson<{
@@ -886,66 +1025,56 @@ Return a JSON object with:
       reasoning: string;
     }>({
       prompt,
-      systemPrompt: 'You are an expert at parsing natural language date/time expressions into precise timestamps. CRITICAL: When someone says "[day] the [number]" like "Monday the 5th", the DATE NUMBER is the key information - find the nearest future month where the Xth day matches (or is close to) that day of week. Do NOT just return "next Monday" - they specified a date number for a reason.',
+      systemPrompt: `You are an expert at parsing natural language date/time expressions into precise timestamps.
+
+CRITICAL TIMEZONE RULE: The user is in ${tz}. When they say "2pm" they mean 2pm in THEIR timezone, not UTC.
+- If they say "2pm EST", return "...T14:00:00-05:00" (with -05:00 offset)
+- If they say "2pm" without timezone, assume ${tz} and include the appropriate offset
+- NEVER return a bare timestamp like "...T14:00:00" without timezone info
+
+CRITICAL DATE RULE: When someone says "[day] the [number]" like "Monday the 5th", the DATE NUMBER is the key information - find the nearest future month where the Xth day matches (or is close to) that day of week.`,
       schema: `{
-        "isoTimestamp": "ISO 8601 timestamp string or null",
+        "isoTimestamp": "ISO 8601 timestamp string WITH timezone offset (e.g., 2026-01-05T14:00:00-05:00) or null",
         "confidence": "high|medium|low",
-        "reasoning": "Brief explanation"
+        "reasoning": "Brief explanation including timezone interpretation"
       }`,
       maxTokens: 500,
       temperature: 0.1,
     });
 
-    // Validate and fix the parsed date
+    // CRITICAL: Normalize the AI timestamp to proper UTC
     if (response.data.isoTimestamp) {
-      const parsedDate = new Date(response.data.isoTimestamp);
-      const now = new Date();
-      const parsedMonth = parsedDate.getMonth() + 1; // 1-indexed
-      const parsedYear = parsedDate.getFullYear();
+      const normalized = normalizeAITimestamp(response.data.isoTimestamp, tz);
 
-      let needsYearFix = false;
-      let fixReason = '';
+      if (normalized.utc) {
+        const now = new Date();
 
-      // Rule 1: Date must be in the future
-      if (parsedDate <= now) {
-        needsYearFix = true;
-        fixReason = 'date was in the past';
-      }
+        // Validate the parsed date is in the future
+        if (normalized.utc <= now) {
+          // Date is in the past - try adding a year
+          const correctedDate = new Date(normalized.utc);
+          correctedDate.setFullYear(correctedDate.getFullYear() + 1);
 
-      // Rule 2: If we're in December and AI returned a Jan/Feb/Mar date in current year, fix it
-      if (currentMonth === 12 && [1, 2, 3].includes(parsedMonth) && parsedYear === currentYear) {
-        needsYearFix = true;
-        fixReason = `January/February/March ${currentYear} is in the past - should be ${nextYear}`;
-      }
-
-      // Rule 3: If the date is more than 2 weeks in the past, it's definitely wrong
-      const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-      if (parsedDate < twoWeeksAgo) {
-        needsYearFix = true;
-        fixReason = 'date is more than 2 weeks in the past';
-      }
-
-      if (needsYearFix) {
-        console.warn(`[parseProposedDateTime] Fixing year: ${fixReason}. Original: ${response.data.isoTimestamp}`);
-
-        // Parse the original timestamp and replace just the year, preserving the exact time
-        const originalTimestamp = response.data.isoTimestamp;
-        const yearMatch = originalTimestamp.match(/^(\d{4})/);
-        if (yearMatch) {
-          const oldYear = parseInt(yearMatch[1]);
-          const newYear = oldYear + 1;
-          // Simple string replacement to preserve the exact time and timezone
-          const correctedTimestamp = originalTimestamp.replace(/^\d{4}/, newYear.toString());
-          response.data.isoTimestamp = correctedTimestamp;
-          response.data.reasoning += ` (Auto-corrected: ${fixReason}, changed year from ${oldYear} to ${newYear})`;
-          console.log(`[parseProposedDateTime] Corrected to: ${response.data.isoTimestamp}`);
+          if (correctedDate > now) {
+            console.warn(`[parseProposedDateTime] Fixed past date by adding year: ${normalized.utc.toISOString()} -> ${correctedDate.toISOString()}`);
+            response.data.isoTimestamp = correctedDate.toISOString();
+            response.data.reasoning += ` (Auto-corrected: date was in past, added 1 year)`;
+          } else {
+            console.warn(`[parseProposedDateTime] Date still in past after correction: ${correctedDate.toISOString()}`);
+            response.data.isoTimestamp = correctedDate.toISOString();
+          }
         } else {
-          // Fallback: use Date object but be careful with timezone
-          parsedDate.setFullYear(parsedDate.getFullYear() + 1);
-          response.data.isoTimestamp = parsedDate.toISOString();
-          response.data.reasoning += ` (Auto-corrected: ${fixReason}, changed to ${parsedDate.getFullYear()})`;
-          console.log(`[parseProposedDateTime] Corrected to: ${response.data.isoTimestamp}`);
+          // Date is valid - store as UTC ISO string
+          response.data.isoTimestamp = normalized.utc.toISOString();
         }
+
+        if (normalized.wasConverted) {
+          response.data.reasoning += ` (Converted from ${tz} to UTC)`;
+        }
+
+        console.log(`[parseProposedDateTime] Final UTC timestamp: ${response.data.isoTimestamp}`);
+      } else {
+        console.warn(`[parseProposedDateTime] Could not normalize timestamp: ${response.data.isoTimestamp}`);
       }
     }
 
@@ -967,7 +1096,8 @@ async function checkSlotAvailability(
   userId: string,
   attendeeEmails: string[],
   proposedTime: Date,
-  durationMinutes: number
+  durationMinutes: number,
+  timezone: string = DEFAULT_TIMEZONE
 ): Promise<{ available: boolean; conflictingAttendees: string[]; error?: string }> {
   try {
     const { getValidToken } = await import('@/lib/microsoft/auth');
@@ -977,11 +1107,12 @@ async function checkSlotAvailability(
       return { available: false, conflictingAttendees: [], error: 'No valid token' };
     }
 
-    const startTime = proposedTime.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T').substring(0, 16) + ':00';
-    const endDate = new Date(proposedTime.getTime() + durationMinutes * 60 * 1000);
-    const endTime = endDate.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T').substring(0, 16) + ':00';
+    const tz = normalizeTimezone(timezone);
+    const startTime = formatForGraphAPI(proposedTime, tz);
+    const endDate = addMinutes(proposedTime, durationMinutes);
+    const endTime = formatForGraphAPI(endDate, tz);
 
-    console.log(`[checkSlotAvailability] Checking ${startTime} to ${endTime} for ${attendeeEmails.join(', ')}`);
+    console.log(`[checkSlotAvailability] Checking ${startTime} to ${endTime} (${tz}) for ${attendeeEmails.join(', ')}`);
 
     const response = await fetch('https://graph.microsoft.com/v1.0/me/calendar/getSchedule', {
       method: 'POST',
@@ -991,8 +1122,8 @@ async function checkSlotAvailability(
       },
       body: JSON.stringify({
         schedules: attendeeEmails,
-        startTime: { dateTime: startTime, timeZone: 'America/New_York' },
-        endTime: { dateTime: endTime, timeZone: 'America/New_York' },
+        startTime: { dateTime: startTime, timeZone: tz },
+        endTime: { dateTime: endTime, timeZone: tz },
         availabilityViewInterval: durationMinutes,
       }),
     });
@@ -1036,7 +1167,8 @@ async function confirmAndBookMeeting(
   confirmedTime: Date,
   prospectEmail: string,
   prospectName: string,
-  userId: string
+  userId: string,
+  replyToMessageId?: string
 ): Promise<{ success: boolean; calendarEventId?: string; error?: string }> {
   const supabase = createAdminClient();
 
@@ -1068,7 +1200,7 @@ async function confirmAndBookMeeting(
       senderTitle: 'Sales, X-RAI Labs',
     });
 
-    // Send confirmation email with X-FORCE category
+    // Send confirmation email with X-FORCE category (as reply if we have the original message ID)
     const emailResult = await sendEmailWithCategory(token, {
       subject: `Confirmed: ${request.title} - ${formattedTime}`,
       body: {
@@ -1076,7 +1208,7 @@ async function confirmAndBookMeeting(
         content: `Hi ${prospectName},\n\nGreat news! Our meeting is confirmed for ${formattedTime}.\n\nYou'll receive a calendar invite shortly with the Microsoft Teams link.\n\nLooking forward to speaking with you!\n\nBest,\nBrent Allen\nX-RAI Labs`,
       },
       toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
-    });
+    }, replyToMessageId);
 
     if (!emailResult.success) {
       console.error('[confirmAndBookMeeting] Failed to send email:', emailResult.error);
@@ -1186,7 +1318,8 @@ async function sendAlternativeTimes(
   prospectEmail: string,
   prospectName: string,
   userId: string,
-  proposedTimeDescription: string
+  proposedTimeDescription: string,
+  replyToMessageId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { getValidToken } = await import('@/lib/microsoft/auth');
@@ -1261,12 +1394,12 @@ Best,
 Brent Allen
 X-RAI Labs`;
 
-    // Send alternative times email with X-FORCE category
+    // Send alternative times email with X-FORCE category (as reply if we have the original message ID)
     const sendResult = await sendEmailWithCategory(token, {
       subject: `Re: ${request.title} - Alternative Times`,
       body: { contentType: 'Text', content: emailBody },
       toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
-    });
+    }, replyToMessageId);
 
     if (!sendResult.success) {
       return { success: false, error: `Email send failed: ${sendResult.error}` };
@@ -1367,8 +1500,15 @@ export async function processSchedulingEmails(userId: string): Promise<{
   matched: number;
   errors: string[];
 }> {
-  const supabase = createAdminClient();
   const result = { processed: 0, matched: 0, errors: [] as string[] };
+
+  // Kill switch - don't process any scheduling emails
+  if (SCHEDULER_AUTO_REPLY_DISABLED) {
+    console.log('[processSchedulingEmails] DISABLED - Scheduler auto-reply is temporarily turned off');
+    return result;
+  }
+
+  const supabase = createAdminClient();
 
   try {
     // Get recent inbound emails that haven't been processed for scheduling
