@@ -310,6 +310,25 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
             if (extractedData && extractedData.company?.name) {
               console.log('[Fireflies Sync] Extracted company:', extractedData.company.name);
 
+              // Try to find a matching company by name similarity
+              const { data: similarCompanies } = await supabase
+                .from('companies')
+                .select('id, name')
+                .ilike('name', `%${extractedData.company.name.split(' ')[0]}%`)
+                .limit(5);
+
+              // If we find a likely match, link it
+              if (similarCompanies && similarCompanies.length > 0) {
+                const bestMatch = similarCompanies[0];
+                console.log('[Fireflies Sync] Found similar company, linking:', bestMatch.name);
+
+                match.companyId = bestMatch.id;
+                await supabase
+                  .from('meeting_transcriptions')
+                  .update({ company_id: bestMatch.id })
+                  .eq('id', saved.id);
+              }
+
               // Store extracted data in metadata for later use
               await supabase
                 .from('meeting_transcriptions')
@@ -321,43 +340,53 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
                 })
                 .eq('id', saved.id);
 
-              // Create review task with extracted data and similar company suggestions
-              const taskId = await createEntityReviewTask(
-                saved.id,
-                transcript.title || 'Untitled Meeting',
-                extractedData,
-                match.aiMatchResult || null,
-                userId
-              );
+              // Create CC item directly for meeting follow-up
+              const { error: ccError } = await supabase
+                .from('command_center_items')
+                .insert({
+                  user_id: userId,
+                  company_id: match.companyId,
+                  title: `Review meeting: ${transcript.title || 'Untitled Meeting'}`,
+                  description: `Review transcript and follow up on discussed items. ${extractedData.deal?.notes || ''}`,
+                  action_type: 'meeting_follow_up',
+                  status: 'pending',
+                  momentum_score: 75,
+                  source: 'fireflies',
+                  source_id: saved.id,
+                  company_name: extractedData.company.name,
+                  why_now: 'New meeting transcript synced - needs review',
+                  estimated_minutes: 15,
+                });
 
-              if (taskId) {
-                reviewTasksCreated++;
-                console.log('[Fireflies Sync] Created review task with extracted data:', taskId);
+              if (ccError) {
+                console.error('[Fireflies Sync] Failed to create CC item:', ccError.message);
+              } else {
+                ccItemsCreated++;
+                console.log('[Fireflies Sync] Created CC item for transcript review');
               }
             } else {
-              // Couldn't extract enough data - create simple review task
-              console.log('[Fireflies Sync] Could not extract entity data, creating basic review task');
-              const fallbackResult: TranscriptMatchResult = match.aiMatchResult || {
-                companyId: null,
-                companyName: null,
-                dealId: null,
-                confidence: match.confidence,
-                reasoning: 'Could not extract sufficient entity data from transcript',
-                requiresHumanReview: true,
-                reviewReason: 'AI could not determine company or deal - manual review required',
-                extractedCompanyName: null,
-                extractedPersonNames: participants.map((p) => p.name),
-              };
+              // Couldn't extract enough data - create CC item anyway
+              console.log('[Fireflies Sync] Could not extract entity data, creating basic CC item');
 
-              const taskId = await createTranscriptReviewTask(
-                saved.id,
-                transcript.title || 'Untitled Meeting',
-                fallbackResult,
-                userId
-              );
+              const { error: ccError } = await supabase
+                .from('command_center_items')
+                .insert({
+                  user_id: userId,
+                  title: `Review transcript: ${transcript.title || 'Untitled Meeting'}`,
+                  description: 'Meeting transcript needs manual review to assign to company.',
+                  action_type: 'meeting_follow_up',
+                  status: 'pending',
+                  momentum_score: 60,
+                  source: 'fireflies',
+                  source_id: saved.id,
+                  why_now: 'New meeting transcript synced - needs company assignment',
+                  estimated_minutes: 10,
+                });
 
-              if (taskId) {
-                reviewTasksCreated++;
+              if (ccError) {
+                console.error('[Fireflies Sync] Failed to create CC item:', ccError.message);
+              } else {
+                ccItemsCreated++;
               }
             }
           } catch (extractError) {
@@ -367,19 +396,30 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
         } else if (match.aiMatchResult?.requiresHumanReview && saved) {
           // Matched but still needs review (e.g., low confidence match)
           try {
-            const taskId = await createTranscriptReviewTask(
-              saved.id,
-              transcript.title || 'Untitled Meeting',
-              match.aiMatchResult,
-              userId
-            );
+            const { error: ccError } = await supabase
+              .from('command_center_items')
+              .insert({
+                user_id: userId,
+                company_id: match.companyId,
+                title: `Review match: ${transcript.title || 'Untitled Meeting'}`,
+                description: `Meeting transcript matched with low confidence. ${match.aiMatchResult.reasoning}`,
+                action_type: 'meeting_follow_up',
+                status: 'pending',
+                momentum_score: 70,
+                source: 'fireflies',
+                source_id: saved.id,
+                why_now: match.aiMatchResult.reviewReason || 'Low confidence match - needs verification',
+                estimated_minutes: 10,
+              });
 
-            if (taskId) {
-              reviewTasksCreated++;
-              console.log('[Fireflies Sync] Created review task:', taskId);
+            if (ccError) {
+              console.error('[Fireflies Sync] Failed to create CC item:', ccError.message);
+            } else {
+              ccItemsCreated++;
+              console.log('[Fireflies Sync] Created CC item for review');
             }
           } catch (taskError) {
-            console.error('[Fireflies Sync] Failed to create review task:', taskError);
+            console.error('[Fireflies Sync] Failed to create review CC item:', taskError);
           }
         }
 
