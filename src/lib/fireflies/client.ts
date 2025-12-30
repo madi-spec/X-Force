@@ -130,16 +130,23 @@ export class FirefliesClient {
 
   /**
    * Get list of transcripts (without full content)
+   *
+   * By default, Fireflies API only returns meetings where you're the organizer.
+   * Setting mine=false returns ALL meetings in the workspace where you have access,
+   * including meetings where you were a participant but not the organizer.
    */
   async getTranscripts(options: {
     limit?: number;
     skip?: number;
+    includeParticipantMeetings?: boolean;
   } = {}): Promise<FirefliesTranscriptListItem[]> {
-    const { limit = 50, skip = 0 } = options;
+    const { limit = 50, skip = 0, includeParticipantMeetings = true } = options;
 
+    // When includeParticipantMeetings is true, we set mine=false to get all accessible meetings
+    // This includes meetings where the user was a participant but not the organizer
     const query = `
-      query Transcripts($limit: Int, $skip: Int) {
-        transcripts(limit: $limit, skip: $skip) {
+      query Transcripts($limit: Int, $skip: Int, $mine: Boolean) {
+        transcripts(limit: $limit, skip: $skip, mine: $mine) {
           id
           title
           date
@@ -150,9 +157,17 @@ export class FirefliesClient {
       }
     `;
 
+    const variables = {
+      limit,
+      skip,
+      mine: includeParticipantMeetings ? false : true,
+    };
+
+    console.log('[Fireflies API] Fetching transcripts with mine=' + variables.mine);
+
     const data = await this.query<{ transcripts: FirefliesTranscriptListItem[] }>(
       query,
-      { limit, skip }
+      variables
     );
 
     return data.transcripts || [];
