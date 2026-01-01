@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hasActiveConnection } from '@/lib/microsoft/auth';
-import { sendEmail } from '@/lib/microsoft/emailSync';
+import { sendEmail } from '@/lib/microsoft/sendEmail';
 import { AttentionFlagType } from '@/types/operatingLayer';
 import { addCommunicationNote, getActionDescription } from '@/lib/communications/addNote';
 import crypto from 'crypto';

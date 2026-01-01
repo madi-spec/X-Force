@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { syncEmails } from '@/lib/microsoft/emailSync';
+import { syncEmailsDirectToCommunications } from '@/lib/communicationHub';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
 import { hasActiveConnection } from '@/lib/microsoft/auth';
 
@@ -44,8 +44,9 @@ export async function POST() {
   }
 
   // Run sync operations in parallel
+  // Uses canonical sync that writes directly to communications table
   const [emailResult, calendarResult] = await Promise.all([
-    syncEmails(profile.id),
+    syncEmailsDirectToCommunications(profile.id),
     syncCalendarEvents(profile.id),
   ]);
 

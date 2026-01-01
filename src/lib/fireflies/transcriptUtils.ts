@@ -372,7 +372,14 @@ export async function createEntitiesFromTranscript(
 // ============================================
 
 /**
- * Find similar companies by name (fuzzy matching)
+ * Find similar companies by name (simple fuzzy matching)
+ *
+ * NOTE: This is an INTERNAL helper used ONLY for review task descriptions.
+ * For actual entity matching, use `intelligentEntityMatch` from
+ * '@/lib/intelligence/entityMatcher' which uses AI-powered disambiguation.
+ *
+ * This simple approach is intentionally kept for review task hints where
+ * we want to show potential duplicates to the user for manual review.
  */
 async function findSimilarCompanies(
   companyName: string,

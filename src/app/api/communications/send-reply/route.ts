@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendEmail } from '@/lib/microsoft/emailSync';
+import { sendEmail } from '@/lib/microsoft/sendEmail';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 import { getValidToken } from '@/lib/microsoft/auth';
 import { addCommunicationNote, getActionDescription } from '@/lib/communications/addNote';

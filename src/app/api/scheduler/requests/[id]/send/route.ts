@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { SchedulingService } from '@/lib/scheduler/schedulingService';
-import type { EmailType } from '@/lib/scheduler/emailGeneration';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { getDraftForSending, markDraftSent } from '@/lib/scheduler/draftService';
+import { sendEmail } from '@/lib/microsoft/sendEmail';
+import { SCHEDULING_STATUS, ACTION_TYPES, type SchedulingAttendee } from '@/lib/scheduler/types';
 
 /**
  * POST /api/scheduler/requests/[id]/send
  *
  * Sends the scheduling email for a request.
- * - Generates proposed meeting times based on preferences
- * - Creates AI-generated email content
- * - Sends via Microsoft Graph API
- * - Updates request state to 'awaiting_response'
- * - Logs the action to scheduling_actions table
  *
- * Body (optional):
- * - emailType: 'initial_outreach' | 'follow_up' | 'second_follow_up' | etc.
- * - customSubject: Override AI-generated subject
- * - customBody: Override AI-generated body
- * - preview: If true, returns email content without sending
+ * IMPORTANT: This endpoint uses the STORED DRAFT from the database.
+ * It NEVER regenerates the email content.
+ *
+ * The flow is:
+ * 1. User generates preview → draft saved to DB
+ * 2. User edits preview → edits saved to DB
+ * 3. User clicks send → THIS endpoint reads from DB and sends
+ *
+ * This ensures what the user previewed is exactly what gets sent.
  */
 export async function POST(
   request: NextRequest,
@@ -50,67 +51,150 @@ export async function POST(
       );
     }
 
-    // Parse request body
-    let body: {
-      emailType?: EmailType;
-      customSubject?: string;
-      customBody?: string;
-      preview?: boolean;
-    } = {};
+    // Get draft from database - NEVER regenerate
+    const draft = await getDraftForSending(id);
 
-    try {
-      body = await request.json();
-    } catch {
-      // Empty body is ok
-    }
-
-    const schedulingService = new SchedulingService();
-
-    // Preview mode - return email content without sending
-    if (body.preview) {
-      const result = await schedulingService.previewSchedulingEmail(
-        id,
-        body.emailType || 'initial_outreach'
-      );
-
-      if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 500 });
-      }
-
-      return NextResponse.json({
-        preview: true,
-        email: result.email,
-        proposedTimes: result.proposedTimes,
-      });
-    }
-
-    // Send the actual email
-    const result = await schedulingService.sendSchedulingEmail(id, userData.id, {
-      emailType: body.emailType,
-      customSubject: body.customSubject,
-      customBody: body.customBody,
-    });
-
-    if (!result.success) {
+    if (!draft) {
       return NextResponse.json(
         {
-          error: result.error,
-          email: result.email, // Include generated email for debugging
+          error: 'No pending draft found. Please preview the email first.',
+          hint: 'Use GET /api/scheduler/requests/[id]/preview to generate a draft',
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('[Send] Using stored draft:', {
+      subject: draft.subject,
+      bodyLength: draft.body.length,
+      proposedTimesCount: draft.proposedTimes.length,
+    });
+
+    // Get the scheduling request to find recipients
+    const adminSupabase = createAdminClient();
+    const { data: schedulingRequest, error: requestError } = await adminSupabase
+      .from('scheduling_requests')
+      .select(`
+        *,
+        attendees:scheduling_attendees(*)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (requestError || !schedulingRequest) {
+      return NextResponse.json(
+        { error: 'Scheduling request not found' },
+        { status: 404 }
+      );
+    }
+
+    // Get external attendees (recipients)
+    const externalAttendees = (schedulingRequest.attendees || []).filter(
+      (a: SchedulingAttendee) => a.side === 'external'
+    );
+
+    if (externalAttendees.length === 0) {
+      return NextResponse.json(
+        { error: 'No external attendees to send email to' },
+        { status: 400 }
+      );
+    }
+
+    const recipientEmails = externalAttendees.map((a: SchedulingAttendee) => a.email);
+
+    console.log('[Send] Sending to:', recipientEmails);
+
+    // Send email using the stored draft content - exactly as previewed
+    const sendResult = await sendEmail(
+      userData.id,
+      recipientEmails,
+      draft.subject,
+      draft.body,
+      undefined, // cc
+      false // isHtml
+    );
+
+    if (!sendResult.success) {
+      console.error('[Send] Email send failed:', sendResult.error);
+      return NextResponse.json(
+        {
+          error: `Failed to send email: ${sendResult.error}`,
+          email: { subject: draft.subject, body: draft.body },
         },
         { status: 500 }
       );
     }
 
+    console.log('[Send] Email sent successfully, isDraft:', sendResult.isDraft);
+    console.log('[Send] ConversationId (for thread matching):', sendResult.conversationId);
+
+    // Mark draft as sent
+    await markDraftSent(id);
+
+    // Extract proposed time strings for storage
+    const proposedTimeStrings = draft.proposedTimes.map((t) => t.display);
+    const proposedTimeUtc = draft.proposedTimes.map((t) => t.utc);
+
+    // Build update object with email_thread_id if available
+    const updateData: Record<string, unknown> = {
+      status: SCHEDULING_STATUS.AWAITING_RESPONSE,
+      proposed_times: proposedTimeStrings,
+      last_action_at: new Date().toISOString(),
+      next_action_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+      next_action_type: 'follow_up',
+      attempt_count: (schedulingRequest.attempt_count || 0) + 1,
+    };
+
+    // CRITICAL: Capture email_thread_id for response matching
+    // This enables Strategy 1 (thread-based) matching in findMatchingSchedulingRequest
+    if (sendResult.conversationId) {
+      updateData.email_thread_id = sendResult.conversationId;
+      console.log('[Send] Setting email_thread_id:', sendResult.conversationId);
+    }
+
+    // Update scheduling request status
+    const { error: updateError } = await adminSupabase
+      .from('scheduling_requests')
+      .update(updateData)
+      .eq('id', id);
+
+    if (updateError) {
+      console.error('[Send] Failed to update request status:', updateError);
+      // Don't fail - email was already sent
+    }
+
+    // Log the action
+    const { error: logError } = await adminSupabase
+      .from('scheduling_actions')
+      .insert({
+        scheduling_request_id: id,
+        action_type: ACTION_TYPES.EMAIL_SENT,
+        message_subject: draft.subject,
+        message_content: draft.body,
+        times_proposed: proposedTimeStrings,
+        actor: 'user',
+        actor_id: userData.id,
+        ai_reasoning: `Sent initial outreach email with ${proposedTimeStrings.length} proposed times`,
+      });
+
+    if (logError) {
+      console.error('[Send] Failed to log action:', logError);
+      // Don't fail - email was already sent
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Scheduling email sent successfully',
-      email: result.email,
-      proposedTimes: result.proposedTimes,
+      message: sendResult.isDraft
+        ? 'Email saved as draft in Outlook (draft mode enabled)'
+        : 'Scheduling email sent successfully',
+      isDraft: sendResult.isDraft,
+      email: { subject: draft.subject, body: draft.body },
+      proposedTimes: proposedTimeStrings,
     });
   } catch (err) {
     console.error('Error in scheduler send endpoint:', err);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }
     );
   }
@@ -119,48 +203,18 @@ export async function POST(
 /**
  * GET /api/scheduler/requests/[id]/send
  *
- * Preview the email that would be sent (convenience endpoint).
- * Query params:
- * - type: EmailType (default: 'initial_outreach')
+ * DEPRECATED: Use GET /api/scheduler/requests/[id]/preview instead.
+ * This endpoint is kept for backwards compatibility.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params;
-    const supabase = await createClient();
+  const { id } = await params;
 
-    // Auth check
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  // Redirect to the new preview endpoint
+  const url = new URL(request.url);
+  const newUrl = url.href.replace('/send', '/preview');
 
-    const searchParams = request.nextUrl.searchParams;
-    const emailType = (searchParams.get('type') || 'initial_outreach') as EmailType;
-
-    const schedulingService = new SchedulingService();
-    const result = await schedulingService.previewSchedulingEmail(id, emailType);
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      preview: true,
-      emailType,
-      email: result.email,
-      proposedTimes: result.proposedTimes,
-    });
-  } catch (err) {
-    console.error('Error in scheduler preview endpoint:', err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
+  return NextResponse.redirect(newUrl);
 }

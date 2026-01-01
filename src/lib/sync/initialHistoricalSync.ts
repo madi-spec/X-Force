@@ -14,7 +14,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { syncAllFolderEmails } from '@/lib/microsoft/emailSync';
+import { syncEmailsDirectToCommunications } from '@/lib/communicationHub';
 import { syncCalendarEvents } from '@/lib/microsoft/calendarSync';
 // Migrated to context-first pipeline
 import {
@@ -106,9 +106,11 @@ async function syncAllEmails(
   sinceDate: Date,
   onProgress: (msg: string) => void
 ): Promise<{ imported: number; skipped: number; errors: string[] }> {
-  onProgress('Syncing emails from all folders...');
+  onProgress('Syncing emails from all folders to communications...');
 
-  const result = await syncAllFolderEmails(userId, {
+  // Uses canonical sync that writes directly to communications table
+  // Analysis and matching are triggered automatically by the sync
+  const result = await syncEmailsDirectToCommunications(userId, {
     sinceDate,
     maxMessages: 500, // Generous limit for initial sync
   });

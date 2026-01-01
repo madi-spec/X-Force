@@ -1,8 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { syncRecentEmails } from '@/lib/microsoft/emailSync';
+import { syncRecentEmailsDirectToCommunications } from '@/lib/communicationHub';
 import { processSchedulingResponse, findMatchingSchedulingRequest } from '@/lib/scheduler/responseProcessor';
 import { getValidToken } from '@/lib/microsoft/auth';
+
+// Rate limit window: Only one AI response per request per 5 minutes
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * Check if an email sender is internal (our own team)
+ * This prevents reply loops where we respond to our own emails
+ */
+async function checkIfInternalSender(
+  supabase: ReturnType<typeof createAdminClient>,
+  senderEmail: string,
+  userId: string
+): Promise<boolean> {
+  if (!senderEmail) return false;
+
+  const senderLower = senderEmail.toLowerCase();
+
+  // Method 1: Check if sender is a user in our system
+  const { data: user } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', senderLower)
+    .maybeSingle();
+
+  if (user) {
+    console.log('[MS Webhook] Internal sender check: Sender is a registered user');
+    return true;
+  }
+
+  // Method 2: Check if sender's domain matches the current user's domain
+  const { data: currentUser } = await supabase
+    .from('users')
+    .select('email')
+    .eq('id', userId)
+    .single();
+
+  if (currentUser?.email) {
+    const currentUserDomain = currentUser.email.split('@')[1]?.toLowerCase();
+    const senderDomain = senderLower.split('@')[1]?.toLowerCase();
+
+    if (currentUserDomain && senderDomain && currentUserDomain === senderDomain) {
+      console.log('[MS Webhook] Internal sender check: Sender domain matches user domain:', senderDomain);
+      return true;
+    }
+  }
+
+  // Method 3: Check if sender is an internal attendee on any scheduling request
+  const { data: internalAttendee } = await supabase
+    .from('scheduling_attendees')
+    .select('id')
+    .eq('email', senderLower)
+    .eq('side', 'internal')
+    .limit(1)
+    .maybeSingle();
+
+  if (internalAttendee) {
+    console.log('[MS Webhook] Internal sender check: Sender is marked as internal attendee');
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Microsoft Graph Webhook Receiver
@@ -98,10 +160,10 @@ export async function POST(request: NextRequest) {
       console.log(`[MS Webhook] Processing notification for user ${userId}`);
 
       try {
-        // Try to sync emails to database (may fail due to constraints, that's OK)
+        // Try to sync emails to communications table (may fail due to constraints, that's OK)
         let emailsSynced = 0;
         try {
-          const syncResult = await syncRecentEmails(userId, 5);
+          const syncResult = await syncRecentEmailsDirectToCommunications(userId, 5);
           emailsSynced = syncResult.imported;
           console.log(`[MS Webhook] Synced ${emailsSynced} emails for user ${userId}`);
         } catch (syncErr) {
@@ -130,11 +192,10 @@ export async function POST(request: NextRequest) {
                 console.log('[MS Webhook] First email from:', messages[0].from?.emailAddress?.address);
               }
 
-              // Process each message for scheduling (only process first matching, avoid duplicates)
-              let processedOneEmail = false;
-              for (const msg of messages) {
-                if (processedOneEmail) break; // Only process one email per webhook call
+              // Process emails with safeguards
+              console.log(`[MS Webhook] === Processing ${messages.length} emails with safeguards ===`);
 
+              for (const msg of messages) {
                 const email = {
                   id: msg.id,
                   subject: msg.subject || '',
@@ -148,52 +209,118 @@ export async function POST(request: NextRequest) {
                   conversationId: msg.conversationId,
                 };
 
-                console.log(`[MS Webhook] Checking email: "${email.subject}" from ${email.from.address}`);
+                console.log(`[MS Webhook] --- Checking email ---`);
+                console.log(`[MS Webhook]   Subject: "${email.subject}"`);
+                console.log(`[MS Webhook]   From: ${email.from.address}`);
+                console.log(`[MS Webhook]   Email ID: ${email.id}`);
+                console.log(`[MS Webhook]   Received: ${email.receivedDateTime}`);
+                console.log(`[MS Webhook]   ConversationId: ${email.conversationId}`);
+
+                // ============================================
+                // SAFEGUARD 1: Email Deduplication
+                // Skip if this exact email was already processed
+                // ============================================
+                const { data: existingProcessed } = await supabase
+                  .from('scheduling_actions')
+                  .select('id')
+                  .eq('email_id', email.id)
+                  .in('action_type', ['email_received', 'webhook_processing'])
+                  .maybeSingle();
+
+                if (existingProcessed) {
+                  console.log(`[MS Webhook]   ✗ SKIP: Email already processed (dedup), action ID: ${existingProcessed.id}`);
+                  continue;
+                }
+                console.log(`[MS Webhook]   ✓ Dedup check passed - email not yet processed`);
+
+                // ============================================
+                // SAFEGUARD 2: Internal Sender Check
+                // Skip emails from our own domain/team
+                // ============================================
+                const isInternal = await checkIfInternalSender(supabase, email.from.address, userId);
+
+                if (isInternal) {
+                  console.log(`[MS Webhook]   ✗ SKIP: Email from internal sender: ${email.from.address}`);
+                  continue;
+                }
+                console.log(`[MS Webhook]   ✓ Sender check passed - external sender`);
+
+                // ============================================
+                // Find matching scheduling request
+                // ============================================
                 const matchingRequest = await findMatchingSchedulingRequest(email);
                 if (!matchingRequest) {
-                  console.log(`[MS Webhook] No matching scheduling request found for this email`);
-                } else {
-                  console.log(`[MS Webhook] Found matching scheduling request: ${matchingRequest.id}, status: ${matchingRequest.status}`);
+                  console.log(`[MS Webhook]   Result: No matching scheduling request`);
+                  continue;
+                }
 
-                  // Check if already processed (using email_id OR if request status changed recently)
-                  const { data: existingAction } = await supabase
-                    .from('scheduling_actions')
-                    .select('id')
-                    .eq('scheduling_request_id', matchingRequest.id)
-                    .eq('email_id', email.id)
-                    .single();
+                console.log(`[MS Webhook]   Result: MATCHED request ${matchingRequest.id}`);
+                console.log(`[MS Webhook]   Request status: ${matchingRequest.status}`);
+                console.log(`[MS Webhook]   Request title: ${matchingRequest.title}`);
 
-                  if (existingAction) {
-                    console.log(`[MS Webhook] Email already processed, skipping`);
-                  } else {
-                    // Use INSERT as atomic lock - first webhook to insert wins
-                    // Try to insert a "processing" placeholder action
-                    const { error: lockError } = await supabase
-                      .from('scheduling_actions')
-                      .insert({
-                        scheduling_request_id: matchingRequest.id,
-                        email_id: email.id,
-                        action_type: 'webhook_processing',
-                        actor: 'system',
-                        message_content: 'Processing started',
-                      });
+                // ============================================
+                // SAFEGUARD 3: Rate Limiting
+                // Only one AI response per request per 5-minute window
+                // ============================================
+                const rateLimitCutoff = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
 
-                    if (lockError) {
-                      // Insert failed - likely duplicate, another webhook is processing
-                      console.log(`[MS Webhook] Could not acquire lock (insert failed), skipping: ${lockError.message}`);
-                    } else {
-                      console.log(`[MS Webhook] Acquired lock, processing email for request ${matchingRequest.id}`);
+                const { data: recentAIResponse } = await supabase
+                  .from('scheduling_actions')
+                  .select('id, created_at')
+                  .eq('scheduling_request_id', matchingRequest.id)
+                  .eq('action_type', 'email_sent')
+                  .eq('actor', 'ai')
+                  .gte('created_at', rateLimitCutoff)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
 
-                      const result = await processSchedulingResponse(email, matchingRequest);
-                      if (result.processed) {
-                        schedulingMatched++;
-                        processedOneEmail = true;
-                        console.log(`[MS Webhook] Processed scheduling response: ${result.action}`);
-                      }
-                    }
-                  }
+                if (recentAIResponse) {
+                  const waitUntil = new Date(new Date(recentAIResponse.created_at).getTime() + RATE_LIMIT_WINDOW_MS);
+                  console.log(`[MS Webhook]   ✗ SKIP: Rate limited - AI responded at: ${recentAIResponse.created_at}`);
+                  console.log(`[MS Webhook]   Wait until: ${waitUntil.toISOString()}`);
+                  continue;
+                }
+                console.log(`[MS Webhook]   ✓ Rate limit check passed - no recent AI response`);
+
+                // ============================================
+                // All safeguards passed - acquire lock and process
+                // ============================================
+                console.log(`[MS Webhook]   ✓ All safeguards passed - processing email`);
+
+                // Use INSERT as atomic lock - first webhook to insert wins
+                const { error: lockError } = await supabase
+                  .from('scheduling_actions')
+                  .insert({
+                    scheduling_request_id: matchingRequest.id,
+                    email_id: email.id,
+                    action_type: 'email_received',
+                    actor: 'prospect',
+                    message_subject: email.subject,
+                    message_content: email.bodyPreview || email.body?.substring(0, 500),
+                  });
+
+                if (lockError) {
+                  console.log(`[MS Webhook]   Lock failed (concurrent processing): ${lockError.message}`);
+                  continue;
+                }
+
+                console.log(`[MS Webhook]   Lock acquired, calling processSchedulingResponse...`);
+
+                const result = await processSchedulingResponse(email, matchingRequest);
+                console.log(`[MS Webhook]   Processing result:`, {
+                  processed: result.processed,
+                  action: result.action,
+                  newStatus: result.newStatus,
+                  error: result.error
+                });
+
+                if (result.processed) {
+                  schedulingMatched++;
                 }
               }
+
+              console.log(`[MS Webhook] === Email processing complete. Matched: ${schedulingMatched} ===`);
             }
           }
         } catch (schedErr) {
