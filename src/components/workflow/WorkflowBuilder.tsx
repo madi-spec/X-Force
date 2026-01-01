@@ -145,6 +145,7 @@ function WorkflowBuilderContent({ productName, productSlug }: { productName: str
         color: item.color || category.color,
         position: { x, y },
         config: {},
+        entityCount: item.companyCount,
       };
 
       addNode(newNode);

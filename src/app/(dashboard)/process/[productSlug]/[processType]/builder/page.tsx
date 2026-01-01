@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { WorkflowBuilder } from '@/components/workflow';
 import { ProcessType } from '@/lib/workflow';
+import { hydrateWorkflowFromStages } from '@/lib/workflow/hydrate';
 
 interface BuilderPageProps {
   params: Promise<{
@@ -67,7 +68,7 @@ export default async function WorkflowBuilderPage({ params }: BuilderPageProps) 
     .single();
 
   // Transform nodes to match our interface
-  const transformedWorkflow = workflow ? {
+  let transformedWorkflow = workflow ? {
     id: workflow.id,
     name: workflow.name,
     status: workflow.status as 'draft' | 'active' | 'archived',
@@ -92,6 +93,42 @@ export default async function WorkflowBuilderPage({ params }: BuilderPageProps) 
       style: (c.style || 'solid') as 'solid' | 'dashed',
     })),
   } : undefined;
+
+  // If no workflow exists, try to hydrate from existing stages
+  if (!transformedWorkflow) {
+    const hydratedWorkflow = await hydrateWorkflowFromStages(
+      product.id,
+      processType as ProcessType
+    );
+
+    if (hydratedWorkflow) {
+      transformedWorkflow = {
+        id: hydratedWorkflow.id as unknown as string, // Will be null, handled by context
+        name: hydratedWorkflow.name,
+        status: hydratedWorkflow.status,
+        nodes: hydratedWorkflow.nodes.map(n => ({
+          id: n.id,
+          type: n.type,
+          itemId: n.itemId,
+          label: n.label,
+          icon: n.icon || '📋',
+          color: n.color || '#3b82f6',
+          position: n.position,
+          config: n.config || {},
+        })),
+        connections: hydratedWorkflow.connections.map(c => ({
+          id: c.id,
+          fromNodeId: c.fromNodeId,
+          fromPort: c.fromPort,
+          toNodeId: c.toNodeId,
+          toPort: c.toPort,
+          label: c.label,
+          color: c.color,
+          style: c.style as 'solid' | 'dashed',
+        })),
+      };
+    }
+  }
 
   return (
     <WorkflowBuilder

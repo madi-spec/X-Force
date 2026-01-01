@@ -3,10 +3,22 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { ProcessType, WorkflowNode, WorkflowConnection, CanvasState, PROCESS_TYPE_CONFIG, ProcessTypeConfig } from './types';
 
+interface PublishResult {
+  success: boolean;
+  stageCount?: number;
+  created?: number;
+  updated?: number;
+  message?: string;
+  error?: string;
+  stagesWithCompanies?: Array<{ name: string; count: number }>;
+}
+
 interface WorkflowContextType {
   // Process type info
   processType: ProcessType;
   processConfig: ProcessTypeConfig;
+  productId: string;
+  productSlug: string;
 
   // Workflow state
   workflowId: string | null;
@@ -38,6 +50,12 @@ interface WorkflowContextType {
   isSaving: boolean;
   lastSaved: Date | null;
   saveWorkflow: () => Promise<void>;
+
+  // Publishing
+  isPublishing: boolean;
+  lastPublished: Date | null;
+  publishWorkflow: () => Promise<PublishResult>;
+  canPublish: boolean;
 
   // Computed
   selectedNode: WorkflowNode | null;
@@ -84,6 +102,10 @@ export function WorkflowProvider({ children, processType, productId, productSlug
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Publishing state
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [lastPublished, setLastPublished] = useState<Date | null>(null);
 
   // Node actions
   const addNode = useCallback((node: WorkflowNode) => {
@@ -153,7 +175,7 @@ export function WorkflowProvider({ children, processType, productId, productSlug
 
   // Canvas actions
   const setZoom = useCallback((zoom: number) => {
-    setCanvasState(prev => ({ ...prev, zoom: Math.max(0.5, Math.min(2, zoom)) }));
+    setCanvasState(prev => ({ ...prev, zoom: Math.max(0.25, Math.min(3, zoom)) }));
   }, []);
 
   const setPan = useCallback((pan: { x: number; y: number }) => {
@@ -195,6 +217,55 @@ export function WorkflowProvider({ children, processType, productId, productSlug
     }
   }, [productSlug, processType, workflowId, workflowName, nodes, connections]);
 
+  // Publish workflow
+  const publishWorkflow = useCallback(async (): Promise<PublishResult> => {
+    // First save any unsaved changes
+    if (hasUnsavedChanges) {
+      await saveWorkflow();
+    }
+
+    setIsPublishing(true);
+    try {
+      const response = await fetch(`/api/process/${productSlug}/${processType}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error,
+          stagesWithCompanies: data.stagesWithCompanies,
+        };
+      }
+
+      setWorkflowStatus('active');
+      setLastPublished(new Date());
+
+      return {
+        success: true,
+        stageCount: data.stageCount,
+        created: data.created,
+        updated: data.updated,
+        message: data.message,
+      };
+    } catch (error) {
+      console.error('Failed to publish workflow:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to publish workflow',
+      };
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [productSlug, processType, hasUnsavedChanges, saveWorkflow]);
+
+  // Computed: can publish if we have stages and a saved workflow
+  const stageCount = nodes.filter(n => n.type === 'stage').length;
+  const canPublish = !hasUnsavedChanges && !isSaving && !isPublishing && stageCount > 0 && workflowId !== null;
+
   // Computed values
   const selectedNode = canvasState.selectedNodeId
     ? nodes.find(n => n.id === canvasState.selectedNodeId) || null
@@ -207,6 +278,8 @@ export function WorkflowProvider({ children, processType, productId, productSlug
   const value: WorkflowContextType = {
     processType,
     processConfig,
+    productId,
+    productSlug,
     workflowId,
     workflowName,
     workflowStatus,
@@ -228,6 +301,10 @@ export function WorkflowProvider({ children, processType, productId, productSlug
     isSaving,
     lastSaved,
     saveWorkflow,
+    isPublishing,
+    lastPublished,
+    publishWorkflow,
+    canPublish,
     selectedNode,
     entityCount,
   };

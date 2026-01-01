@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useWorkflow, NODE_CATEGORIES, getNodesForProcessType, NodeType, NodeItem } from '@/lib/workflow';
-import { ChevronDown, ChevronRight, Plus, Sparkles } from 'lucide-react';
+import { useWorkflow, NODE_CATEGORIES, getNodesForProcessType, NodeType, NodeItem, useProductStages } from '@/lib/workflow';
+import { ChevronDown, ChevronRight, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CustomNodeModal, CustomNodeTemplate } from './CustomNodeModal';
 import { AIPipelineAssistant } from './AIPipelineAssistant';
@@ -12,9 +12,10 @@ interface ToolboxCategoryProps {
   items: NodeItem[];
   isExpanded: boolean;
   onToggle: () => void;
+  isLoading?: boolean;
 }
 
-function ToolboxCategory({ type, items, isExpanded, onToggle }: ToolboxCategoryProps) {
+function ToolboxCategory({ type, items, isExpanded, onToggle, isLoading }: ToolboxCategoryProps) {
   const category = NODE_CATEGORIES[type];
 
   const handleDragStart = (e: React.DragEvent, item: NodeItem) => {
@@ -52,7 +53,17 @@ function ToolboxCategory({ type, items, isExpanded, onToggle }: ToolboxCategoryP
       {/* Items */}
       {isExpanded && (
         <div className="px-2 pb-2 space-y-1">
-          {items.map((item) => (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4 text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              <span className="text-xs">Loading stages...</span>
+            </div>
+          ) : items.length === 0 ? (
+            <div className="text-xs text-gray-400 text-center py-3">
+              No stages defined
+            </div>
+          ) : null}
+          {!isLoading && items.map((item) => (
             <div
               key={item.id}
               draggable
@@ -69,6 +80,11 @@ function ToolboxCategory({ type, items, isExpanded, onToggle }: ToolboxCategoryP
                 {item.icon}
               </span>
               <span className="flex-1 text-sm text-gray-700 truncate">{item.label}</span>
+              {item.companyCount !== undefined && item.companyCount > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-600 rounded flex-shrink-0">
+                  {item.companyCount}
+                </span>
+              )}
               {item.isCustom && (
                 <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-600 rounded flex-shrink-0">
                   Custom
@@ -83,8 +99,11 @@ function ToolboxCategory({ type, items, isExpanded, onToggle }: ToolboxCategoryP
 }
 
 export function WorkflowToolbox() {
-  const { processType } = useWorkflow();
+  const { processType, productId } = useWorkflow();
   const nodes = getNodesForProcessType(processType);
+
+  // Fetch dynamic stages from database
+  const { stages: dynamicStages, isLoading: stagesLoading } = useProductStages(productId, processType);
 
   // Track expanded categories (all expanded by default)
   const [expanded, setExpanded] = useState<Record<NodeType, boolean>>({
@@ -140,9 +159,14 @@ export function WorkflowToolbox() {
         />
         <ToolboxCategory
           type="stage"
-          items={[...nodes.stages, ...getCustomNodesForType('stage')]}
+          items={[
+            // Use dynamic stages from database if available, otherwise fall back to template stages
+            ...(dynamicStages.length > 0 ? dynamicStages : nodes.stages),
+            ...getCustomNodesForType('stage')
+          ]}
           isExpanded={expanded.stage}
           onToggle={() => toggleCategory('stage')}
+          isLoading={stagesLoading}
         />
         <ToolboxCategory
           type="condition"

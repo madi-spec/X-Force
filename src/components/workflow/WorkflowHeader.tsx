@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useWorkflow } from '@/lib/workflow';
-import { ArrowLeft, Play, Upload, Check, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, Play, Upload, Check, Loader2, Save, AlertTriangle, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface WorkflowHeaderProps {
@@ -11,6 +11,14 @@ interface WorkflowHeaderProps {
   productSlug: string;
   isTestMode: boolean;
   onTestModeToggle: () => void;
+}
+
+interface PublishModalState {
+  isOpen: boolean;
+  type: 'confirm' | 'success' | 'error';
+  message?: string;
+  stagesWithCompanies?: Array<{ name: string; count: number }>;
+  result?: { stageCount?: number; created?: number; updated?: number };
 }
 
 export function WorkflowHeader({ productName, productSlug, isTestMode, onTestModeToggle }: WorkflowHeaderProps) {
@@ -24,10 +32,17 @@ export function WorkflowHeader({ productName, productSlug, isTestMode, onTestMod
     isSaving,
     lastSaved,
     saveWorkflow,
+    isPublishing,
+    publishWorkflow,
+    canPublish,
+    nodes,
   } = useWorkflow();
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(workflowName);
+  const [publishModal, setPublishModal] = useState<PublishModalState>({ isOpen: false, type: 'confirm' });
+
+  const stageCount = nodes.filter(n => n.type === 'stage').length;
 
   const handleSave = useCallback(async () => {
     if (!hasUnsavedChanges || isSaving) return;
@@ -37,6 +52,44 @@ export function WorkflowHeader({ productName, productSlug, isTestMode, onTestMod
       console.error('Failed to save:', error);
     }
   }, [hasUnsavedChanges, isSaving, saveWorkflow]);
+
+  const handlePublishClick = useCallback(() => {
+    if (stageCount === 0) {
+      setPublishModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Add at least one stage before publishing.',
+      });
+      return;
+    }
+    setPublishModal({ isOpen: true, type: 'confirm' });
+  }, [stageCount]);
+
+  const handlePublishConfirm = useCallback(async () => {
+    const result = await publishWorkflow();
+    if (result.success) {
+      setPublishModal({
+        isOpen: true,
+        type: 'success',
+        result: {
+          stageCount: result.stageCount,
+          created: result.created,
+          updated: result.updated,
+        },
+      });
+    } else {
+      setPublishModal({
+        isOpen: true,
+        type: 'error',
+        message: result.error,
+        stagesWithCompanies: result.stagesWithCompanies,
+      });
+    }
+  }, [publishWorkflow]);
+
+  const closeModal = useCallback(() => {
+    setPublishModal({ isOpen: false, type: 'confirm' });
+  }, []);
 
   // Keyboard shortcut: Ctrl+S to save
   useEffect(() => {
@@ -182,13 +235,151 @@ export function WorkflowHeader({ productName, productSlug, isTestMode, onTestMod
 
         {/* Publish button */}
         <button
-          disabled
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-400 rounded-lg cursor-not-allowed"
+          onClick={handlePublishClick}
+          disabled={isPublishing || isSaving}
+          className={cn(
+            'flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+            isPublishing
+              ? 'bg-blue-400 text-white cursor-wait'
+              : hasUnsavedChanges
+                ? 'bg-amber-500 text-white hover:bg-amber-600'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+          )}
         >
-          <Upload className="w-4 h-4" />
-          Publish
+          {isPublishing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Upload className="w-4 h-4" />
+          )}
+          {isPublishing ? 'Publishing...' : hasUnsavedChanges ? 'Save & Publish' : 'Publish'}
         </button>
       </div>
+
+      {/* Publish Modal */}
+      {publishModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
+          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            {publishModal.type === 'confirm' && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Upload className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Publish Workflow</h3>
+                    <p className="text-sm text-gray-500">This will update your pipeline stages</p>
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <p className="text-sm text-gray-600 mb-3">
+                    You&apos;re about to publish <strong>{stageCount} stage{stageCount !== 1 ? 's' : ''}</strong> to the {processConfig.label.toLowerCase()}.
+                  </p>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <ul className="text-sm text-gray-600 space-y-1">
+                      {nodes.filter(n => n.type === 'stage').map((node, idx) => (
+                        <li key={node.id} className="flex items-center gap-2">
+                          <span className="text-gray-400">{idx + 1}.</span>
+                          <span>{node.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePublishConfirm}
+                    disabled={isPublishing}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400"
+                  >
+                    {isPublishing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Publishing...
+                      </>
+                    ) : (
+                      'Publish Now'
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {publishModal.type === 'success' && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Published Successfully</h3>
+                    <p className="text-sm text-gray-500">Your workflow is now live</p>
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <p className="text-sm text-green-800">
+                      {publishModal.result?.stageCount} stage{publishModal.result?.stageCount !== 1 ? 's' : ''} published
+                      {publishModal.result?.created ? ` (${publishModal.result.created} new)` : ''}
+                      {publishModal.result?.updated ? ` (${publishModal.result.updated} updated)` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeModal}
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Done
+                </button>
+              </>
+            )}
+
+            {publishModal.type === 'error' && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Cannot Publish</h3>
+                    <p className="text-sm text-gray-500">There was an issue with your workflow</p>
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <p className="text-sm text-gray-600 mb-3">{publishModal.message}</p>
+                  {publishModal.stagesWithCompanies && publishModal.stagesWithCompanies.length > 0 && (
+                    <div className="p-3 bg-red-50 rounded-lg">
+                      <p className="text-sm text-red-800 font-medium mb-2">Stages with companies:</p>
+                      <ul className="text-sm text-red-700 space-y-1">
+                        {publishModal.stagesWithCompanies.map((stage) => (
+                          <li key={stage.name}>
+                            • {stage.name} ({stage.count} {stage.count === 1 ? 'company' : 'companies'})
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-red-600 mt-2">
+                        Move companies to another stage before removing these stages.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={closeModal}
+                  className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -74,6 +74,7 @@ export interface NodeItem {
   description?: string;
   color?: string; // Override category color (for exits)
   isCustom?: boolean; // True for user-created custom nodes
+  companyCount?: number; // Number of companies in this stage (for dynamic stages)
 }
 
 // Canvas node instance

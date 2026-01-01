@@ -19,8 +19,12 @@ export function WorkflowCanvas({ children, onDrop, onDragOver }: WorkflowCanvasP
   // Handle zoom with scroll wheel
   const handleWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const newZoom = Math.max(0.5, Math.min(2, canvasState.zoom + delta));
+    // Use proportional zoom based on scroll amount for smoother zooming
+    // Clamp deltaY to prevent huge jumps from trackpad momentum
+    const clampedDelta = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 50);
+    // Smaller multiplier for gentler zoom (0.002 = ~10% zoom per 50px scroll)
+    const zoomDelta = -clampedDelta * 0.002 * canvasState.zoom;
+    const newZoom = Math.max(0.25, Math.min(3, canvasState.zoom + zoomDelta));
     setZoom(newZoom);
   }, [canvasState.zoom, setZoom]);
 
@@ -128,9 +132,9 @@ export function WorkflowCanvas({ children, onDrop, onDragOver }: WorkflowCanvasP
       {/* Zoom controls */}
       <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white rounded-lg shadow-md border border-gray-200 p-1">
         <button
-          onClick={() => setZoom(canvasState.zoom - 0.1)}
-          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-gray-600 font-medium"
-          disabled={canvasState.zoom <= 0.5}
+          onClick={() => setZoom(Math.max(0.25, canvasState.zoom - 0.1))}
+          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-gray-600 font-medium disabled:opacity-50"
+          disabled={canvasState.zoom <= 0.25}
         >
           −
         </button>
@@ -138,9 +142,9 @@ export function WorkflowCanvas({ children, onDrop, onDragOver }: WorkflowCanvasP
           {Math.round(canvasState.zoom * 100)}%
         </span>
         <button
-          onClick={() => setZoom(canvasState.zoom + 0.1)}
-          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-gray-600 font-medium"
-          disabled={canvasState.zoom >= 2}
+          onClick={() => setZoom(Math.min(3, canvasState.zoom + 0.1))}
+          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-gray-600 font-medium disabled:opacity-50"
+          disabled={canvasState.zoom >= 3}
         >
           +
         </button>
