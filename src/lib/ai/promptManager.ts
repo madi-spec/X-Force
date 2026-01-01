@@ -5,6 +5,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
+export type Provider = 'anthropic' | 'openai' | 'gemini';
+
 export interface AIPrompt {
   id: string;
   key: string;
@@ -19,12 +21,16 @@ export interface AIPrompt {
   created_at: string;
   updated_at: string;
   updated_by: string | null;
-  // New fields for model/token configuration
+  // Model/token configuration
   model: string;
   max_tokens: number;
   category: string | null;
   purpose: string | null;
   variables: string[] | null;
+  // Provider configuration
+  provider: Provider;
+  fallback_provider: Provider | null;
+  fallback_model: string | null;
 }
 
 // In-memory cache for prompts (refreshes every 5 minutes)
@@ -81,8 +87,24 @@ export async function getAllPrompts(): Promise<AIPrompt[]> {
 }
 
 /**
+ * Get default model for a provider
+ */
+export function getDefaultModelForProvider(provider: Provider): string {
+  switch (provider) {
+    case 'anthropic':
+      return 'claude-sonnet-4-20250514';
+    case 'openai':
+      return 'gpt-4o';
+    case 'gemini':
+      return 'gemini-1.5-pro';
+    default:
+      return 'claude-sonnet-4-20250514';
+  }
+}
+
+/**
  * Get prompt template with variables replaced
- * Returns the prompt, schema, model, and maxTokens for use with the AI client
+ * Returns the prompt, schema, model, maxTokens, provider, and fallback for use with the AI client
  */
 export async function getPromptWithVariables(
   key: string,
@@ -92,6 +114,11 @@ export async function getPromptWithVariables(
   schema: string | null;
   model: string;
   maxTokens: number;
+  provider: Provider;
+  fallback?: {
+    provider: Provider;
+    model: string;
+  };
 } | null> {
   const promptData = await getPrompt(key);
   if (!promptData) return null;
@@ -108,11 +135,20 @@ export async function getPromptWithVariables(
     }
   }
 
+  const provider = promptData.provider || 'anthropic';
+
   return {
     prompt,
     schema,
-    model: promptData.model || 'claude-sonnet-4-20250514',
+    model: promptData.model || getDefaultModelForProvider(provider),
     maxTokens: promptData.max_tokens || 4096,
+    provider,
+    fallback: promptData.fallback_provider
+      ? {
+          provider: promptData.fallback_provider,
+          model: promptData.fallback_model || getDefaultModelForProvider(promptData.fallback_provider),
+        }
+      : undefined,
   };
 }
 
@@ -126,6 +162,9 @@ export async function updatePrompt(
     schema_template?: string | null;
     model?: string;
     max_tokens?: number;
+    provider?: Provider;
+    fallback_provider?: Provider | null;
+    fallback_model?: string | null;
   },
   userId: string,
   changeReason?: string
@@ -143,13 +182,16 @@ export async function updatePrompt(
     return { success: false, error: 'Prompt not found' };
   }
 
-  // Save to history (including model/max_tokens for tracking)
+  // Save to history (including model/max_tokens/provider for tracking)
   await supabase.from('ai_prompt_history').insert({
     prompt_id: id,
     prompt_template: current.prompt_template,
     schema_template: current.schema_template,
     model: current.model,
     max_tokens: current.max_tokens,
+    provider: current.provider,
+    fallback_provider: current.fallback_provider,
+    fallback_model: current.fallback_model,
     version: current.version,
     changed_by: userId,
     change_reason: changeReason || 'Updated via settings',
@@ -171,6 +213,15 @@ export async function updatePrompt(
   }
   if (updates.max_tokens !== undefined) {
     updateData.max_tokens = updates.max_tokens;
+  }
+  if (updates.provider !== undefined) {
+    updateData.provider = updates.provider;
+  }
+  if (updates.fallback_provider !== undefined) {
+    updateData.fallback_provider = updates.fallback_provider;
+  }
+  if (updates.fallback_model !== undefined) {
+    updateData.fallback_model = updates.fallback_model;
   }
 
   // Update the prompt

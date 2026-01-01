@@ -1,26 +1,33 @@
-import Anthropic from '@anthropic-ai/sdk';
+/**
+ * AI Client
+ * Multi-provider AI client with fallback support
+ */
+
 import { getPrompt } from '@/lib/ai/promptManager';
-
-// Lazily initialize Anthropic client (to support scripts that load env after import)
-let _anthropic: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-  if (!_anthropic) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY environment variable is not set');
-    }
-    _anthropic = new Anthropic({ apiKey });
-  }
-  return _anthropic;
-}
+import {
+  callAnthropic,
+  streamAnthropic,
+  callOpenAI,
+  streamOpenAI,
+  callGemini,
+  streamGemini,
+  type Provider,
+  type ProviderRequest,
+  type ProviderResponse,
+  getDefaultModelForProvider,
+} from '@/lib/ai/providers';
 
 export interface AIRequest {
   prompt: string;
   systemPrompt?: string;
   maxTokens?: number;
   temperature?: number;
-  model?: 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307' | 'claude-opus-4-20250514';
+  model?: string;
+  provider?: Provider;
+  fallback?: {
+    provider: Provider;
+    model: string;
+  };
 }
 
 export interface AIResponse {
@@ -30,11 +37,13 @@ export interface AIResponse {
     outputTokens: number;
   };
   model: string;
+  provider: Provider;
   latencyMs: number;
+  usedFallback?: boolean;
 }
 
 export interface AIJsonRequest<T> extends AIRequest {
-  schema?: string; // Description of expected JSON structure
+  schema?: string;
 }
 
 // Fallback system prompt (used if DB fetch fails)
@@ -70,7 +79,6 @@ const SYSTEM_PROMPT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
  * Get the default system prompt from the database (with caching)
  */
 async function getDefaultSystemPrompt(): Promise<string> {
-  // Check cache
   if (cachedSystemPrompt && Date.now() - cachedSystemPrompt.fetchedAt < SYSTEM_PROMPT_CACHE_TTL) {
     return cachedSystemPrompt.prompt;
   }
@@ -92,34 +100,97 @@ async function getDefaultSystemPrompt(): Promise<string> {
 }
 
 /**
- * Core AI call function
+ * Call a specific provider
+ */
+async function callProvider(
+  provider: Provider,
+  request: ProviderRequest
+): Promise<ProviderResponse> {
+  console.log(`[AI] Calling ${provider} with model ${request.model}`);
+
+  switch (provider) {
+    case 'anthropic':
+      return callAnthropic(request);
+    case 'openai':
+      return callOpenAI(request);
+    case 'gemini':
+      return callGemini(request);
+    default:
+      throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
+/**
+ * Stream from a specific provider
+ */
+async function streamProvider(
+  provider: Provider,
+  request: ProviderRequest,
+  onChunk: (chunk: string) => void
+): Promise<ProviderResponse> {
+  console.log(`[AI] Streaming from ${provider} with model ${request.model}`);
+
+  switch (provider) {
+    case 'anthropic':
+      return streamAnthropic(request, onChunk);
+    case 'openai':
+      return streamOpenAI(request, onChunk);
+    case 'gemini':
+      return streamGemini(request, onChunk);
+    default:
+      throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
+/**
+ * Core AI call function - supports multiple providers with fallback
  */
 export async function callAI(request: AIRequest): Promise<AIResponse> {
-  const startTime = Date.now();
-
-  const model = request.model || 'claude-sonnet-4-20250514';
+  const provider = request.provider || 'anthropic';
+  const model = request.model || getDefaultModelForProvider(provider);
   const systemPrompt = request.systemPrompt || await getDefaultSystemPrompt();
+  const maxTokens = request.maxTokens || 4000;
 
-  const response = await getAnthropicClient().messages.create({
+  const providerRequest: ProviderRequest = {
+    prompt: request.prompt,
+    systemPrompt,
     model,
-    max_tokens: request.maxTokens || 4000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: request.prompt }],
-    ...(request.temperature !== undefined && { temperature: request.temperature }),
-  });
-
-  const textContent = response.content.find((c) => c.type === 'text');
-  const latencyMs = Date.now() - startTime;
-
-  return {
-    content: textContent?.text || '',
-    usage: {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    },
-    model,
-    latencyMs,
+    maxTokens,
+    temperature: request.temperature,
   };
+
+  try {
+    const response = await callProvider(provider, providerRequest);
+    return {
+      ...response,
+      usedFallback: false,
+    };
+  } catch (error) {
+    console.error(`[AI] ${provider} failed:`, error);
+
+    // Try fallback if configured
+    if (request.fallback) {
+      console.log(`[AI] Trying fallback: ${request.fallback.provider}/${request.fallback.model}`);
+
+      try {
+        const fallbackRequest: ProviderRequest = {
+          ...providerRequest,
+          model: request.fallback.model,
+        };
+
+        const fallbackResponse = await callProvider(request.fallback.provider, fallbackRequest);
+        return {
+          ...fallbackResponse,
+          usedFallback: true,
+        };
+      } catch (fallbackError) {
+        console.error(`[AI] Fallback also failed:`, fallbackError);
+        throw fallbackError;
+      }
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -129,6 +200,8 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
   data: T;
   usage: AIResponse['usage'];
   latencyMs: number;
+  provider: Provider;
+  usedFallback?: boolean;
 }> {
   const enhancedPrompt = request.schema
     ? `${request.prompt}\n\nRespond with valid JSON matching this structure:\n${request.schema}`
@@ -153,9 +226,7 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
   jsonContent = jsonContent.trim();
 
   // Try to extract just the first JSON object if there's extra text after it
-  // This handles cases where the AI adds explanation text after the JSON
   const extractFirstJson = (text: string): string => {
-    // Find the first { and track brace depth to find the matching }
     const start = text.indexOf('{');
     if (start === -1) return text;
 
@@ -192,7 +263,7 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
       }
     }
 
-    return text; // Return original if no complete JSON found
+    return text;
   };
 
   try {
@@ -201,6 +272,8 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
       data,
       usage: response.usage,
       latencyMs: response.latencyMs,
+      provider: response.provider,
+      usedFallback: response.usedFallback,
     };
   } catch (error) {
     // Try extracting just the first JSON object
@@ -212,6 +285,8 @@ export async function callAIJson<T>(request: AIJsonRequest<T>): Promise<{
         data,
         usage: response.usage,
         latencyMs: response.latencyMs,
+        provider: response.provider,
+        usedFallback: response.usedFallback,
       };
     } catch {
       console.error('Failed to parse AI JSON response:', jsonContent);
@@ -227,52 +302,69 @@ export async function callAIStream(
   request: AIRequest,
   onChunk: (chunk: string) => void
 ): Promise<AIResponse> {
-  const startTime = Date.now();
-  const model = request.model || 'claude-sonnet-4-20250514';
+  const provider = request.provider || 'anthropic';
+  const model = request.model || getDefaultModelForProvider(provider);
   const systemPrompt = request.systemPrompt || await getDefaultSystemPrompt();
+  const maxTokens = request.maxTokens || 4000;
 
-  let fullContent = '';
-  let inputTokens = 0;
-  let outputTokens = 0;
-
-  const stream = getAnthropicClient().messages.stream({
+  const providerRequest: ProviderRequest = {
+    prompt: request.prompt,
+    systemPrompt,
     model,
-    max_tokens: request.maxTokens || 4000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: request.prompt }],
-  });
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      fullContent += event.delta.text;
-      onChunk(event.delta.text);
-    }
-    if (event.type === 'message_delta' && event.usage) {
-      outputTokens = event.usage.output_tokens;
-    }
-    if (event.type === 'message_start' && event.message.usage) {
-      inputTokens = event.message.usage.input_tokens;
-    }
-  }
-
-  return {
-    content: fullContent,
-    usage: {
-      inputTokens,
-      outputTokens,
-    },
-    model,
-    latencyMs: Date.now() - startTime,
+    maxTokens,
+    temperature: request.temperature,
   };
+
+  try {
+    const response = await streamProvider(provider, providerRequest, onChunk);
+    return {
+      ...response,
+      usedFallback: false,
+    };
+  } catch (error) {
+    console.error(`[AI] ${provider} streaming failed:`, error);
+
+    // Try fallback if configured
+    if (request.fallback) {
+      console.log(`[AI] Trying streaming fallback: ${request.fallback.provider}/${request.fallback.model}`);
+
+      try {
+        const fallbackRequest: ProviderRequest = {
+          ...providerRequest,
+          model: request.fallback.model,
+        };
+
+        const fallbackResponse = await streamProvider(request.fallback.provider, fallbackRequest, onChunk);
+        return {
+          ...fallbackResponse,
+          usedFallback: true,
+        };
+      } catch (fallbackError) {
+        console.error(`[AI] Streaming fallback also failed:`, fallbackError);
+        throw fallbackError;
+      }
+    }
+
+    throw error;
+  }
 }
 
 /**
- * Get a quick/cheap AI response (using Haiku)
+ * Get a quick/cheap AI response (using Haiku for Anthropic)
  */
 export async function callAIQuick(request: Omit<AIRequest, 'model'>): Promise<AIResponse> {
+  const provider = request.provider || 'anthropic';
+
+  // Use the fastest/cheapest model for each provider
+  const quickModels: Record<Provider, string> = {
+    anthropic: 'claude-3-haiku-20240307',
+    openai: 'gpt-4o-mini',
+    gemini: 'gemini-1.5-flash',
+  };
+
   return callAI({
     ...request,
-    model: 'claude-3-haiku-20240307',
+    model: quickModels[provider],
     maxTokens: request.maxTokens || 1000,
   });
 }
@@ -291,6 +383,7 @@ export async function logAIUsage(
     usage: AIResponse['usage'];
     latencyMs: number;
     model: string;
+    provider?: Provider;
     data?: any;
   }
 ): Promise<void> {
@@ -312,3 +405,6 @@ export async function logAIUsage(
     // Don't throw - logging failure shouldn't break the main flow
   }
 }
+
+// Re-export Provider type for convenience
+export type { Provider } from '@/lib/ai/providers';
