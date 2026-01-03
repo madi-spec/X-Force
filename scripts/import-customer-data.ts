@@ -267,7 +267,7 @@ async function importSummaryNoteCustomers() {
 
   // Read latest sheet from Summary Billing (the $0.032 one)
   const workbook = XLSX.readFile(path.join(DATA_DIR, 'Summary-Note-Billing.xlsx'));
-  const sheetNames = workbook.SheetNames.filter(s => !s.includes('EXCLUDED'));
+  const sheetNames = workbook.SheetNames.filter((s: string) => !s.includes('EXCLUDED'));
   const latestSheet = sheetNames[sheetNames.length - 1];
   console.log(`  Using sheet: ${latestSheet}`);
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[latestSheet], { defval: null });
