@@ -223,6 +223,7 @@ export async function POST(request: NextRequest) {
       outcome: null,
       outcome_notes: null,
       email_thread_id: null,
+      last_inbound_message_id: null,
       conversation_history: [] as never[],
       current_channel: 'email' as const,
       channel_progression: null,
