@@ -14,6 +14,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import { SALES_PLAYBOOK } from './salesPlaybook';
 // Accept either the new RelationshipContext or legacy context with formattedForAI/promptContext
 interface ReconciliationContext {
@@ -205,7 +206,7 @@ export async function reconcileActionsForContact(
 
   const prompt = buildReconciliationPrompt(newInteraction, existingOpenItems, relationshipContext);
 
-  const schema = `{
+  const fallbackSchema = `{
   "reasoning": "string",
   "existing_items": [
     {
@@ -231,9 +232,46 @@ export async function reconcileActionsForContact(
 }`;
 
   try {
+    // TODO: Create 'action_reconciliation' prompt in ai_prompts table via /settings/ai-prompts
+    // Try to load managed prompt first
+    const promptResult = await getPromptWithVariables('action_reconciliation', {
+      salesPlaybook: SALES_PLAYBOOK,
+      interactionType: newInteraction.type,
+      interactionDate: newInteraction.date.toISOString(),
+      interactionSummary: newInteraction.analysis.summary,
+      communicationType: newInteraction.analysis.communication_type || 'unknown',
+      salesStage: newInteraction.analysis.sales_stage || 'unknown',
+      requiredActions: JSON.stringify(newInteraction.analysis.required_actions || [], null, 2),
+      existingItems: existingOpenItems.map(item => `
+- ID: ${item.id}
+  Title: ${item.title}
+  Tier: ${item.tier}
+  Trigger: ${item.tier_trigger}
+  Created: ${item.created_at}
+  Why Now: ${item.why_now || 'N/A'}
+  Status: ${item.status}
+  Description: ${item.description || 'N/A'}
+`).join('\n') || 'No existing open items',
+      relationshipContext: relationshipContext.formattedForAI || relationshipContext.promptContext || 'No context available',
+      today: new Date().toISOString().split('T')[0],
+    });
+
+    if (promptResult?.prompt) {
+      const result = await callAIJson<ReconciliationResult>({
+        prompt: promptResult.prompt,
+        schema: promptResult.schema || fallbackSchema,
+        maxTokens: promptResult.maxTokens || 2500,
+        model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      });
+      console.log(`[Reconciliation] Result: ${result.data.summary}`);
+      return result.data;
+    }
+
+    // Fallback to hardcoded prompt if no managed prompt exists
+    console.warn('[Reconciliation] No managed prompt found for action_reconciliation, using fallback');
     const result = await callAIJson<ReconciliationResult>({
       prompt,
-      schema,
+      schema: fallbackSchema,
       maxTokens: 2500,
     });
 

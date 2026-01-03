@@ -1,6 +1,21 @@
 /**
  * IntentDetector - Step 1 of Response Analysis
  *
+ * @deprecated This module is DEPRECATED as of January 2026.
+ * Intent detection has been unified into responseProcessor.ts using
+ * the managed prompt 'scheduler_response_parsing' which combines
+ * intent detection + time extraction in a single AI call.
+ *
+ * The functions in this file are retained for backward compatibility
+ * but should NOT be used for new development.
+ *
+ * New code should use:
+ * - responseProcessor.ts: analyzeResponseWithPrompt()
+ * - Managed prompt key: 'scheduler_response_parsing'
+ *
+ * This file will be removed in a future version.
+ *
+ * OLD APPROACH (deprecated):
  * Determines WHAT the person wants to do, WITHOUT extracting specific times.
  * Time extraction is a separate step handled by TimeParser.
  *
@@ -109,6 +124,10 @@ const OUT_OF_OFFICE_INDICATORS = [
 /**
  * Detect the intent of a scheduling response
  * This ONLY determines intent - does NOT extract times
+ *
+ * @deprecated Use responseProcessor.analyzeResponseWithPrompt() instead,
+ * which combines intent detection with time extraction using the
+ * managed 'scheduler_response_parsing' prompt.
  */
 export async function detectIntent(
   emailBody: string,
@@ -312,6 +331,9 @@ export function requiresTimeExtraction(intent: SchedulingIntent): boolean {
 
 /**
  * Check if an intent should trigger human review
+ *
+ * @deprecated Escalation logic is now handled directly in responseProcessor.ts
+ * based on the unified response analysis from 'scheduler_response_parsing' prompt.
  */
 export function shouldEscalate(analysis: IntentAnalysis): boolean {
   return (

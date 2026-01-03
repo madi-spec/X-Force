@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson, logAIUsage } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import { createHash } from 'crypto';
 import type {
   AccountIntelligence,
@@ -618,18 +619,70 @@ export async function synthesizeIntelligence(
   const contextHash = generateContextHash(validSources);
   const sourceScores = calculateScores(validSources);
 
-  // Build and send prompt
-  const prompt = buildSynthesisPrompt({
+  // Build context text for the prompt
+  const fallbackPrompt = buildSynthesisPrompt({
     companyId,
     companyName,
     sources: validSources,
   });
 
-  const { data: synthesis, usage, latencyMs } = await callAIJson<EnhancedIntelligenceSynthesis>({
-    prompt,
-    maxTokens: 8000, // Increased for deep intelligence outputs
-    temperature: 0.3,
+  // Define fallback schema for JSON response
+  const fallbackSchema = `{
+    "executiveSummary": "string",
+    "painPoints": [{"pain": "string", "evidence": "string", "severity": "high|medium|low", "source": "string"}],
+    "opportunities": [{"opportunity": "string", "approach": "string", "confidence": "high|medium|low", "source": "string"}],
+    "talkingPoints": [{"topic": "string", "angle": "string", "source": "string", "useCase": "string"}],
+    "recommendedApproach": "string",
+    "scores": {"overall": 0-100, "website": 0-100, "social": 0-100, "review": 0-100, "industry": 0-100},
+    "confidence": 0-1,
+    "recommendations": [{"title": "string", "description": "string", "action": "string", "priority": 1-5, "confidence": "high|medium|low", "category": "string", "source": "string"}],
+    "connectionPoints": [{"type": "string", "point": "string", "context": "string", "useCase": "string", "source": "string"}],
+    "objectionPrep": [{"objection": "string", "likelihood": "high|medium|low", "response": "string", "evidence": "string", "source": "string"}],
+    "signalsTimeline": [{"date": "string", "type": "string", "title": "string", "description": "string", "sentiment": "string", "source": "string", "url": "string"}],
+    "competitiveIntel": {"currentProviders": [], "switchingSignals": [], "competitorMentions": []},
+    "companyProfile": {"sizeTier": "string", "employeeEstimate": null, "operationalMaturity": "string", "serviceModel": "string", "techAdoption": "string", "yearsInBusiness": null},
+    "reviewPainPoints": [],
+    "marketingProfile": {"maturityLevel": "string", "primaryChannels": [], "contentStrategy": "string", "digitalPresence": 0-100, "recommendation": "string"},
+    "visibleEmployees": [],
+    "productsServices": [],
+    "serviceAreas": [],
+    "certifications": []
+  }`;
+
+  let synthesis: EnhancedIntelligenceSynthesis;
+  let usage: { inputTokens: number; outputTokens: number };
+  let latencyMs: number;
+
+  // TODO: Create 'intelligence_synthesis' prompt in ai_prompts table via /settings/ai-prompts
+  // Variables: companyName, intelligenceContext (the full context text from sources)
+  const promptResult = await getPromptWithVariables('intelligence_synthesis', {
+    companyName,
+    intelligenceContext: fallbackPrompt, // Pass the full built context
   });
+
+  if (promptResult?.prompt) {
+    const result = await callAIJson<EnhancedIntelligenceSynthesis>({
+      prompt: promptResult.prompt,
+      schema: promptResult.schema || fallbackSchema,
+      maxTokens: promptResult.maxTokens || 8000,
+      temperature: 0.3,
+      model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+    });
+    synthesis = result.data;
+    usage = result.usage;
+    latencyMs = result.latencyMs;
+  } else {
+    // Fallback to hardcoded prompt if no managed prompt exists
+    console.warn('[IntelligenceSynthesis] No managed prompt found for intelligence_synthesis, using fallback');
+    const result = await callAIJson<EnhancedIntelligenceSynthesis>({
+      prompt: fallbackPrompt,
+      maxTokens: 8000,
+      temperature: 0.3,
+    });
+    synthesis = result.data;
+    usage = result.usage;
+    latencyMs = result.latencyMs;
+  }
 
   // Merge calculated scores with AI scores (prefer calculated for data quality)
   const finalScores = {

@@ -11,6 +11,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import {
   CommandCenterItem,
   SourceLink,
@@ -405,22 +406,58 @@ ${['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].in
 
 Be SPECIFIC. Use actual names, dates, and numbers. Generic advice is worthless.`;
 
-  const schema = `{
+  const includeEmail = ['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].includes(input.action_type);
+
+  const fallbackSchema = `{
   "why_now": "string or null - ONE specific sentence with real data, or null if no specific reason",
   "context_summary": "string - 2-3 sentence business case",
   "considerations": ["string array - 2-4 specific tactical points"],
-  ${['email_send_draft', 'email_compose', 'email_respond', 'meeting_follow_up'].includes(input.action_type) ? `
+  ${includeEmail ? `
   "email_subject": "string - specific subject",
   "email_body": "string - personalized email body"
   ` : ''}
 }`;
 
   try {
+    // TODO: Create 'context_enrichment' prompt in ai_prompts table via /settings/ai-prompts
+    // Try to load managed prompt first
+    const promptResult = await getPromptWithVariables('context_enrichment', {
+      actionType: input.action_type,
+      title: input.title,
+      targetName: input.target_name || 'Unknown',
+      companyName: input.company_name || 'Unknown',
+      dealSnapshot: input.deal ? JSON.stringify(input.deal) : 'No deal linked',
+      weightedValue: Math.round(weightedValue).toLocaleString(),
+      daysSinceResponse: daysSinceResponse?.toString() || 'N/A',
+      recentEmails: input.recent_emails?.slice(0, 3).map(e =>
+        `[${e.direction.toUpperCase()}] ${new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: "${e.subject}" - "${e.snippet}"`
+      ).join('\n') || 'No email history',
+      transcriptContext: transcriptContext || 'No transcripts available',
+      engagementContext: engagementContext || 'No engagement signals',
+      recentActivities: input.recent_activities?.slice(0, 3).map(a =>
+        `${new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${a.type} - ${a.subject}`
+      ).join('\n') || 'No recent activities',
+      includeEmail: includeEmail ? 'true' : 'false',
+    });
+
+    if (promptResult?.prompt) {
+      const result = await callAIJson<AIEnrichmentOutput>({
+        prompt: promptResult.prompt,
+        schema: promptResult.schema || fallbackSchema,
+        maxTokens: promptResult.maxTokens || 1200,
+        temperature: 0.5,
+        model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      });
+      return result.data;
+    }
+
+    // Fallback to hardcoded prompt if no managed prompt exists
+    console.warn('[ContextEnrichment] No managed prompt found for context_enrichment, using fallback');
     const result = await callAIJson<AIEnrichmentOutput>({
       prompt,
-      schema,
+      schema: fallbackSchema,
       maxTokens: 1200,
-      temperature: 0.5,  // Lower temperature for more factual output
+      temperature: 0.5,
       model: 'claude-3-haiku-20240307',
     });
 

@@ -7,15 +7,35 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
-  parseSchedulingResponse,
   generateSchedulingEmail,
   formatTimeSlotsForEmail,
-  ParsedSchedulingResponse,
 } from './emailGeneration';
 import { adminSchedulingService } from './schedulingService';
+// ============================================
+// MODULAR IMPORTS
+// Note: detectIntent, shouldEscalate, extractTimesFromText now handled by
+// unified analyzeSchedulingResponse() using managed prompts
+// ============================================
+// import {
+//   detectIntent,
+//   shouldEscalate,
+//   type IntentAnalysis,
+// } from './processors/IntentDetector';
+import {
+  parseTime,
+  extractTimesFromText, // Still used in handleTimeAccepted fallback
+  matchToProposedTime,
+  type TimeParseContext,
+  type ParsedTime,
+} from './core/TimeParser';
+import {
+  escalateToHumanReview,
+  buildEscalationFromIntent,
+} from './processors/Escalation';
 import { sendEmail } from '@/lib/microsoft/emailSync';
 import { createMeetingCalendarEvent, getMultiAttendeeAvailability } from './calendarIntegration';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import {
   SchedulingRequest,
   SchedulingAttendee,
@@ -85,6 +105,121 @@ interface ResponseAnalysis {
   isConfused?: boolean;
   confusionReason?: string;
   validationErrors?: string[];
+}
+
+// ============================================
+// UNIFIED RESPONSE ANALYSIS (Managed Prompt)
+// ============================================
+
+/**
+ * Analyze a scheduling email response using the managed prompt from the database.
+ * This replaces the fragmented detectIntent() + extractTimesFromText() approach.
+ *
+ * The prompt is editable at /settings/ai-prompts (key: scheduler_response_parsing)
+ */
+async function analyzeSchedulingResponse(
+  emailBody: string,
+  proposedTimes: Array<{ utc: string; display: string }> | string[] | null,
+  timezone: string,
+  correlationId?: string
+): Promise<{
+  intent: 'accept' | 'counter_propose' | 'decline' | 'question' | 'reschedule' | 'delegate' | 'confused' | 'unclear';
+  selectedTime?: string;
+  counterProposedTimes?: Array<{ description: string; isoTimestamp: string; displayText: string }>;
+  question?: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+}> {
+  const today = new Date();
+  const currentMonth = today.getMonth() + 1;
+  const currentYear = today.getFullYear();
+  const nextYear = currentYear + 1;
+
+  // Format today's date for context
+  const todayFormatted = today.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: timezone,
+  });
+
+  // Year guidance for December/January edge cases
+  let yearGuidance = '';
+  if (currentMonth === 12) {
+    yearGuidance = `CRITICAL: We are in December ${currentYear}. Any mention of January, February, or March means ${nextYear}. All dates must be in the FUTURE.`;
+  } else if (currentMonth === 1) {
+    yearGuidance = `We are in January ${currentYear}. All dates must be in the FUTURE from today.`;
+  } else if (currentMonth >= 10) {
+    yearGuidance = `Note: Today is in late ${currentYear}. If they mention January/February/March, use ${nextYear}.`;
+  }
+
+  // Format proposed times for the prompt
+  let proposedTimesFormatted = 'None provided';
+  if (proposedTimes && proposedTimes.length > 0) {
+    proposedTimesFormatted = proposedTimes
+      .map((t, i) => {
+        const display = typeof t === 'string' ? t : t.display;
+        return `${i + 1}. ${display}`;
+      })
+      .join('\n');
+  }
+
+  console.log(`[analyzeSchedulingResponse] Correlation: ${correlationId}`);
+  console.log(`[analyzeSchedulingResponse] Timezone: ${timezone}`);
+  console.log(`[analyzeSchedulingResponse] Email body length: ${emailBody.length}`);
+
+  try {
+    // Load the managed prompt from database
+    const promptResult = await getPromptWithVariables('scheduler_response_parsing', {
+      todayFormatted,
+      yearGuidance,
+      proposedTimes: proposedTimesFormatted,
+      emailBody,
+    });
+
+    if (!promptResult || !promptResult.prompt) {
+      console.error('[analyzeSchedulingResponse] Failed to load scheduler_response_parsing prompt from database');
+      throw new Error('Failed to load scheduler_response_parsing prompt');
+    }
+
+    console.log(`[analyzeSchedulingResponse] Loaded prompt, calling AI...`);
+
+    // Call AI with the managed prompt
+    const { data: response } = await callAIJson<{
+      intent: 'accept' | 'counter_propose' | 'decline' | 'question' | 'reschedule' | 'delegate' | 'confused' | 'unclear';
+      selectedTime?: string;
+      counterProposedTimes?: Array<{ description: string; isoTimestamp: string; displayText: string }>;
+      question?: string;
+      sentiment: 'positive' | 'neutral' | 'negative';
+      confidence: 'high' | 'medium' | 'low';
+      reasoning: string;
+    }>({
+      prompt: promptResult.prompt,
+      schema: promptResult.schema || undefined,
+      model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      maxTokens: promptResult.maxTokens || 1000,
+    });
+
+    console.log(`[analyzeSchedulingResponse] AI response:`, {
+      intent: response.intent,
+      confidence: response.confidence,
+      sentiment: response.sentiment,
+      counterProposedCount: response.counterProposedTimes?.length || 0,
+    });
+
+    return response;
+  } catch (err) {
+    console.error('[analyzeSchedulingResponse] Error:', err);
+    // Return unclear intent on error so it falls back to human review
+    return {
+      intent: 'unclear',
+      sentiment: 'neutral',
+      confidence: 'low',
+      reasoning: `Analysis failed: ${err}`,
+    };
+  }
 }
 
 // ============================================
@@ -360,14 +495,17 @@ export async function processSchedulingResponse(
   }
   console.log('[processResponse] ✓ Response delay OK - proceeding with AI parsing');
 
+  // Generate correlation ID for tracing through both steps
+  const correlationId = `proc_${schedulingRequest.id.slice(0, 8)}_${Date.now()}`;
+  console.log(`[processResponse:${correlationId}] Starting two-step analysis`);
+
   try {
-    // Parse the response using AI
-    // CRITICAL: Use the request's timezone when formatting times for the AI
-    // Otherwise, server timezone will be used which causes misinterpretation
     const userTimezone = schedulingRequest.timezone || DEFAULT_TIMEZONE;
-    const proposedTimesFormatted = (schedulingRequest.proposed_times || []).map((t, i) => {
-      const date = new Date(t);
-      return `Option ${i + 1}: ${date.toLocaleString('en-US', {
+
+    // Format proposed times for context
+    const proposedTimesContext = (schedulingRequest.proposed_times || []).map((t) => ({
+      utc: t,
+      display: new Date(t).toLocaleString('en-US', {
         weekday: 'long',
         month: 'long',
         day: 'numeric',
@@ -375,36 +513,81 @@ export async function processSchedulingResponse(
         minute: '2-digit',
         timeZone: userTimezone,
         timeZoneName: 'short',
-      })}`;
-    });
+      }),
+    }));
 
-    // Use the new parseSchedulingResponse with timezone awareness
-    // This returns TaggedTimestamps to prevent the "2pm becomes 6am" bug
-    const parsedResponse = await parseSchedulingResponse(
-      email.body || email.bodyPreview,
-      proposedTimesFormatted,
-      userTimezone // Pass the prospect's timezone for proper interpretation
+    // ============================================
+    // UNIFIED ANALYSIS: Intent + Time Extraction
+    // Uses managed prompt from database (scheduler_response_parsing)
+    // ============================================
+    console.log(`[processResponse:${correlationId}] Using unified analysis with managed prompt...`);
+    const unifiedAnalysis = await analyzeSchedulingResponse(
+      email.body || email.bodyPreview || '',
+      proposedTimesContext,
+      userTimezone,
+      correlationId
     );
 
-    // Convert to ResponseAnalysis format with tagged timestamps
-    const analysis: ResponseAnalysis = {
-      intent: parsedResponse.intent,
-      selectedTime: parsedResponse.selectedTime?.utc, // Use UTC for database storage
-      selectedTimeTagged: parsedResponse.selectedTime, // Keep full tagged timestamp for accurate handling
-      counterProposedTimes: parsedResponse.counterProposedTimes?.map(t => t.utc),
-      counterProposedTimesTagged: parsedResponse.counterProposedTimes,
-      question: parsedResponse.question,
-      sentiment: parsedResponse.sentiment,
-      reasoning: parsedResponse.reasoning,
-      isConfused: parsedResponse.isConfused,
-      confusionReason: parsedResponse.confusionReason,
-      validationErrors: parsedResponse.validationErrors,
-    };
+    console.log(`[processResponse:${correlationId}] Unified analysis complete:`, {
+      intent: unifiedAnalysis.intent,
+      confidence: unifiedAnalysis.confidence,
+      sentiment: unifiedAnalysis.sentiment,
+      counterProposedCount: unifiedAnalysis.counterProposedTimes?.length || 0,
+    });
 
-    // Log any validation errors for debugging
-    if (analysis.validationErrors && analysis.validationErrors.length > 0) {
-      console.warn('[processSchedulingResponse] Timestamp validation errors:', analysis.validationErrors);
+    // ============================================
+    // ESCALATION CHECK: Should this go to human?
+    // ============================================
+    if (unifiedAnalysis.confidence === 'low' || unifiedAnalysis.intent === 'unclear' || unifiedAnalysis.intent === 'confused') {
+      console.log(`[processResponse:${correlationId}] Low confidence or unclear intent, escalating to human review`);
+      const escalationCode = unifiedAnalysis.intent === 'confused'
+        ? 'confusion_detected' as const
+        : unifiedAnalysis.intent === 'unclear'
+          ? 'unclear_intent' as const
+          : 'low_confidence' as const;
+      const escalationReason = unifiedAnalysis.intent === 'confused'
+        ? 'Prospect appears confused'
+        : 'Low confidence in response analysis';
+
+      await escalateToHumanReview(schedulingRequest, {
+        reason: escalationReason,
+        code: escalationCode,
+        details: {
+          intent: unifiedAnalysis.intent,
+          confidence: unifiedAnalysis.confidence,
+          reasoning: unifiedAnalysis.reasoning,
+          emailPreview: (email.body || '').substring(0, 300),
+        },
+      }, correlationId);
+
+      // Log the action
+      await adminSchedulingService.logAction(schedulingRequest.id, {
+        action_type: ACTION_TYPES.EMAIL_RECEIVED,
+        email_id: email.id,
+        message_subject: email.subject,
+        message_content: email.body || email.bodyPreview,
+        actor: 'prospect',
+        ai_reasoning: `Escalated: ${escalationReason}`,
+      });
+
+      return {
+        processed: false,
+        schedulingRequestId: schedulingRequest.id,
+        action: 'escalated_to_human_review',
+        error: `Escalated: ${escalationReason}`,
+      };
     }
+
+    // Build analysis object (compatible with existing handlers)
+    // Times are already extracted by analyzeSchedulingResponse
+    const analysis: ResponseAnalysis = {
+      intent: unifiedAnalysis.intent as ResponseAnalysis['intent'],
+      selectedTime: unifiedAnalysis.selectedTime,
+      counterProposedTimes: unifiedAnalysis.counterProposedTimes?.map(t => t.isoTimestamp),
+      question: unifiedAnalysis.question,
+      sentiment: unifiedAnalysis.sentiment,
+      reasoning: unifiedAnalysis.reasoning,
+    };
 
     // Log the tagged timestamps for debugging
     if (analysis.selectedTimeTagged) {
@@ -549,14 +732,40 @@ async function handleTimeAccepted(
 ): Promise<ProcessingResult> {
   if (!analysis.selectedTime) {
     // They said yes but we couldn't parse which time
-    // Try to match based on their response
-    const selectedTime = matchSelectedTime(request.proposed_times || [], email.body);
+    // Try to match using TimeParser (single source of truth)
+    const userTimezone = request.timezone || DEFAULT_TIMEZONE;
+    const timeContext: TimeParseContext = {
+      timezone: userTimezone,
+      emailBody: email.body,
+      proposedTimes: (request.proposed_times || []).map((t) => ({
+        utc: t,
+        display: new Date(t).toLocaleString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZone: userTimezone,
+          timeZoneName: 'short',
+        }),
+      })),
+    };
 
-    if (!selectedTime) {
-      return await handleUnclearResponse(request, analysis, email);
+    const matchResult = matchToProposedTime(email.body, timeContext.proposedTimes || [], timeContext);
+
+    if (!matchResult?.utc) {
+      // Fall back to extracting from text
+      const extractResult = await extractTimesFromText(email.body, timeContext);
+      if (extractResult.success && extractResult.times.length > 0 && extractResult.times[0].utc) {
+        analysis.selectedTime = extractResult.times[0].utc.toISOString();
+        analysis.selectedTimeTagged = extractResult.times[0].tagged;
+      } else {
+        return await handleUnclearResponse(request, analysis, email);
+      }
+    } else {
+      analysis.selectedTime = matchResult.utc.toISOString();
+      analysis.selectedTimeTagged = matchResult.tagged;
     }
-
-    analysis.selectedTime = selectedTime;
   }
 
   // CRITICAL: Normalize the selected time using the user's timezone
@@ -749,26 +958,32 @@ async function handleCounterProposal(
     return await fallbackToHumanReview(request, analysis, 'Could not parse proposed time');
   }
 
-  // Parse the first proposed time using AI
+  // Parse the first proposed time using TimeParser (single source of truth)
   const timeDescription = proposedTimeDescriptions[0];
   const userTimezone = request.timezone || DEFAULT_TIMEZONE;
-  console.log('[counterProposal] Parsing proposed time with AI...');
+  console.log('[counterProposal] Parsing proposed time with TimeParser...');
   console.log('[counterProposal]   Time description:', timeDescription);
   console.log('[counterProposal]   Timezone:', userTimezone);
 
-  const parsedTime = await parseProposedDateTime(timeDescription, email.body, userTimezone);
-  console.log('[counterProposal] AI Parse result:', {
-    isoTimestamp: parsedTime.isoTimestamp,
-    confidence: parsedTime.confidence,
-    reasoning: parsedTime.reasoning
+  const timeContext: TimeParseContext = {
+    timezone: userTimezone,
+    emailBody: email.body,
+  };
+
+  const parseResult = await parseTime(timeDescription, timeContext);
+  console.log('[counterProposal] TimeParser result:', {
+    success: parseResult.success,
+    utc: parseResult.time?.utc?.toISOString(),
+    confidence: parseResult.time?.confidence,
+    reasoning: parseResult.time?.reasoning
   });
 
-  if (!parsedTime.isoTimestamp || parsedTime.confidence === 'low') {
+  if (!parseResult.success || !parseResult.time?.utc || parseResult.time.confidence === 'low') {
     console.log('[counterProposal] ✗ Low confidence parse, falling back to human review');
-    return await fallbackToHumanReview(request, analysis, `Low confidence parsing: ${parsedTime.reasoning}`);
+    return await fallbackToHumanReview(request, analysis, `Low confidence parsing: ${parseResult.time?.reasoning || parseResult.error}`);
   }
 
-  const proposedDate = new Date(parsedTime.isoTimestamp);
+  const proposedDate = parseResult.time.utc;
 
   // Check availability for all internal attendees
   console.log('[counterProposal] Checking availability...');
@@ -856,7 +1071,7 @@ async function handleCounterProposal(
 
     // Use the parsed timestamp with timezone, not the raw description
     // This ensures correct timezone handling on UTC servers
-    const formattedRequestedTime = parsedTime.isoTimestamp || timeDescription;
+    const formattedRequestedTime = parseResult.time?.utc?.toISOString() || timeDescription;
 
     const alternativeResult = await sendAlternativeTimes(
       request,

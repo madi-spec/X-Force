@@ -55,16 +55,17 @@ export {
 export { SchedulingService, schedulingService, adminSchedulingService } from './schedulingService';
 
 // Email Generation
-export type { EmailType, ParsedSchedulingResponse } from './emailGeneration';
+export type { EmailType } from './emailGeneration';
 export {
   generateSchedulingEmail,
   generateEmailVariants,
   formatTimeSlotsForEmail,
   generateProposedTimes,
-  parseSchedulingResponse,
-  parseSchedulingResponseLegacy,
   generateMeetingPrepBrief,
 } from './emailGeneration';
+// NOTE: parseSchedulingResponse and parseSchedulingResponseLegacy were removed.
+// Response parsing is now handled by responseProcessor.ts using the managed
+// prompt 'scheduler_response_parsing' via analyzeSchedulingResponse().
 
 // Response Processing (Phase 2)
 export {

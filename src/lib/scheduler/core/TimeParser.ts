@@ -1,6 +1,24 @@
 /**
  * TimeParser - Single Source of Truth for Time Parsing
  *
+ * @deprecated PARTIAL DEPRECATION (January 2026):
+ * The `extractTimesFromText()` function is being phased out.
+ * Time extraction from scheduling responses is now handled by
+ * responseProcessor.ts using the managed prompt 'scheduler_response_parsing'
+ * which combines intent detection + time extraction in a single AI call.
+ *
+ * STILL IN USE:
+ * - `parseTime()` - Low-level time parsing, still needed for validation
+ * - `matchToProposedTime()` - Still used for matching extracted times to proposals
+ * - `isBusinessHours()` - Utility for time validation
+ *
+ * DEPRECATED (will be removed):
+ * - `extractTimesFromText()` - Use managed prompt instead
+ *
+ * New code should use:
+ * - responseProcessor.ts: analyzeSchedulingResponse() for full response analysis
+ * - Managed prompt key: 'scheduler_response_parsing'
+ *
  * ALL time parsing in the scheduler flows through this module.
  * No exceptions. Ever.
  *

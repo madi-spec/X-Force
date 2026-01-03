@@ -6,7 +6,7 @@
  */
 
 import { callAIJson } from '@/lib/ai/core/aiClient';
-import { getPrompt } from '@/lib/ai/promptManager';
+import { getPrompt, getPromptWithVariables } from '@/lib/ai/promptManager';
 import {
   SchedulingEmailContext,
   GeneratedEmail,
@@ -17,6 +17,18 @@ import {
   ConversationMessage,
   MEETING_TYPES,
 } from './types';
+import {
+  TaggedTimestamp,
+  AIExtractedTime,
+  createTaggedTimestamp,
+  formatTaggedForEmail,
+  isValidTimezone,
+  logTaggedTimestamp,
+} from './taggedTimestamp';
+import {
+  validateProposedTime,
+  logTimestampConversion,
+} from './timestampValidator';
 
 // ============================================
 // EMAIL TYPE DEFINITIONS
@@ -419,6 +431,9 @@ export function formatTimeSlotsForEmail(
 
 /**
  * Generates available time slots based on preferences
+ *
+ * IMPORTANT: All slots are guaranteed to be at least 2 hours in the future.
+ * By default, starts from tomorrow to avoid proposing same-day times.
  */
 export function generateProposedTimes(
   dateRangeStart: Date,
@@ -432,14 +447,19 @@ export function generateProposedTimes(
   count: number = 4
 ): Date[] {
   const slots: Date[] = [];
-  const current = new Date(dateRangeStart);
 
-  // Time ranges for each period
-  const timeRanges = {
-    morning: { start: 9, end: 12 },
-    afternoon: { start: 13, end: 17 },
-    evening: { start: 17, end: 19 },
-  };
+  // IMPORTANT: Always start from at least tomorrow to avoid proposing past times
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+
+  // Use the later of dateRangeStart or tomorrow
+  const effectiveStart = dateRangeStart > tomorrow ? dateRangeStart : tomorrow;
+  const current = new Date(effectiveStart);
+
+  // Minimum 2 hours in the future for any slot
+  const minimumSlotTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
   while (current <= dateRangeEnd && slots.length < count) {
     const dayName = current.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
@@ -457,21 +477,27 @@ export function generateProposedTimes(
       continue;
     }
 
-    // Add slots for each preferred time period
+    // Add slots for each preferred time period (only if in the future)
     if (preferences.morning && slots.length < count) {
       const slot = new Date(current);
       slot.setHours(10, 0, 0, 0);
-      slots.push(slot);
+      if (slot > minimumSlotTime) {
+        slots.push(slot);
+      }
     }
     if (preferences.afternoon && slots.length < count) {
       const slot = new Date(current);
       slot.setHours(14, 0, 0, 0);
-      slots.push(slot);
+      if (slot > minimumSlotTime) {
+        slots.push(slot);
+      }
     }
     if (preferences.evening && slots.length < count) {
       const slot = new Date(current);
       slot.setHours(17, 30, 0, 0);
-      slots.push(slot);
+      if (slot > minimumSlotTime) {
+        slots.push(slot);
+      }
     }
 
     current.setDate(current.getDate() + 1);
@@ -485,24 +511,55 @@ export function generateProposedTimes(
 // ============================================
 
 /**
- * Parses an incoming email to detect scheduling intent
- *
- * Now includes confusion detection to stop auto-replies when the prospect
- * is expressing frustration or misunderstanding.
+ * Response from AI parsing with tagged timestamps
  */
-export async function parseSchedulingResponse(
-  emailBody: string,
-  proposedTimes: string[]
-): Promise<{
+export interface ParsedSchedulingResponse {
   intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'unclear';
-  selectedTime?: string;
-  counterProposedTimes?: string[];
+  selectedTime?: TaggedTimestamp;
+  selectedTimeRaw?: AIExtractedTime;
+  counterProposedTimes?: TaggedTimestamp[];
+  counterProposedTimesRaw?: AIExtractedTime[];
   question?: string;
   sentiment: 'positive' | 'neutral' | 'negative';
   reasoning: string;
   isConfused?: boolean;
   confusionReason?: string;
-}> {
+  validationErrors?: string[];
+}
+
+/**
+ * Parses an incoming email to detect scheduling intent
+ *
+ * @deprecated This function is DEPRECATED as of January 2026.
+ * Response parsing has been unified into responseProcessor.ts using
+ * the managed prompt 'scheduler_response_parsing' which combines
+ * intent detection + time extraction in a single optimized AI call.
+ *
+ * New code should use:
+ * - responseProcessor.ts: analyzeSchedulingResponse()
+ * - Managed prompt key: 'scheduler_response_parsing'
+ *
+ * This function will be removed in a future version.
+ *
+ * IMPORTANT: This function now returns TaggedTimestamps to prevent timezone bugs.
+ * The AI is instructed to return LOCAL times in the prospect's timezone, and we
+ * convert them properly to avoid the "2pm becomes 6am" bug.
+ *
+ * @param emailBody - The email content to parse
+ * @param proposedTimes - The times we originally proposed (for reference)
+ * @param prospectTimezone - The prospect's timezone (critical for correct conversion)
+ */
+export async function parseSchedulingResponse(
+  emailBody: string,
+  proposedTimes: string[],
+  prospectTimezone: string = 'America/New_York'
+): Promise<ParsedSchedulingResponse> {
+  // Validate timezone
+  if (!isValidTimezone(prospectTimezone)) {
+    console.warn(`[parseSchedulingResponse] Invalid timezone "${prospectTimezone}", defaulting to America/New_York`);
+    prospectTimezone = 'America/New_York';
+  }
+
   // Build date context for year awareness
   const today = new Date();
   const currentYear = today.getFullYear();
@@ -513,6 +570,7 @@ export async function parseSchedulingResponse(
     month: 'long',
     day: 'numeric',
     year: 'numeric',
+    timeZone: prospectTimezone,
   });
 
   // Year guidance for when we're in late year
@@ -532,6 +590,7 @@ CRITICAL DATE RULES (Today is ${todayFormatted}):
   const prompt = `Analyze this email response to a meeting scheduling request.
 
 TODAY'S DATE: ${todayFormatted}
+PROSPECT'S TIMEZONE: ${prospectTimezone}
 ${yearGuidance}
 
 ## Proposed Times
@@ -540,33 +599,35 @@ ${proposedTimes.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 ## Email Response
 ${emailBody}
 
-## Task
+## Task - TIMEZONE CRITICAL
+When extracting times from the email, return them as the prospect STATED them - in their LOCAL timezone.
+DO NOT convert to UTC. The system will handle timezone conversion.
+
+Example: If prospect says "let's do 2pm on Monday" and they're in ${prospectTimezone}:
+- Return localDateTime: "${nextYear}-01-06T14:00:00" (2pm as they said it)
+- Return timezone: "${prospectTimezone}"
+- DO NOT return "14:00:00Z" - that would be wrong!
+
 Determine:
 1. Intent: Are they accepting a time, declining, proposing alternatives, asking a question, or unclear?
-2. If accepting: Which specific time did they select?
-3. If counter-proposing: What times are they suggesting? Return these as ISO timestamps (e.g., "${nextYear}-01-06T11:00:00")
-   - IMPORTANT: When they say "Monday the 5th" - the NUMBER 5th is the key, find the month where the 5th is (near) a Monday
-   - If they say "11am on Monday the 5th" and January 5, ${nextYear} is a Monday, return "${nextYear}-01-05T11:00:00"
+2. If accepting: Which specific time did they select? Return as a LOCAL time in their timezone.
+3. If counter-proposing: What times are they suggesting? Return as LOCAL times.
 4. If questioning: What is their question?
 5. Overall sentiment toward the meeting
-6. CRITICAL - Confusion Detection: Is the person expressing confusion, frustration, or correcting a mistake?
-   Look for phrases like:
-   - "That's not what I said"
-   - "I didn't say that"
-   - "I don't understand"
-   - "You misunderstood"
-   - "That's wrong"
-   - "I said X not Y"
-   - "Wait, no"
-   - "I'm confused"
-   - "That doesn't make sense"
-   - "What are you talking about"
-   - Any correction of a previous statement`;
+6. CRITICAL - Confusion Detection: Is the person expressing confusion, frustration, or correcting a mistake?`;
 
   const response = await callAIJson<{
     intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'unclear';
-    selectedTime?: string;
-    counterProposedTimes?: string[];
+    selectedTime?: {
+      localDateTime: string;
+      timezone: string;
+      displayText: string;
+    };
+    counterProposedTimes?: Array<{
+      localDateTime: string;
+      timezone: string;
+      displayText: string;
+    }>;
     question?: string;
     sentiment: 'positive' | 'neutral' | 'negative';
     reasoning: string;
@@ -574,23 +635,151 @@ Determine:
     confusionReason?: string;
   }>({
     prompt,
-    systemPrompt:
-      'You are an expert at understanding email intent, especially for scheduling contexts. Analyze carefully and extract structured information. PAY SPECIAL ATTENTION to signs of confusion or frustration - if the person seems to be correcting a mistake or expressing that they were misunderstood, set isConfused to true.',
+    systemPrompt: `You are an expert at understanding email intent, especially for scheduling contexts.
+
+CRITICAL TIMEZONE RULES:
+1. Extract times AS THE PERSON STATED THEM - in their local timezone
+2. NEVER convert to UTC - return the local time they mentioned
+3. If they say "2pm", return 14:00:00 in their timezone, NOT in UTC
+4. Always include the timezone in your response
+
+Return times in this exact JSON format:
+{
+  "localDateTime": "2025-01-06T14:00:00",  // The time as they said it
+  "timezone": "America/New_York",           // Their timezone
+  "displayText": "Monday, January 6 at 2:00 PM ET"
+}
+
+PAY SPECIAL ATTENTION to signs of confusion or frustration - if the person seems to be correcting a mistake or expressing that they were misunderstood, set isConfused to true.`,
     schema: `{
       "intent": "accept|decline|counter_propose|question|unclear",
-      "selectedTime": "ISO timestamp if they selected a specific time",
-      "counterProposedTimes": ["Array of times they suggested if counter-proposing"],
+      "selectedTime": {
+        "localDateTime": "ISO timestamp in LOCAL time (no Z suffix)",
+        "timezone": "IANA timezone like America/New_York",
+        "displayText": "Human readable like 'Monday, January 6 at 2:00 PM ET'"
+      },
+      "counterProposedTimes": [{
+        "localDateTime": "ISO timestamp in LOCAL time",
+        "timezone": "IANA timezone",
+        "displayText": "Human readable"
+      }],
       "question": "Their question if asking one",
       "sentiment": "positive|neutral|negative",
       "reasoning": "Brief explanation of your analysis",
-      "isConfused": "true if the person is expressing confusion, frustration, or correcting a mistake",
-      "confusionReason": "If isConfused is true, explain what they seem confused about"
+      "isConfused": "true if expressing confusion or correcting a mistake",
+      "confusionReason": "What they seem confused about"
     }`,
     maxTokens: 1000,
     temperature: 0.3,
   });
 
-  return response.data;
+  // Convert AI response to tagged timestamps
+  const result: ParsedSchedulingResponse = {
+    intent: response.data.intent,
+    sentiment: response.data.sentiment,
+    reasoning: response.data.reasoning,
+    question: response.data.question,
+    isConfused: response.data.isConfused,
+    confusionReason: response.data.confusionReason,
+    validationErrors: [],
+  };
+
+  // Process selected time
+  if (response.data.selectedTime) {
+    result.selectedTimeRaw = response.data.selectedTime;
+
+    try {
+      const tagged = createTaggedTimestamp(
+        response.data.selectedTime.localDateTime,
+        response.data.selectedTime.timezone || prospectTimezone
+      );
+
+      // Validate the tagged timestamp
+      const validation = validateProposedTime(tagged, {
+        userTimezone: prospectTimezone,
+        businessHoursStart: 7,
+        businessHoursEnd: 19,
+        minHoursInFuture: 1,
+      });
+
+      if (validation.valid) {
+        result.selectedTime = tagged;
+        logTimestampConversion('Parsed selected time', response.data.selectedTime, tagged);
+      } else {
+        console.warn('[parseSchedulingResponse] Selected time validation failed:', validation.error);
+        result.validationErrors!.push(`Selected time: ${validation.error}`);
+      }
+    } catch (error) {
+      console.error('[parseSchedulingResponse] Failed to create tagged timestamp:', error);
+      result.validationErrors!.push(`Failed to parse selected time: ${error}`);
+    }
+  }
+
+  // Process counter-proposed times
+  if (response.data.counterProposedTimes && response.data.counterProposedTimes.length > 0) {
+    result.counterProposedTimesRaw = response.data.counterProposedTimes;
+    result.counterProposedTimes = [];
+
+    for (const time of response.data.counterProposedTimes) {
+      try {
+        const tagged = createTaggedTimestamp(
+          time.localDateTime,
+          time.timezone || prospectTimezone
+        );
+
+        const validation = validateProposedTime(tagged, {
+          userTimezone: prospectTimezone,
+          businessHoursStart: 7,
+          businessHoursEnd: 19,
+          minHoursInFuture: 1,
+        });
+
+        if (validation.valid) {
+          result.counterProposedTimes.push(tagged);
+          logTimestampConversion('Parsed counter-proposal', time, tagged);
+        } else {
+          console.warn('[parseSchedulingResponse] Counter-proposal validation failed:', validation.error);
+          result.validationErrors!.push(`Counter-proposal: ${validation.error}`);
+        }
+      } catch (error) {
+        console.error('[parseSchedulingResponse] Failed to create tagged timestamp for counter-proposal:', error);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Legacy wrapper for parseSchedulingResponse that returns the old format
+ * Use this during migration, but prefer the new format for new code
+ * @deprecated Use parseSchedulingResponse directly for tagged timestamps
+ */
+export async function parseSchedulingResponseLegacy(
+  emailBody: string,
+  proposedTimes: string[]
+): Promise<{
+  intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'unclear';
+  selectedTime?: string;
+  counterProposedTimes?: string[];
+  question?: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  reasoning: string;
+  isConfused?: boolean;
+  confusionReason?: string;
+}> {
+  const result = await parseSchedulingResponse(emailBody, proposedTimes, 'America/New_York');
+
+  return {
+    intent: result.intent,
+    selectedTime: result.selectedTime?.utc,
+    counterProposedTimes: result.counterProposedTimes?.map(t => t.utc),
+    question: result.question,
+    sentiment: result.sentiment,
+    reasoning: result.reasoning,
+    isConfused: result.isConfused,
+    confusionReason: result.confusionReason,
+  };
 }
 
 // ============================================
@@ -630,35 +819,50 @@ export async function generateMeetingPrepBrief(input: {
   next_steps_to_propose: string[];
   attendee_insights: Array<{ name: string; title?: string; notes: string }>;
 }> {
-  const prompt = `Generate a comprehensive meeting prep brief.
+  // Format attendees for the prompt
+  const attendeesList = input.attendees.map((a) =>
+    `- ${a.name}${a.title ? ` (${a.title})` : ''}${a.notes ? `: ${a.notes}` : ''}`
+  ).join('\n');
 
-## Meeting Details
-- Type: ${getMeetingTypeLabel(input.meetingType)}
-- Company: ${input.companyName}
-${input.companyContext ? `- Industry: ${input.companyContext.industry}\n- Size: ${input.companyContext.size}` : ''}
+  // Format deal context
+  const dealContextText = input.dealContext
+    ? `Stage: ${input.dealContext.stage}, History: ${input.dealContext.history}, Key Points: ${input.dealContext.keyPoints.join(', ')}, Known Objections: ${input.dealContext.objections.join(', ')}`
+    : 'No deal context';
 
-## Attendees
-${input.attendees.map((a) => `- ${a.name}${a.title ? ` (${a.title})` : ''}${a.notes ? `: ${a.notes}` : ''}`).join('\n')}
+  // Format company context
+  const companyContextText = input.companyContext
+    ? `Industry: ${input.companyContext.industry}, Size: ${input.companyContext.size}${input.companyContext.recentNews ? `, Recent News: ${input.companyContext.recentNews}` : ''}`
+    : 'No company context';
 
-${
-  input.dealContext
-    ? `## Deal Context
-- Stage: ${input.dealContext.stage}
-- History: ${input.dealContext.history}
-- Key Points: ${input.dealContext.keyPoints.join(', ')}
-- Known Objections: ${input.dealContext.objections.join(', ')}`
-    : ''
-}
+  // Format previous meetings
+  const previousMeetingsText = input.previousMeetings && input.previousMeetings.length > 0
+    ? input.previousMeetings.map((m) => `${m.date}: ${m.summary} (Outcomes: ${m.outcomes.join(', ')})`).join('\n')
+    : 'No previous meetings';
 
-${
-  input.previousMeetings && input.previousMeetings.length > 0
-    ? `## Previous Meetings
-${input.previousMeetings.map((m) => `### ${m.date}\n${m.summary}\nOutcomes: ${m.outcomes.join(', ')}`).join('\n\n')}`
-    : ''
-}
+  // Try to use the managed prompt
+  const promptResult = await getPromptWithVariables('meeting_prep_brief', {
+    meetingType: getMeetingTypeLabel(input.meetingType),
+    companyName: input.companyName,
+    attendees: attendeesList,
+    dealContext: dealContextText,
+    companyContext: companyContextText,
+    previousMeetings: previousMeetingsText,
+  });
 
-## Task
-Create a detailed prep brief to help the sales rep succeed in this meeting.`;
+  if (!promptResult || !promptResult.prompt) {
+    console.warn('[generateMeetingPrepBrief] Failed to load meeting_prep_brief prompt, using fallback');
+    // Return basic defaults
+    return {
+      executive_summary: `Upcoming ${getMeetingTypeLabel(input.meetingType)} with ${input.companyName}`,
+      meeting_objective: 'Advance the relationship and understand their needs',
+      key_talking_points: ['Introduction and context', 'Understanding current challenges', 'Presenting relevant solutions'],
+      questions_to_ask: ['What are your main priorities?', 'What challenges are you facing?'],
+      landmines_to_avoid: [],
+      objection_prep: [],
+      next_steps_to_propose: ['Schedule follow-up discussion'],
+      attendee_insights: input.attendees.map(a => ({ name: a.name, title: a.title, notes: a.notes || 'No notes' })),
+    };
+  }
 
   const response = await callAIJson<{
     executive_summary: string;
@@ -670,31 +874,10 @@ Create a detailed prep brief to help the sales rep succeed in this meeting.`;
     next_steps_to_propose: string[];
     attendee_insights: Array<{ name: string; title?: string; notes: string }>;
   }>({
-    prompt,
-    systemPrompt: `You are an expert sales coach preparing reps for important meetings.
-Your prep briefs are:
-- Highly specific to the company and deal
-- Action-oriented with concrete talking points
-- Realistic about potential objections
-- Focused on advancing the deal
-
-Context: Pest control / lawn care industry, selling Voice phone systems and X-RAI AI platform.`,
-    schema: `{
-      "executive_summary": "2-3 sentence overview of the opportunity",
-      "meeting_objective": "The ONE primary outcome we're trying to achieve",
-      "key_talking_points": ["3-5 specific points to cover"],
-      "questions_to_ask": ["4-6 strategic questions to uncover needs"],
-      "landmines_to_avoid": ["2-3 topics to be careful around"],
-      "objection_prep": [
-        { "objection": "Common objection", "response": "How to handle it" }
-      ],
-      "next_steps_to_propose": ["2-3 concrete next steps"],
-      "attendee_insights": [
-        { "name": "Person name", "title": "Their role", "notes": "Key things to know" }
-      ]
-    }`,
-    maxTokens: 2500,
-    temperature: 0.6,
+    prompt: promptResult.prompt,
+    schema: promptResult.schema || undefined,
+    model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+    maxTokens: promptResult.maxTokens || 2500,
   });
 
   return response.data;

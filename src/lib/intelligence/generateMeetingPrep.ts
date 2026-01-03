@@ -12,6 +12,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 // Migrated: Using buildFullRelationshipContext from contextFirstPipeline
 import { buildFullRelationshipContext, type RelationshipContext } from './contextFirstPipeline';
 
@@ -262,7 +263,7 @@ Based on the full relationship history above, generate meeting prep with:
 
 Return as JSON matching this schema exactly.`;
 
-  const schema = `{
+  const fallbackSchema = `{
   "quick_context": "string - 2-3 sentences summarizing who they are and where we stand",
   "relationship_status": {
     "deal_stage": "string or null",
@@ -287,9 +288,31 @@ Return as JSON matching this schema exactly.`;
 }`;
 
   try {
+    // Try to load managed prompt from database
+    const promptResult = await getPromptWithVariables('command_center_meeting_prep', {
+      meetingTitle: meeting.title,
+      meetingTime: formattedTime,
+      durationMinutes: meeting.duration_minutes.toString(),
+      attendees: attendees.map(a => `${a.name}${a.title ? ` (${a.title})` : ''}`).join(', '),
+      relationshipContext: combinedContext || 'No prior relationship context available.',
+    });
+
+    if (promptResult?.prompt) {
+      const result = await callAIJson<ContextAwareMeetingPrep>({
+        prompt: promptResult.prompt,
+        schema: promptResult.schema || fallbackSchema,
+        maxTokens: promptResult.maxTokens || 1500,
+        temperature: 0.7,
+        model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      });
+      return result.data;
+    }
+
+    // Fallback to hardcoded prompt if no managed prompt exists
+    console.warn('[MeetingPrep] No managed prompt found for command_center_meeting_prep, using fallback');
     const result = await callAIJson<ContextAwareMeetingPrep>({
       prompt,
-      schema,
+      schema: fallbackSchema,
       maxTokens: 1500,
       temperature: 0.7,
       model: 'claude-3-haiku-20240307',
