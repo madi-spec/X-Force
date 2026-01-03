@@ -34,6 +34,20 @@ import { getValidToken } from '@/lib/microsoft/auth';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 
 // ============================================
+// ACTIVE STATUSES (non-terminal - used for duplicate detection)
+// ============================================
+
+const ACTIVE_STATUSES: SchedulingStatus[] = [
+  SCHEDULING_STATUS.INITIATED,
+  SCHEDULING_STATUS.PROPOSING,
+  SCHEDULING_STATUS.AWAITING_RESPONSE,
+  SCHEDULING_STATUS.NEGOTIATING,
+  SCHEDULING_STATUS.CONFIRMING,
+  SCHEDULING_STATUS.PAUSED,
+  SCHEDULING_STATUS.REMINDER_SENT,
+];
+
+// ============================================
 // STATE MACHINE DEFINITION
 // ============================================
 
@@ -122,6 +136,52 @@ export class SchedulingService {
   }
 
   // ============================================
+  // DUPLICATE PREVENTION
+  // ============================================
+
+  /**
+   * Check if an active scheduling request already exists for any of the given emails
+   * Returns the existing request if found, null otherwise
+   */
+  async checkForDuplicateRequest(
+    externalEmails: string[]
+  ): Promise<{ id: string; title: string | null; status: string } | null> {
+    if (externalEmails.length === 0) return null;
+
+    const supabase = await this.getClient();
+
+    // Find scheduling requests where any of these emails are external attendees
+    // and the request is in an active (non-terminal) status
+    const { data: existingRequests, error } = await supabase
+      .from('scheduling_attendees')
+      .select(`
+        scheduling_request_id,
+        email,
+        scheduling_requests!inner(id, title, status)
+      `)
+      .eq('side', 'external')
+      .in('email', externalEmails.map(e => e.toLowerCase()))
+      .in('scheduling_requests.status', ACTIVE_STATUSES);
+
+    if (error) {
+      console.error('[SchedulingService] Error checking for duplicates:', error);
+      return null; // Don't block creation on error, just log
+    }
+
+    if (existingRequests && existingRequests.length > 0) {
+      const request = existingRequests[0].scheduling_requests as unknown as {
+        id: string;
+        title: string | null;
+        status: string;
+      };
+      console.log('[SchedulingService] Found existing active request:', request.id);
+      return request;
+    }
+
+    return null;
+  }
+
+  // ============================================
   // CREATE OPERATIONS
   // ============================================
 
@@ -135,6 +195,17 @@ export class SchedulingService {
     const supabase = await this.getClient();
 
     try {
+      // Check for duplicate requests before creating
+      const externalEmails = input.external_attendees.map(a => a.email);
+      const existingRequest = await this.checkForDuplicateRequest(externalEmails);
+
+      if (existingRequest) {
+        return {
+          data: null,
+          error: `An active scheduling request already exists for this contact (ID: ${existingRequest.id}, Title: "${existingRequest.title || 'Untitled'}", Status: ${existingRequest.status}). Please use the existing request or cancel it first.`,
+        };
+      }
+
       // 1. Create the scheduling request
       const { data: request, error: requestError } = await supabase
         .from('scheduling_requests')
