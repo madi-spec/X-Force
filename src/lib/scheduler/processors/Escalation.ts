@@ -12,8 +12,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { STATUS, ERROR_CODES } from '../core/constants';
-import type { SchedulingRequest } from '../types';
-import type { IntentAnalysis } from './IntentDetector';
+import type { SchedulingRequest, IntentAnalysis } from '../types';
 
 // ============================================
 // TYPES

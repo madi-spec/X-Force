@@ -13,17 +13,11 @@ import {
 import { adminSchedulingService } from './schedulingService';
 // ============================================
 // MODULAR IMPORTS
-// Note: detectIntent, shouldEscalate, extractTimesFromText now handled by
-// unified analyzeSchedulingResponse() using managed prompts
+// Note: Intent detection is now handled by analyzeSchedulingResponse()
+// using managed 'scheduler_response_parsing' prompt.
+// IntentAnalysis type is now in ./types.
 // ============================================
-// import {
-//   detectIntent,
-//   shouldEscalate,
-//   type IntentAnalysis,
-// } from './processors/IntentDetector';
 import {
-  parseTime,
-  extractTimesFromText, // Still used in handleTimeAccepted fallback
   matchToProposedTime,
   type TimeParseContext,
   type ParsedTime,
@@ -754,18 +748,15 @@ async function handleTimeAccepted(
     const matchResult = matchToProposedTime(email.body, timeContext.proposedTimes || [], timeContext);
 
     if (!matchResult?.utc) {
-      // Fall back to extracting from text
-      const extractResult = await extractTimesFromText(email.body, timeContext);
-      if (extractResult.success && extractResult.times.length > 0 && extractResult.times[0].utc) {
-        analysis.selectedTime = extractResult.times[0].utc.toISOString();
-        analysis.selectedTimeTagged = extractResult.times[0].tagged;
-      } else {
-        return await handleUnclearResponse(request, analysis, email);
-      }
-    } else {
-      analysis.selectedTime = matchResult.utc.toISOString();
-      analysis.selectedTimeTagged = matchResult.tagged;
+      // If we can't match to a proposed time, treat as unclear
+      // The managed prompt (scheduler_response_parsing) should have already extracted times
+      // via analysis.selectedTime. If matchToProposedTime also fails, we need human review.
+      console.log('[handleTimeAccepted] Could not match to proposed time, escalating');
+      return await handleUnclearResponse(request, analysis, email);
     }
+
+    analysis.selectedTime = matchResult.utc.toISOString();
+    analysis.selectedTimeTagged = matchResult.tagged;
   }
 
   // CRITICAL: Normalize the selected time using the user's timezone
@@ -934,56 +925,42 @@ async function handleCounterProposal(
     .map((a: SchedulingAttendee) => a.email);
   console.log('[counterProposal] Internal attendees to check:', internalEmails);
 
-  // Try to parse the proposed time(s)
-  const proposedTimeDescriptions = analysis.counterProposedTimes || [];
-
-  if (proposedTimeDescriptions.length === 0) {
-    // No specific times mentioned - try to extract from email body
-    const timePatterns = [
-      /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:on\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)?(?:\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?)?)/gi,
-      /(monday|tuesday|wednesday|thursday|friday)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/gi,
-    ];
-
-    for (const pattern of timePatterns) {
-      const matches = email.body.match(pattern);
-      if (matches && matches.length > 0) {
-        proposedTimeDescriptions.push(...matches.slice(0, 3));
-        break;
-      }
-    }
-  }
-
-  if (proposedTimeDescriptions.length === 0) {
-    console.log('[counterProposal] ✗ Could not extract proposed times from email');
-    return await fallbackToHumanReview(request, analysis, 'Could not parse proposed time');
-  }
-
-  // Parse the first proposed time using TimeParser (single source of truth)
-  const timeDescription = proposedTimeDescriptions[0];
+  // Get counter-proposed times from AI analysis
+  // Note: counterProposedTimes contains ISO timestamp strings (already parsed by the managed prompt)
+  const counterProposedTimestamps = analysis.counterProposedTimes || [];
   const userTimezone = request.timezone || DEFAULT_TIMEZONE;
-  console.log('[counterProposal] Parsing proposed time with TimeParser...');
-  console.log('[counterProposal]   Time description:', timeDescription);
-  console.log('[counterProposal]   Timezone:', userTimezone);
 
-  const timeContext: TimeParseContext = {
-    timezone: userTimezone,
-    emailBody: email.body,
-  };
-
-  const parseResult = await parseTime(timeDescription, timeContext);
-  console.log('[counterProposal] TimeParser result:', {
-    success: parseResult.success,
-    utc: parseResult.time?.utc?.toISOString(),
-    confidence: parseResult.time?.confidence,
-    reasoning: parseResult.time?.reasoning
-  });
-
-  if (!parseResult.success || !parseResult.time?.utc || parseResult.time.confidence === 'low') {
-    console.log('[counterProposal] ✗ Low confidence parse, falling back to human review');
-    return await fallbackToHumanReview(request, analysis, `Low confidence parsing: ${parseResult.time?.reasoning || parseResult.error}`);
+  if (counterProposedTimestamps.length === 0) {
+    console.log('[counterProposal] ✗ No counter-proposed times from AI analysis');
+    return await fallbackToHumanReview(request, analysis, 'Could not extract proposed time from response');
   }
 
-  const proposedDate = parseResult.time.utc;
+  // Use the first proposed time (already an ISO timestamp from the managed prompt)
+  const firstTimestamp = counterProposedTimestamps[0];
+  console.log('[counterProposal] Using counter-proposed time from AI:', firstTimestamp);
+
+  // Parse the ISO timestamp into a Date
+  let proposedDate: Date;
+  try {
+    // Handle both UTC timestamps and bare local timestamps
+    const normalized = normalizeAITimestamp(firstTimestamp, userTimezone);
+    proposedDate = normalized.utc || new Date(firstTimestamp);
+
+    if (isNaN(proposedDate.getTime())) {
+      throw new Error('Invalid date');
+    }
+
+    // Ensure it's in the future
+    if (proposedDate <= new Date()) {
+      console.log('[counterProposal] ✗ Proposed time is in the past:', proposedDate.toISOString());
+      return await fallbackToHumanReview(request, analysis, 'Proposed time is in the past');
+    }
+
+    console.log('[counterProposal] Parsed proposed time:', proposedDate.toISOString());
+  } catch (err) {
+    console.log('[counterProposal] ✗ Failed to parse timestamp:', firstTimestamp, err);
+    return await fallbackToHumanReview(request, analysis, `Failed to parse proposed time: ${firstTimestamp}`);
+  }
 
   // Check availability for all internal attendees
   console.log('[counterProposal] Checking availability...');
@@ -1050,7 +1027,7 @@ async function handleCounterProposal(
         action_type: ACTION_TYPES.STATUS_CHANGED,
         message_content: `Automatically confirmed meeting for ${proposedDate.toISOString()}`,
         actor: 'ai',
-        ai_reasoning: `Counter-proposal "${timeDescription}" parsed to ${proposedDate.toISOString()}, availability confirmed, meeting booked automatically.`,
+        ai_reasoning: `Counter-proposal "${firstTimestamp}" parsed to ${proposedDate.toISOString()}, availability confirmed, meeting booked automatically.`,
       });
 
       return {
@@ -1069,9 +1046,8 @@ async function handleCounterProposal(
     console.log('[counterProposal]   Conflicts with:', availabilityResult.conflictingAttendees);
     console.log('[counterProposal] Sending alternative times...');
 
-    // Use the parsed timestamp with timezone, not the raw description
-    // This ensures correct timezone handling on UTC servers
-    const formattedRequestedTime = parseResult.time?.utc?.toISOString() || timeDescription;
+    // Use the parsed timestamp for display
+    const formattedRequestedTime = proposedDate.toISOString();
 
     const alternativeResult = await sendAlternativeTimes(
       request,
@@ -1092,7 +1068,7 @@ async function handleCounterProposal(
       console.log('[counterProposal] ✓ Alternative times sent successfully, isDraft:', alternativeResult.isDraft);
       await adminSchedulingService.logAction(request.id, {
         action_type: ACTION_TYPES.EMAIL_SENT,
-        message_content: `Sent alternative times because "${timeDescription}" has conflicts`,
+        message_content: `Sent alternative times because "${firstTimestamp}" has conflicts`,
         actor: 'ai',
         ai_reasoning: `Counter-proposal conflicts with: ${availabilityResult.conflictingAttendees.join(', ')}. Sent alternative times automatically.`,
       });

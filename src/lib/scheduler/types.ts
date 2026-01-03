@@ -4,6 +4,44 @@
  * Types for the scheduling request system, state machine, and related entities.
  */
 
+import type { SchedulingIntent } from './core/constants';
+
+// Re-export SchedulingIntent for convenience
+export type { SchedulingIntent };
+
+// ============================================
+// INTENT ANALYSIS TYPES (moved from IntentDetector.ts)
+// ============================================
+
+export interface IntentAnalysis {
+  /** Primary detected intent */
+  intent: SchedulingIntent;
+  /** Confidence in the detection */
+  confidence: 'high' | 'medium' | 'low';
+  /** Sentiment toward the meeting */
+  sentiment: 'positive' | 'neutral' | 'negative';
+  /** AI's reasoning for this classification */
+  reasoning: string;
+
+  // Flags for special handling
+  /** Is the person expressing confusion or correcting us? */
+  isConfused: boolean;
+  /** What are they confused about? */
+  confusionReason?: string;
+  /** Are they delegating to someone else? */
+  isDelegating: boolean;
+  /** Who are they delegating to? */
+  delegateTo?: string;
+  /** Do they have a question? */
+  hasQuestion: boolean;
+  /** What is their question? */
+  question?: string;
+  /** Did they mention they're out of office or unavailable? */
+  isOutOfOffice: boolean;
+  /** Any dates mentioned for unavailability */
+  oooUntil?: string;
+}
+
 // ============================================
 // ENUMS / CONSTANTS
 // ============================================

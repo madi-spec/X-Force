@@ -11,8 +11,10 @@ export * from './types';
 export * from './core/constants';
 export * from './core/TimeParser';
 
-// Processors (two-step analysis)
-export * from './processors/IntentDetector';
+// Processors
+// NOTE: IntentDetector.ts was deleted - intent detection is now handled by
+// the managed prompt 'scheduler_response_parsing' in responseProcessor.ts.
+// IntentAnalysis type is now exported from ./types.
 export * from './processors/Escalation';
 
 // Events (Work Integration)
