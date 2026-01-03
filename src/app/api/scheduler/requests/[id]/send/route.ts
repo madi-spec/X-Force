@@ -144,10 +144,16 @@ export async function POST(
       attempt_count: (schedulingRequest.attempt_count || 0) + 1,
     };
 
-    // Note: We don't capture Microsoft's conversationId here because it doesn't match
-    // our internal communications.thread_id format. The email_thread_id will be set
-    // by the response matching logic when a reply comes in, using the correct
-    // internal thread_id from the communications table.
+    // CRITICAL: Capture Microsoft's conversationId immediately after sending.
+    // This is the ONLY reliable way to track the email thread for response matching.
+    // Without this, replies may be incorrectly linked to old threads from previous
+    // conversations with the same contact.
+    if (sendResult.conversationId) {
+      updateData.email_thread_id = sendResult.conversationId;
+      console.log('[Send] Captured conversationId for thread tracking:', sendResult.conversationId);
+    } else {
+      console.warn('[Send] No conversationId returned - thread tracking may fail');
+    }
 
     // Update scheduling request status
     const { error: updateError } = await adminSupabase

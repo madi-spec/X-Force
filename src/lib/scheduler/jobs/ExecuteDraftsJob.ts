@@ -117,25 +117,32 @@ export class ExecuteDraftsJob extends JobRunner {
       })
       .eq('id', draft.id);
 
-    // Note: We don't capture Microsoft's conversationId here because it doesn't match
-    // our internal communications.thread_id format. Instead, the email_thread_id will be
-    // set by the response matching logic when a reply comes in, using the correct
-    // internal thread_id from the communications table.
-    //
-    // The messageId is stored in scheduling_drafts.sent_message_id for tracing purposes.
+    // Build the update object for the scheduling request
+    const requestUpdate: Record<string, unknown> = {
+      last_action_at: new Date().toISOString(),
+    };
+
+    // CRITICAL: Capture Microsoft's conversationId immediately after sending.
+    // This is the ONLY reliable way to track the email thread for response matching.
+    // For initial_outreach, this establishes the thread. For follow-ups, the request
+    // should already have email_thread_id set, but we update it just in case.
+    if (sendResult.conversationId && !request.email_thread_id) {
+      requestUpdate.email_thread_id = sendResult.conversationId;
+      context.log(`Captured conversationId for thread tracking: ${sendResult.conversationId}`);
+    }
 
     // Update request next action based on draft type
     const nextAction = this.getNextAction(draft.draft_type);
     if (nextAction) {
-      await context.supabase
-        .from('scheduling_requests')
-        .update({
-          next_action_type: nextAction.type,
-          next_action_at: nextAction.at.toISOString(),
-          last_action_at: new Date().toISOString(),
-        })
-        .eq('id', request.id);
+      requestUpdate.next_action_type = nextAction.type;
+      requestUpdate.next_action_at = nextAction.at.toISOString();
     }
+
+    // Apply updates to scheduling request
+    await context.supabase
+      .from('scheduling_requests')
+      .update(requestUpdate)
+      .eq('id', request.id);
 
     // Log the action
     await context.supabase.from('scheduling_actions').insert({

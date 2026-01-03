@@ -409,9 +409,9 @@ export async function findMatchingSchedulingRequest(
         if (hasSchedulingKeyword || request.status === SCHEDULING_STATUS.AWAITING_RESPONSE) {
           console.log('[findMatch]   ✓ MATCHED by attendee email! Request:', request.id);
 
-          // IMPORTANT: Capture thread ID for future matching
+          // FALLBACK: Thread ID should be captured on send, this is a backup
           if (email.conversationId && !request.email_thread_id) {
-            console.log('[findMatch]   Updating email_thread_id for future matching...');
+            console.warn('[findMatch]   ⚠️ FALLBACK: Capturing thread_id from inbound (should be set on send)');
             await supabase
               .from('scheduling_requests')
               .update({ email_thread_id: email.conversationId })
@@ -459,9 +459,9 @@ export async function findMatchingSchedulingRequest(
         if (hasMatchingAttendee) {
           console.log('[findMatch]   ✓ MATCHED by subject fallback! Request:', req.id);
 
-          // Update thread ID for future matching
+          // FALLBACK: Thread ID should be captured on send, this is a backup
           if (email.conversationId && !req.email_thread_id) {
-            console.log('[findMatch]   Updating email_thread_id for future matching...');
+            console.warn('[findMatch]   ⚠️ FALLBACK: Capturing thread_id from inbound (should be set on send)');
             await supabase
               .from('scheduling_requests')
               .update({ email_thread_id: email.conversationId })
