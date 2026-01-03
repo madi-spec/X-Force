@@ -362,7 +362,12 @@ async function handleProcessResponse(
     if (token) {
       const response = await fetch(
         `https://graph.microsoft.com/v1.0/me/messages?$filter=conversationId eq '${request.email_thread_id}'&$orderby=receivedDateTime desc&$top=1&$select=id,subject,bodyPreview,body,from,receivedDateTime,conversationId`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Prefer': 'IdType="ImmutableId"',
+          },
+        }
       );
 
       if (response.ok) {

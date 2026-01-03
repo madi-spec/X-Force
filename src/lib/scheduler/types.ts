@@ -277,6 +277,8 @@ export interface SchedulingRequest {
 
   // AI tracking
   email_thread_id: string | null;
+  /** Microsoft Graph messageId of the last inbound email - used for proper reply threading */
+  last_inbound_message_id: string | null;
   conversation_history: ConversationMessage[];
 
   // Phase 3: Multi-channel & personalization

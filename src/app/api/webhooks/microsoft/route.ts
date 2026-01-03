@@ -178,9 +178,15 @@ export async function POST(request: NextRequest) {
           console.log('[MS Webhook] Token obtained:', token ? 'YES' : 'NO');
           if (token) {
             // Fetch recent inbox messages directly from Microsoft Graph
+            // Use ImmutableId format for consistent ID handling with createReply
             const response = await fetch(
               'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,conversationId',
-              { headers: { Authorization: `Bearer ${token}` } }
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Prefer': 'IdType="ImmutableId"',
+                },
+              }
             );
 
             console.log('[MS Webhook] Graph API response status:', response.status);

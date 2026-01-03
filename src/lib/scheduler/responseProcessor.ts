@@ -761,16 +761,31 @@ export async function processSchedulingResponse(
       newMessage,
     ];
 
-    await supabase
+    console.log('[processResponse] Updating conversation_history and last_inbound_message_id');
+    console.log('[processResponse]   email.id:', email.id);
+    console.log('[processResponse]   schedulingRequest.id:', schedulingRequest.id);
+    console.log('[processResponse]   conversationHistory length:', conversationHistory.length);
+
+    const { error: updateError, data: updateData } = await supabase
       .from('scheduling_requests')
       .update({
         conversation_history: conversationHistory,
         // Preserve existing email_thread_id - don't overwrite with current email's thread
         // This prevents corruption when fallback matching links to the wrong thread
         email_thread_id: schedulingRequest.email_thread_id || email.conversationId,
+        // Capture the messageId of the prospect's latest email for proper reply threading
+        last_inbound_message_id: email.id,
         last_action_at: new Date().toISOString(),
       })
-      .eq('id', schedulingRequest.id);
+      .eq('id', schedulingRequest.id)
+      .select('id, last_inbound_message_id');
+
+    if (updateError) {
+      console.error('[processResponse] ✗ UPDATE FAILED:', updateError);
+    } else {
+      console.log('[processResponse] ✓ UPDATE SUCCESS');
+      console.log('[processResponse]   Result:', updateData);
+    }
 
     // Handle based on intent
     console.log('[processResponse] ====== AI PARSING COMPLETE ======');
@@ -1522,6 +1537,7 @@ async function sendEmailWithCategory(
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'Prefer': 'IdType="ImmutableId"',
         },
       });
     } else {
@@ -1551,7 +1567,24 @@ async function sendEmailWithCategory(
 
     // Step 2: Update the draft with our content and category
     if (replyToMessageId) {
-      // For replies, we need to update the body and add category
+      // For replies, prepend our new content to the existing quoted thread
+      // IMPORTANT: createReply ALWAYS returns HTML body, so we must use HTML
+      const existingBody = draft.body?.content || '';
+
+      // Convert our message to HTML if it's plain text (safety measure)
+      let ourContent = message.body.content;
+      if (message.body.contentType !== 'HTML') {
+        // Escape HTML entities and convert newlines to <br>
+        ourContent = ourContent
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>');
+      }
+
+      // Always use HTML since existingBody from createReply is HTML
+      const newBodyContent = `${ourContent}<br><br>${existingBody}`;
+
       const updateResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}`, {
         method: 'PATCH',
         headers: {
@@ -1559,7 +1592,10 @@ async function sendEmailWithCategory(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          body: message.body,
+          body: {
+            contentType: 'HTML', // Always HTML for replies since createReply returns HTML
+            content: newBodyContent,
+          },
           categories: ['X-FORCE'],
         }),
       });
@@ -1899,11 +1935,13 @@ Brent`;
     }
 
     // Send confirmation email with X-FORCE category (as reply if we have the original message ID)
+    // Use HTML content type since createReply returns HTML body with quoted thread
+    const htmlEmailBody = emailBody.replace(/\n/g, '<br>');
     const emailResult = await sendEmailWithCategory(token, {
       subject: `Confirmed: ${request.title} - ${formattedTime}`,
       body: {
-        contentType: 'Text',
-        content: emailBody,
+        contentType: 'HTML',
+        content: htmlEmailBody,
       },
       toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
     }, replyToMessageId);
@@ -2260,9 +2298,11 @@ Brent`;
     }
 
     // Send alternative times email with X-FORCE category (as reply to preserve thread)
+    // Use HTML content type since createReply returns HTML body with quoted thread
+    const htmlEmailBody = emailBody.replace(/\n/g, '<br>');
     const sendResult = await sendEmailWithCategory(token, {
       subject: `Re: ${request.title}`,
-      body: { contentType: 'Text', content: emailBody },
+      body: { contentType: 'HTML', content: htmlEmailBody },
       toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
     }, replyToMessageId);
 
