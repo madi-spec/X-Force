@@ -9,10 +9,11 @@ export { YourDayView } from './YourDayView';
 export { ActionCard, ActionCardCompact } from './ActionCard';
 export { TimeBlockBar, TimeBlockBarInline } from './TimeBlockBar';
 export { DaySummary, DaySummaryCompact } from './DaySummary';
-export { SchedulerPopout } from './SchedulerPopout';
+// Note: SchedulerPopout removed - use ScheduleMeetingModal from @/components/scheduler instead
 export { EmailComposerPopout } from './EmailComposerPopout';
 export { MeetingPrepPopout } from './MeetingPrepPopout';
 export { LinkDealPopout } from './LinkDealPopout';
 export { LinkCompanyPopout } from './LinkCompanyPopout';
 export { EmailDraftModal } from './EmailDraftModal';
 export { AddContextModal } from './AddContextModal';
+export { SignalTuningView } from './SignalTuningView';

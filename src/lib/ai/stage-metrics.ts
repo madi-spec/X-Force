@@ -36,11 +36,22 @@ export async function calculateStageMetrics(
 ): Promise<StageMetrics[]> {
   const supabase = await createClient();
 
-  // Get all stages
-  const { data: stages } = await supabase
-    .from('product_sales_stages')
-    .select('id, name, stage_order')
+  // Get sales process for this product
+  const { data: salesProcess } = await supabase
+    .from('product_processes')
+    .select('id')
     .eq('product_id', productId)
+    .eq('process_type', 'sales')
+    .eq('status', 'published')
+    .single();
+
+  if (!salesProcess) return [];
+
+  // Get all stages from unified table
+  const { data: stages } = await supabase
+    .from('product_process_stages')
+    .select('id, name, stage_order')
+    .eq('process_id', salesProcess.id)
     .order('stage_order');
 
   if (!stages) return [];
@@ -132,7 +143,7 @@ export async function updateStageMetrics(productId: string): Promise<void> {
 
   for (const m of metrics) {
     await supabase
-      .from('product_sales_stages')
+      .from('product_process_stages')
       .update({
         avg_days_in_stage: m.avg_days_in_stage,
         conversion_rate: m.conversion_rate

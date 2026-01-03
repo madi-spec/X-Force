@@ -45,7 +45,7 @@ import { TranscriptPreviewModal } from '@/components/commandCenter/TranscriptPre
 import { ComposeModal } from '@/components/inbox/ComposeModal';
 import { CommunicationPreviewModal } from './CommunicationPreviewModal';
 import { AssignCompanyModal } from './AssignCompanyModal';
-import { ScheduleMeetingModal } from './ScheduleMeetingModal';
+import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
 import { ManageProductsModal } from './ManageProductsModal';
 
 // ============================================
@@ -2247,11 +2247,14 @@ Next Steps:
         isOpen={scheduleMeetingModal.isOpen}
         onClose={() => setScheduleMeetingModal({ isOpen: false, companyId: '', companyName: '' })}
         companyId={scheduleMeetingModal.companyId}
-        companyName={scheduleMeetingModal.companyName}
-        contactName={scheduleMeetingModal.contactName}
-        contactEmail={scheduleMeetingModal.contactEmail}
-        sourceCommunicationId={scheduleMeetingModal.sourceCommunicationId}
-        onScheduled={() => {
+        contactName={scheduleMeetingModal.contactName || undefined}
+        contactEmail={scheduleMeetingModal.contactEmail || undefined}
+        linkedCommunication={scheduleMeetingModal.sourceCommunicationId ? {
+          id: scheduleMeetingModal.sourceCommunicationId,
+          contact_name: scheduleMeetingModal.contactName || undefined,
+          contact_email: scheduleMeetingModal.contactEmail || undefined,
+        } : undefined}
+        onSuccess={() => {
           toast.success('Scheduling request created');
           fetchData();
         }}

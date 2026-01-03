@@ -217,6 +217,7 @@ export async function GET(request: NextRequest) {
         duration_minutes,
         attendees,
         summary,
+        analysis,
         analysis_generated_at,
         created_at,
         deal:deals(id, name),

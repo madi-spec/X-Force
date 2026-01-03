@@ -13,22 +13,39 @@ import {
   Calendar,
   Settings,
   Zap,
-  Target,
   Ticket,
+  Package,
+  Workflow,
+  BarChart3,
+  MessageSquare,
+  Archive,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 
-const navigation = [
-  { name: 'Command Center', href: '/command-center', icon: Target },
+// Primary navigation - new IA structure
+const primaryNavigation = [
+  { name: 'Work', href: '/work', icon: Inbox },
+  { name: 'Customers', href: '/customers', icon: Users },
+  { name: 'Process Studio', href: '/process', icon: Workflow },
+  { name: 'Products', href: '/products', icon: Package },
+  { name: 'Reports', href: '/reports', icon: BarChart3 },
+];
+
+// Secondary navigation - other tools
+// NOTE: Command Center and Daily Driver removed - functionality consolidated into Work Queue
+const secondaryNavigation = [
+  { name: 'Communications', href: '/communications', icon: MessageSquare },
   { name: 'Support Cases', href: '/cases', icon: Ticket },
-  { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Companies', href: '/companies', icon: Building2 },
-  { name: 'Contacts', href: '/contacts', icon: Users },
-  { name: 'Inbox', href: '/inbox', icon: Inbox },
+  { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Scheduler', href: '/scheduler', icon: Calendar },
+  { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
 ];
 
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showSecondary, setShowSecondary] = useState(false);
   const pathname = usePathname();
 
   // Close menu on route change
@@ -47,6 +64,11 @@ export function MobileNav() {
       document.body.style.overflow = '';
     };
   }, [isOpen]);
+
+  // Check if any secondary nav item is active
+  const isSecondaryActive = secondaryNavigation.some((item) =>
+    pathname.startsWith(item.href)
+  );
 
   return (
     <>
@@ -87,25 +109,71 @@ export function MobileNav() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navigation.map((item) => {
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-gray-800 text-white'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                )}
-              >
-                <item.icon className="h-5 w-5 shrink-0" />
-                {item.name}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 py-4 overflow-y-auto">
+          {/* Primary Navigation */}
+          <div className="space-y-1">
+            {primaryNavigation.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  )}
+                >
+                  <item.icon className="h-5 w-5 shrink-0" />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Secondary Navigation - Collapsible */}
+          <div className="mt-6">
+            <button
+              onClick={() => setShowSecondary(!showSecondary)}
+              className={cn(
+                'w-full flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider transition-colors rounded-lg',
+                isSecondaryActive
+                  ? 'text-gray-300'
+                  : 'text-gray-500 hover:text-gray-400'
+              )}
+            >
+              <span>More Tools</span>
+              {showSecondary ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </button>
+
+            {(showSecondary || isSecondaryActive) && (
+              <div className="mt-1 space-y-1">
+                {secondaryNavigation.map((item) => {
+                  const isActive = pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-gray-800 text-white'
+                          : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
+                      )}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* Settings */}

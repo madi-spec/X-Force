@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       duration: durationMinutes || 30,
     });
 
-    const { slots, error: availError, warnings } = await getMultiAttendeeAvailability(
+    const availabilityResult = await getMultiAttendeeAvailability(
       sender.id,
       attendeeEmails,
       {
@@ -161,9 +161,12 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    const { slots, error: availError, warnings, source, calendarChecked } = availabilityResult;
+
     if (availError) {
       console.error('[Preview] Availability error:', availError);
     }
+    console.log(`[Preview] Availability source: ${source}, calendarChecked: ${calendarChecked}`);
 
     // Convert slots to ProposedTimeSlot format
     const proposedTimes: ProposedTimeSlot[] = slots.map(slot => ({
@@ -270,6 +273,13 @@ export async function POST(request: NextRequest) {
         end: t.end.toISOString(),
         formatted: t.formatted,
       })),
+      availability: {
+        source,
+        calendarChecked,
+        warnings: warnings || [],
+        error: availError || null,
+      },
+      // Keep legacy fields for backwards compatibility
       availabilityWarnings: warnings || [],
       availabilityError: availError || null,
     });

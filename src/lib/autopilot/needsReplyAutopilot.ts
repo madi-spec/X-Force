@@ -293,7 +293,7 @@ async function generateAutoReply(
 ): Promise<{ subject: string; body: string } | null> {
   try {
     // Try to use the AI prompts system for reply generation
-    const promptData = await getPromptWithVariables('email_auto_reply', {
+    const promptData = await getPromptWithVariables('email_followup_needs_reply', {
       contactName,
       companyName,
       originalSubject: comm.subject || 'Your message',

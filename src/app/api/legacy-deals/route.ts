@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
         status,
         company:companies(id, name),
         product:products(id, name, slug),
-        current_stage:product_sales_stages(id, name)
+        current_stage:product_process_stages(id, name)
       `)
       .eq('status', 'in_sales')
       .or(`current_stage_id.is.null,last_human_touch_at.is.null,last_human_touch_at.lt.${thirtyDaysAgo.toISOString()}`)

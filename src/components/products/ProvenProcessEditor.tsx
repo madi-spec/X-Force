@@ -1,3 +1,13 @@
+/**
+ * @deprecated Use UnifiedProcessEditor instead.
+ * This component is kept for backward compatibility during migration.
+ *
+ * Migration path:
+ * - Import UnifiedProcessEditor from '@/components/process/UnifiedProcessEditor'
+ * - Pass initialProcessType='sales' for equivalent functionality
+ *
+ * @see UnifiedProcessEditor
+ */
 'use client';
 
 import { useState } from 'react';

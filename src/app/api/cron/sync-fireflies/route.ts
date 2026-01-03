@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { syncFirefliesTranscripts } from '@/lib/fireflies';
+import { logCronStart, logCronSuccess, logCronError } from '@/lib/cron/logging';
+
+// Required for Vercel Cron - extend timeout and ensure fresh execution
+export const runtime = 'nodejs';
+export const maxDuration = 300; // 5 minutes - transcript processing can be slow
+export const dynamic = 'force-dynamic';
+
+const JOB_NAME = 'sync-fireflies';
 
 /**
  * Background cron job to sync Fireflies transcripts for all active connections
@@ -12,6 +20,9 @@ import { syncFirefliesTranscripts } from '@/lib/fireflies';
  * Runs every 30 minutes via vercel.json cron configuration
  */
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  const executionId = await logCronStart(JOB_NAME);
+
   // Verify cron secret for security
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
@@ -20,6 +31,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  try {
   const supabase = createAdminClient();
 
   // Get all active Fireflies connections
@@ -85,7 +97,7 @@ export async function GET(request: Request) {
     `Fireflies sync completed: ${totalSynced} transcripts synced, ${totalAnalyzed} analyzed, ${totalCCItems} CC items, ${totalErrors} errors`
   );
 
-  return NextResponse.json({
+  const responseData = {
     success: true,
     connectionsProcessed: connections.length,
     totalTranscriptsSynced: totalSynced,
@@ -93,5 +105,16 @@ export async function GET(request: Request) {
     totalCCItemsCreated: totalCCItems,
     totalErrors,
     details: results,
-  });
+  };
+
+  await logCronSuccess(executionId, JOB_NAME, startTime, responseData);
+  return NextResponse.json(responseData);
+  } catch (err) {
+    await logCronError(executionId, JOB_NAME, startTime, err);
+    console.error('[Cron/sync-fireflies] Fatal error:', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Sync failed' },
+      { status: 500 }
+    );
+  }
 }

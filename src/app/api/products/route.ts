@@ -15,7 +15,10 @@ export async function GET(request: NextRequest) {
     .select(`
       *,
       tiers:product_tiers(*),
-      stages:product_sales_stages(*)
+      processes:product_processes(
+        id, process_type,
+        stages:product_process_stages(*)
+      )
     `)
     .is('parent_product_id', null)
     .eq('is_active', true)
@@ -80,15 +83,20 @@ export async function GET(request: NextRequest) {
 
       product.stats = statusCounts;
 
+      // Extract sales stages from unified table
+      const salesProcess = product.processes?.find((p: { process_type: string }) => p.process_type === 'sales');
+      const stages = salesProcess?.stages || [];
+      product.stages = stages.sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order);
+
       // Pipeline by stage
-      if (product.stages) {
+      if (stages.length > 0) {
         const { data: pipelineStats } = await supabase
           .from('company_products')
           .select('current_stage_id')
           .eq('product_id', product.id)
           .eq('status', 'in_sales');
 
-        product.pipeline_by_stage = product.stages
+        product.pipeline_by_stage = stages
           .sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order)
           .map((stage: { id: string; name: string }) => ({
             stage_id: stage.id,

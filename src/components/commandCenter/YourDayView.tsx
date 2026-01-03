@@ -20,7 +20,7 @@ import { ActionCard, ActionCardCompact } from './ActionCard';
 import { MeetingCard, MeetingList } from './MeetingCard';
 import { DayCompleteView } from './DayCompleteView';
 import { ExtraCreditPanel, ExtraCreditBackdrop } from './ExtraCreditPanel';
-import { SchedulerPopout } from './SchedulerPopout';
+import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
 import { EmailComposerPopout } from './EmailComposerPopout';
 import { MeetingPrepPopout } from './MeetingPrepPopout';
 import { LinkDealPopout } from './LinkDealPopout';
@@ -789,18 +789,27 @@ export function YourDayView({ className }: YourDayViewProps) {
         </>
       )}
 
-      {/* Scheduler Popout */}
+      {/* Scheduler Modal */}
       {schedulerItemId && (() => {
-        const item = items.find(i => i.id === schedulerItemId);
+        const item = items.find(i => i.id === schedulerItemId) as EnrichedCommandCenterItem | undefined;
         if (!item) return null;
         return (
-          <SchedulerPopout
-            item={item as EnrichedCommandCenterItem}
+          <ScheduleMeetingModal
+            isOpen={true}
             onClose={() => setSchedulerItemId(null)}
-            onScheduled={() => {
+            onSuccess={() => {
               setSchedulerItemId(null);
               fetchData();
             }}
+            mode="direct"
+            companyId={item.company_id || undefined}
+            contactName={item.primary_contact?.name}
+            contactEmail={item.primary_contact?.email}
+            scheduleSuggestions={item.schedule_suggestions ? {
+              meeting_title: item.schedule_suggestions.meeting_title,
+              duration_minutes: item.schedule_suggestions.duration_minutes,
+              suggested_times: item.schedule_suggestions.suggested_times,
+            } : undefined}
           />
         );
       })()}

@@ -388,7 +388,14 @@ export function normalizeAITimestamp(
   // No timezone info - assume it's in the user's timezone and convert to UTC
   const utcDate = parseLocalTimeToUTC(timestamp, tz);
 
-  console.log(`[normalizeAITimestamp] Converted "${timestamp}" (${tz}) to UTC: ${utcDate.toISOString()}`);
+  // Enhanced logging for timezone debugging
+  console.log(`[TZ] normalizeAITimestamp:`, {
+    input: timestamp,
+    userTimezone: tz,
+    outputUTC: utcDate.toISOString(),
+    outputUserLocal: utcDate.toLocaleString('en-US', { timeZone: tz }),
+    wasConverted: true,
+  });
 
   return {
     utc: utcDate,

@@ -226,21 +226,32 @@ export async function POST(
 
       if (stageId) {
         const { data: stage } = await supabase
-          .from('product_sales_stages')
+          .from('product_process_stages')
           .select('id, name')
           .eq('id', stageId)
           .single();
         stageName = stage?.name || null;
       } else {
-        const { data: firstStage } = await supabase
-          .from('product_sales_stages')
-          .select('id, name')
+        // Get the sales process for this product first
+        const { data: salesProcess } = await supabase
+          .from('product_processes')
+          .select('id')
           .eq('product_id', selection.product_id)
-          .order('stage_order', { ascending: true })
-          .limit(1)
+          .eq('process_type', 'sales')
+          .eq('status', 'published')
           .single();
-        stageId = firstStage?.id || null;
-        stageName = firstStage?.name || null;
+
+        if (salesProcess) {
+          const { data: firstStage } = await supabase
+            .from('product_process_stages')
+            .select('id, name')
+            .eq('process_id', salesProcess.id)
+            .order('stage_order', { ascending: true })
+            .limit(1)
+            .single();
+          stageId = firstStage?.id || null;
+          stageName = firstStage?.name || null;
+        }
       }
 
       // Check if company_product already exists (idempotency)
@@ -527,18 +538,23 @@ export async function GET(
       .from('products')
       .select(`
         id, name, slug, is_sellable,
-        stages:product_sales_stages(id, name, stage_order)
+        processes:product_processes(
+          id, process_type,
+          stages:product_process_stages(id, name, stage_order)
+        )
       `)
       .eq('is_active', true)
       .eq('is_sellable', true)
       .order('name');
 
-    // Sort stages within each product
-    const productsWithSortedStages = (products || []).map((p) => ({
-      ...p,
-      stages: ((p.stages as Array<{ id: string; name: string; stage_order: number }>) || [])
-        .sort((a, b) => a.stage_order - b.stage_order),
-    }));
+    // Extract and sort sales stages within each product
+    const productsWithSortedStages = (products || []).map((p) => {
+      const salesProcess = (p.processes as Array<{ process_type: string; stages: Array<{ id: string; name: string; stage_order: number }> }> || [])
+        .find(proc => proc.process_type === 'sales');
+      const stages = (salesProcess?.stages || [])
+        .sort((a, b) => a.stage_order - b.stage_order);
+      return { ...p, stages };
+    });
 
     return NextResponse.json({
       deal: {

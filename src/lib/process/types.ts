@@ -31,7 +31,7 @@ export const PROCESS_CATEGORIES: ProcessCategoryConfig[] = [
     color: 'text-yellow-600',
     bgColor: 'bg-yellow-50',
     borderColor: 'border-yellow-200',
-    editorPath: (slug) => `/process/${slug}/sales/builder`,
+    editorPath: (slug) => `/products/${slug}/process?process=sales`,
     isImplemented: true,
   },
   {
@@ -42,7 +42,7 @@ export const PROCESS_CATEGORIES: ProcessCategoryConfig[] = [
     color: 'text-blue-600',
     bgColor: 'bg-blue-50',
     borderColor: 'border-blue-200',
-    editorPath: (slug) => `/process/${slug}/onboarding/builder`,
+    editorPath: (slug) => `/products/${slug}/process?process=onboarding`,
     isImplemented: true,
   },
   {
@@ -53,7 +53,7 @@ export const PROCESS_CATEGORIES: ProcessCategoryConfig[] = [
     color: 'text-orange-600',
     bgColor: 'bg-orange-50',
     borderColor: 'border-orange-200',
-    editorPath: (slug) => `/process/${slug}/support/builder`,
+    editorPath: (slug) => `/products/${slug}/process?process=support`,
     isImplemented: true,
   },
   {
@@ -64,7 +64,7 @@ export const PROCESS_CATEGORIES: ProcessCategoryConfig[] = [
     color: 'text-green-600',
     bgColor: 'bg-green-50',
     borderColor: 'border-green-200',
-    editorPath: (slug) => `/process/${slug}/engagement/builder`,
+    editorPath: (slug) => `/products/${slug}/process?process=engagement`,
     isImplemented: true,
   },
 ];

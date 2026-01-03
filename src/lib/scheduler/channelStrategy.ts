@@ -408,6 +408,7 @@ export async function sendSchedulingSmsToContact(
           day: 'numeric',
           hour: 'numeric',
           minute: '2-digit',
+          timeZone: request.timezone || 'America/New_York',
         })
       : undefined,
     meetingLink: request.meeting_link || undefined,

@@ -10,6 +10,7 @@ import {
   ChevronRight,
   HeartPulse,
   Copy,
+  User,
 } from 'lucide-react';
 import { DuplicateManager } from '@/components/duplicates';
 
@@ -19,7 +20,9 @@ interface CompanyProduct {
   status: string;
   mrr: number | null;
   tier_id: string | null;
+  owner_user_id: string | null;
   product: { id: string; name: string; slug: string } | null;
+  owner_user: { id: string; name: string } | null;
 }
 
 interface Company {
@@ -28,6 +31,7 @@ interface Company {
   domain: string | null;
   customer_type: string | null;
   created_at: string;
+  vfp_support_contact: string | null;
   company_products: CompanyProduct[];
 }
 
@@ -313,6 +317,11 @@ export function CustomerDirectory({ companies, products, stats }: CustomerDirect
               // Health score not available on company_products table yet
               const avgHealth: number | null = null;
 
+              // Get success rep from vfp_support_contact (string field on companies table)
+              const successRep = company.vfp_support_contact && company.vfp_support_contact !== 'None'
+                ? company.vfp_support_contact
+                : null;
+
               return (
                 <Link
                   key={company.id}
@@ -327,11 +336,27 @@ export function CustomerDirectory({ companies, products, stats }: CustomerDirect
                       <p className="font-medium text-gray-900 truncate">{company.name}</p>
                       <div className="flex items-center gap-3 text-xs text-gray-500">
                         {company.domain && <span>{company.domain}</span>}
+                        {successRep && (
+                          <span className="flex items-center gap-1 text-blue-600">
+                            <User className="h-3 w-3" />
+                            {successRep}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-6 shrink-0">
+                    {/* Success Rep (larger screens) */}
+                    {successRep && (
+                      <div className="hidden lg:flex items-center gap-2 px-2 py-1 bg-blue-50 rounded">
+                        <User className="h-3.5 w-3.5 text-blue-600" />
+                        <span className="text-xs font-medium text-blue-700">
+                          {successRep}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Products */}
                     <div className="hidden md:flex items-center gap-1">
                       {company.company_products.slice(0, 3).map((cp) => (

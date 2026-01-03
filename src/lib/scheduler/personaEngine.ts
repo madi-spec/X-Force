@@ -7,6 +7,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import { adminSchedulingService } from './schedulingService';
 import {
   PersonaType,
@@ -144,25 +145,19 @@ export async function detectPersonaWithAI(
   input: PersonaDetectionInput
 ): Promise<PersonaConfig> {
   try {
-    const prompt = `Analyze this contact and determine their likely persona type for B2B sales communication.
+    // Load the managed prompt from database
+    const promptResult = await getPromptWithVariables('persona_detection', {
+      contactName: input.name || 'Unknown',
+      contactTitle: input.title || 'Not specified',
+      companyName: input.company?.name || 'Unknown',
+      industry: input.company?.industry || 'Unknown',
+      companySegment: input.company?.segment || 'Unknown',
+    });
 
-## Contact Information
-- Name: ${input.name}
-- Title: ${input.title || 'Not specified'}
-${input.company ? `- Company: ${input.company.name}
-- Industry: ${input.company.industry || 'Unknown'}
-- Size/Segment: ${input.company.segment || 'Unknown'}` : ''}
-
-## Persona Types (choose one)
-1. owner_operator - Busy owner, direct communication, values time
-2. office_manager - Detail-oriented, follows process, needs to check with decision maker
-3. operations_lead - Efficiency-focused, data-driven, cares about ROI
-4. it_technical - Technical details matter, wants specifics and integrations
-5. executive - High-level, strategic, very brief communications
-6. franchise_corp - Multi-location focus, scalability, enterprise needs
-
-## Task
-Determine the most likely persona and explain your reasoning.`;
+    if (!promptResult || !promptResult.prompt) {
+      console.warn('[detectPersonaWithAI] Failed to load persona_detection prompt, using rule-based fallback');
+      return detectPersona(input);
+    }
 
     const response = await callAIJson<{
       persona: PersonaType;
@@ -170,16 +165,10 @@ Determine the most likely persona and explain your reasoning.`;
       signals: string[];
       reasoning: string;
     }>({
-      prompt,
-      systemPrompt: 'You are an expert B2B sales persona analyst specializing in pest control and service industry contacts.',
-      schema: `{
-        "persona": "one of the persona types listed",
-        "confidence": 0.0-1.0,
-        "signals": ["array of signals that indicated this persona"],
-        "reasoning": "brief explanation"
-      }`,
-      maxTokens: 500,
-      temperature: 0.3,
+      prompt: promptResult.prompt,
+      schema: promptResult.schema || undefined,
+      model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      maxTokens: promptResult.maxTokens || 500,
     });
 
     return {

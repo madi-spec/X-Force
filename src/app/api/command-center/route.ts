@@ -1,6 +1,10 @@
 /**
  * Command Center API - Unified View
  *
+ * NOTE: This API is now primarily consumed by the Work Queue (/work) rather than
+ * the Command Center UI (which was removed from navigation). The Work Queue fetches
+ * Meeting Prep items from this endpoint.
+ *
  * Combines Daily Driver's source-table queries with AI enrichment.
  * Uses attention levels (now/soon/monitor) instead of 5-tier system.
  *
@@ -584,8 +588,8 @@ export async function GET(request: NextRequest) {
           stage_entered_at,
           last_stage_moved_at,
           product:products(id, name, slug),
-          current_stage:product_sales_stages(id, name, stage_order),
-          owner:users(id, name)
+          current_stage:product_process_stages(id, name, stage_order),
+          owner_user:users(id, name)
         )
       `)
       .eq('status', 'open')
@@ -613,8 +617,8 @@ export async function GET(request: NextRequest) {
           stage_entered_at,
           last_stage_moved_at,
           product:products(id, name, slug),
-          current_stage:product_sales_stages(id, name, stage_order),
-          owner:users(id, name)
+          current_stage:product_process_stages(id, name, stage_order),
+          owner_user:users(id, name)
         )
       `)
       .eq('status', 'open')
@@ -646,7 +650,7 @@ export async function GET(request: NextRequest) {
         *,
         company:companies(id, name),
         product:products(id, name, slug),
-        current_stage:product_sales_stages(id, name, stage_order),
+        current_stage:product_process_stages(id, name, stage_order),
         owner:users(id, name)
       `)
       .eq('status', 'in_sales')

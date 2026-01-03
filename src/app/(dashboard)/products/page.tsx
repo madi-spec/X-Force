@@ -6,15 +6,20 @@ import type { ProductCardData } from '@/types/products';
 export default async function ProductsPage() {
   const supabase = await createClient();
 
-  // Get products with stats (include legacy products for visibility)
+  // Get products with stats (exclude prerequisite products like VFP/VFT)
+  // Stages are now fetched through product_processes -> product_process_stages
   const { data: products } = await supabase
     .from('products')
     .select(`
       *,
-      stages:product_sales_stages(id, name, stage_order)
+      processes:product_processes(
+        id, process_type,
+        stages:product_process_stages(id, name, stage_order)
+      )
     `)
     .is('parent_product_id', null)
     .eq('is_active', true)
+    .eq('is_sellable', true)
     .order('display_order');
 
   // Get stats for each product
@@ -57,6 +62,10 @@ export default async function ProductsPage() {
 
       stats.inactive = Math.max(0, (vfpCount || 0) - stats.active - stats.in_sales - stats.in_onboarding);
 
+      // Extract stages from the sales process
+      const salesProcess = product.processes?.find((p: { process_type: string }) => p.process_type === 'sales');
+      const stages = salesProcess?.stages || [];
+
       return {
         id: product.id,
         name: product.name,
@@ -65,7 +74,7 @@ export default async function ProductsPage() {
         icon: product.icon,
         color: product.color,
         is_sellable: product.is_sellable,
-        stages: product.stages || [],
+        stages,
         stats,
         pipelineByStage,
       };
@@ -91,8 +100,13 @@ export default async function ProductsPage() {
             <p className="text-sm text-gray-400 mt-1">Run the database migration to seed products</p>
           </div>
         ) : (
-          productsWithStats.map((product) => (
-            <ProductCard key={product.id} product={product} />
+          productsWithStats.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              isFirst={index === 0}
+              isLast={index === productsWithStats.length - 1}
+            />
           ))
         )}
       </div>

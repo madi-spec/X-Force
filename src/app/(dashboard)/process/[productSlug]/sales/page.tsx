@@ -7,12 +7,10 @@ interface Props {
 /**
  * Sales Process Route
  *
- * Redirects to the existing Proven Process editor at /products/[slug]/process
- * This maintains backwards compatibility while providing a unified URL structure.
+ * Redirects to the unified Process Editor with sales tab selected.
+ * Maintains backwards compatibility.
  */
 export default async function SalesProcessPage({ params }: Props) {
   const { productSlug } = await params;
-
-  // Redirect to the existing proven process editor
-  redirect(`/products/${productSlug}/process`);
+  redirect(`/products/${productSlug}/process?process=sales`);
 }

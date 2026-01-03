@@ -28,6 +28,7 @@ import {
   formatTimeSlotsForEmail,
   EmailType,
 } from './emailGeneration';
+import { getRealAvailableSlots, getMultiAttendeeAvailability } from './calendarIntegration';
 import { sendEmail } from '@/lib/microsoft/emailSync';
 import { getValidToken } from '@/lib/microsoft/auth';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
@@ -1219,6 +1220,12 @@ export class SchedulingService {
     error: string | null;
     email?: { subject: string; body: string };
     proposedTimes?: string[];
+    availability?: {
+      source: 'calendar' | 'generated' | 'error';
+      calendarChecked: boolean;
+      warnings: string[];
+      error: string | null;
+    };
   }> {
     const supabase = await this.getClient();
 
@@ -1240,26 +1247,109 @@ export class SchedulingService {
         return { success: false, error: fetchError?.message || 'Request not found' };
       }
 
-      // Generate proposed times
-      const dateRangeStart = request.date_range_start
-        ? new Date(request.date_range_start)
-        : new Date();
-      const dateRangeEnd = request.date_range_end
-        ? new Date(request.date_range_end)
-        : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      // Generate proposed times - try real calendar availability first
+      const timezone = request.timezone || 'America/New_York';
+      let proposedTimeSlots: Array<{ start: Date; end: Date; formatted: string }> = [];
 
-      const proposedTimeDates = generateProposedTimes(
-        dateRangeStart,
-        dateRangeEnd,
-        request.preferred_times || { morning: true, afternoon: true, evening: false },
-        request.avoid_days || [],
-        4
-      );
+      // Track availability info to return to the caller
+      let availabilityInfo: {
+        source: 'calendar' | 'generated' | 'error';
+        calendarChecked: boolean;
+        warnings: string[];
+        error: string | null;
+      } = {
+        source: 'generated',
+        calendarChecked: false,
+        warnings: [],
+        error: null,
+      };
 
-      const proposedTimeSlots = formatTimeSlotsForEmail(
-        proposedTimeDates,
-        request.timezone || 'America/New_York'
-      );
+      // Try to get real availability from calendar
+      if (request.created_by) {
+        try {
+          // Extract internal attendee emails (excluding the organizer - they're checked as primary user)
+          const internalAttendeeEmails = (request.attendees || [])
+            .filter((attendee: SchedulingAttendee) => {
+              // Include if marked as internal side AND not the organizer AND has email
+              const isInternal = attendee.side === 'internal';
+              const isOrganizer = attendee.is_organizer === true;
+              const hasEmail = !!attendee.email;
+
+              return hasEmail && !isOrganizer && isInternal;
+            })
+            .map((attendee: SchedulingAttendee) => attendee.email);
+
+          console.log('[PreviewEmail] Checking calendars for organizer +', internalAttendeeEmails.length, 'internal attendees:', internalAttendeeEmails);
+
+          // Use getMultiAttendeeAvailability to check ALL attendees' calendars
+          const availability = await getMultiAttendeeAvailability(
+            request.created_by,
+            internalAttendeeEmails,
+            {
+              daysAhead: 10,
+              slotDuration: request.duration_minutes || 30,
+              businessHoursStart: 9,
+              businessHoursEnd: 17,
+              maxSlots: 4,
+              timezone,
+            }
+          );
+
+          // Capture availability metadata
+          availabilityInfo = {
+            source: availability.source,
+            calendarChecked: availability.calendarChecked,
+            warnings: availability.warnings || [],
+            error: availability.error || null,
+          };
+
+          // Log any warnings about attendees whose calendars couldn't be checked
+          if (availability.warnings && availability.warnings.length > 0) {
+            console.warn('[PreviewEmail] Calendar check warnings:', availability.warnings);
+          }
+
+          if (availability.slots && availability.slots.length > 0) {
+            console.log('[Scheduler] Using real calendar availability:', availability.slots.length, 'slots (checked', internalAttendeeEmails.length + 1, 'calendars)');
+            proposedTimeSlots = availability.slots;
+          } else if (availability.error) {
+            console.warn('[Scheduler] Calendar check failed:', availability.error);
+          }
+        } catch (err) {
+          console.warn('[Scheduler] Error checking calendar availability:', err);
+          availabilityInfo = {
+            source: 'error',
+            calendarChecked: false,
+            warnings: [],
+            error: err instanceof Error ? err.message : 'Calendar check failed',
+          };
+        }
+      }
+
+      // Fall back to generated times if calendar check failed
+      if (proposedTimeSlots.length === 0) {
+        console.log('[Scheduler] Falling back to generated times (no calendar access)');
+        availabilityInfo.source = 'generated';
+        if (!availabilityInfo.error) {
+          availabilityInfo.warnings.push('Calendar not available - using generated time slots');
+        }
+
+        const dateRangeStart = request.date_range_start
+          ? new Date(request.date_range_start)
+          : new Date();
+        const dateRangeEnd = request.date_range_end
+          ? new Date(request.date_range_end)
+          : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+        const proposedTimeDates = generateProposedTimes(
+          dateRangeStart,
+          dateRangeEnd,
+          request.preferred_times || { morning: true, afternoon: true, evening: false },
+          request.avoid_days || [],
+          4
+        );
+
+        proposedTimeSlots = formatTimeSlotsForEmail(proposedTimeDates, timezone);
+      }
 
       // Generate email content
       const sender = request.creator || { name: 'Sales Team', email: '' };
@@ -1289,6 +1379,7 @@ export class SchedulingService {
         error: null,
         email,
         proposedTimes: proposedTimeSlots.map((t) => t.formatted),
+        availability: availabilityInfo,
       };
     } catch (err) {
       console.error('[Scheduler] Error previewing email:', err);

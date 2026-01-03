@@ -49,6 +49,7 @@ interface Company {
   vfp_customer_id?: string | null;
   ats_id?: string | null;
   voice_customer?: boolean;
+  vfp_support_contact?: string | null;
 }
 
 interface Contact {
@@ -166,8 +167,10 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
   const inSalesProducts = products.filter(p => p.status === 'in_sales');
   const otherProducts = products.filter(p => !['active', 'customer', 'in_sales'].includes(p.status));
 
-  // Get VFP rep from products (first product with an owner)
-  const vfpRep = products.find(p => p.owner)?.owner;
+  // Get success rep from company's vfp_support_contact field
+  const successRep = company?.vfp_support_contact && company.vfp_support_contact !== 'None'
+    ? company.vfp_support_contact
+    : null;
 
   // Unlinked communication view - show create lead option
   if (!companyId && senderEmail) {
@@ -250,6 +253,17 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
             )}
           </div>
         </div>
+
+        {/* Success Rep - Prominent display for scheduling context */}
+        {successRep && (
+          <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+            <User className="w-4 h-4 text-blue-600" />
+            <div className="flex-1 min-w-0">
+              <span className="text-xs text-blue-600 font-medium uppercase tracking-wider">Success Rep</span>
+              <p className="text-sm font-semibold text-gray-900 truncate">{successRep}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Rev & ATS IDs */}
@@ -274,19 +288,6 @@ export function CustomerContext({ companyId, contactId, senderEmail, onLeadCreat
                 </span>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* VFP Rep */}
-      {vfpRep && (
-        <div className="px-4 py-3 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <User className="w-3.5 h-3.5 text-gray-400" />
-            <span className="text-xs text-gray-500">VFP Rep:</span>
-            <span className="text-sm font-medium text-gray-900">
-              {vfpRep.name}
-            </span>
           </div>
         </div>
       )}

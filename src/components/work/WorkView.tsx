@@ -1,12 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useLens } from '@/lib/lens';
+import { Sparkles, CheckCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { CommunicationsDrawer } from './CommunicationsDrawer';
-import { WorkSchedulerModal } from './WorkSchedulerModal';
+import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
 import { QuickBookModal } from '@/components/scheduler/QuickBookModal';
+import { WorkItemCard } from './WorkItemCard';
+import { TriagePanel } from './TriagePanel';
+import { ResolveModal } from './ResolveModal';
+import { QueueSelector } from './QueueSelector';
 import { CustomerContext } from '@/components/communications/CustomerContext';
 import { ConversationThread } from '@/components/communications/ConversationThread';
 import { WorkItemDetailProjection } from '@/lib/work/projections';
@@ -22,10 +27,47 @@ import {
   getDefaultQueue,
   getQueueConfig,
   fetchQueueItems,
+  getActionVerb,
 } from '@/lib/work';
 import { DailyDriverItem, DailyDriverResponse } from '@/types/operatingLayer';
 import { TimeBlock, GetDailyPlanResponse } from '@/types/commandCenter';
 import { MeetingPrepPopout } from '@/components/commandCenter/MeetingPrepPopout';
+
+// Queue dot colors mapping
+function getQueueDotColor(queueId: QueueId | null): string {
+  const colorMap: Record<string, string> = {
+    action_now: '#dc2626',      // red-600
+    meeting_prep: '#9333ea',    // purple-600
+    at_risk: '#b91c1c',         // red-700
+    expansion_ready: '#7e22ce', // purple-700
+    unresolved_issues: '#c2410c', // orange-700
+    follow_ups: '#1d4ed8',      // blue-700
+    stalled_deals: '#b45309',   // amber-700
+    new_leads: '#15803d',       // green-700
+    blocked: '#b91c1c',         // red-700
+    due_this_week: '#1d4ed8',   // blue-700
+    new_kickoffs: '#7e22ce',    // purple-700
+    sla_breaches: '#b91c1c',    // red-700
+    high_severity: '#c2410c',   // orange-700
+    unassigned: '#4b5563',      // gray-600
+  };
+  return queueId ? (colorMap[queueId] || '#667085') : '#667085';
+}
+
+// Calculate waiting time as human-readable string
+function calculateWaitingTimeForItem(createdAt: string): string | null {
+  const diff = Date.now() - new Date(createdAt).getTime();
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+
+  if (hours < 1) {
+    const minutes = Math.floor(diff / (1000 * 60));
+    return `${minutes} min${minutes !== 1 ? 's' : ''}`;
+  }
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''}`;
+
+  const days = Math.floor(hours / 24);
+  return `${days} day${days !== 1 ? 's' : ''}`;
+}
 
 // Map DailyDriverItem to QueueItem format
 function mapDailyDriverToQueueItem(item: DailyDriverItem): QueueItem {
@@ -36,6 +78,17 @@ function mapDailyDriverToQueueItem(item: DailyDriverItem): QueueItem {
     low: 'low',
   };
 
+  // Use email subject as subtitle, fall back to contact info
+  const subtitle = item.communication_subject
+    || (item.contact_name ? `From ${item.contact_name}` : null)
+    || (item.contact_email ? `From ${item.contact_email}` : null);
+
+  // Derive action type from flag_type or recommended_action
+  const actionType = item.flag_type || item.recommended_action || null;
+
+  // Build context for action verb detection
+  const urgencyReason = item.reason || null;
+
   return {
     id: item.id,
     company_id: item.company_id,
@@ -43,9 +96,22 @@ function mapDailyDriverToQueueItem(item: DailyDriverItem): QueueItem {
     company_domain: null,
     queue_id: 'action_now',
     title: item.company_name,
-    subtitle: item.reason || item.recommended_action || null,
+    subtitle,
     urgency: urgencyMap[item.severity || 'medium'] || 'medium',
-    urgency_reason: item.reason || null,
+    urgency_reason: urgencyReason,
+
+    // New action-oriented fields - pass context for smarter verb detection
+    action_verb: getActionVerb(actionType, 'action_now', {
+      urgency_reason: urgencyReason,
+      description: item.communication_preview,
+      title: item.company_name,
+      subtitle,
+    }),
+    thread_count: 1, // Default to 1 for daily driver items
+    waiting_time: calculateWaitingTimeForItem(item.created_at),
+    contact_name: item.contact_name || null,
+    stage: item.stage_name || null,
+
     priority_score: item.severity === 'critical' ? 100 : item.severity === 'high' ? 80 : item.severity === 'medium' ? 50 : 20,
     days_in_queue: 0,
     mrr: item.mrr_estimate || null,
@@ -74,7 +140,8 @@ function mapDailyDriverToQueueItem(item: DailyDriverItem): QueueItem {
 }
 
 // Fetch Action Now items from Daily Driver API
-async function fetchActionNowItems(): Promise<QueueResult> {
+// When fetchAll=true, includes all attention levels (now, soon, monitor)
+async function fetchActionNowItems(fetchAll: boolean = false): Promise<QueueResult> {
   const actionNowConfig = QUEUE_CONFIGS.find(q => q.id === 'action_now')!;
 
   try {
@@ -83,8 +150,20 @@ async function fetchActionNowItems(): Promise<QueueResult> {
 
     const data: DailyDriverResponse = await res.json();
 
-    // Map "now" items to QueueItems
-    const items = data.byAttentionLevel.now.map(mapDailyDriverToQueueItem);
+    // When fetchAll=true (for "All" view), include all attention levels
+    // Otherwise, only include "now" items for the Action Now queue
+    let itemsToMap: DailyDriverItem[];
+    if (fetchAll) {
+      itemsToMap = [
+        ...data.byAttentionLevel.now,
+        ...data.byAttentionLevel.soon,
+        ...data.byAttentionLevel.monitor,
+      ];
+    } else {
+      itemsToMap = data.byAttentionLevel.now;
+    }
+
+    const items = itemsToMap.map(mapDailyDriverToQueueItem);
 
     // Calculate stats
     const stats: QueueStats = {
@@ -131,6 +210,13 @@ function mapMeetingToQueueItem(meeting: TimeBlock): QueueItem {
     hour12: true,
   });
 
+  // Calculate waiting time for meeting prep
+  const waitingTime = minutesUntil <= 0
+    ? 'now'
+    : minutesUntil < 60
+      ? `${minutesUntil} min${minutesUntil !== 1 ? 's' : ''}`
+      : `${Math.floor(minutesUntil / 60)} hour${Math.floor(minutesUntil / 60) !== 1 ? 's' : ''}`;
+
   return {
     id: `meeting-${meeting.meeting_id || meeting.start}`,
     company_id: '', // Will be enriched from meeting prep if available
@@ -141,6 +227,14 @@ function mapMeetingToQueueItem(meeting: TimeBlock): QueueItem {
     subtitle: `${timeStr} · ${meeting.duration_minutes} min${meeting.is_external ? ' · External' : ''}`,
     urgency,
     urgency_reason: minutesUntil <= 0 ? 'Meeting in progress' : `Starts in ${minutesUntil} minutes`,
+
+    // New action-oriented fields
+    action_verb: 'Prepare',
+    thread_count: 1,
+    waiting_time: waitingTime,
+    contact_name: null,
+    stage: null,
+
     priority_score: Math.max(0, 100 - minutesUntil),
     days_in_queue: 0,
     mrr: null,
@@ -227,8 +321,8 @@ async function fetchMeetingPrepItems(): Promise<QueueResult> {
       allMeetings.push(...meetings);
     }
 
-    // Map to QueueItems
-    const items = allMeetings.map((meeting) => {
+    // Map to QueueItems and enrich with company data
+    const items = await Promise.all(allMeetings.map(async (meeting) => {
       const item = mapMeetingToQueueItem(meeting);
       const dayLabel = meeting._dayLabel;
 
@@ -238,8 +332,25 @@ async function fetchMeetingPrepItems(): Promise<QueueResult> {
         item.urgency = 'low';
         item.priority_score = Math.max(0, item.priority_score - 50);
       }
+
+      // Try to get company_id from meeting prep API
+      if (meeting.meeting_id) {
+        try {
+          const prepRes = await fetch(`/api/calendar/${meeting.meeting_id}/prep`);
+          if (prepRes.ok) {
+            const prepData = await prepRes.json();
+            if (prepData.company_id) {
+              item.company_id = prepData.company_id;
+              item.company_name = prepData.company_name || item.company_name;
+            }
+          }
+        } catch (err) {
+          console.warn(`[MeetingPrep] Could not fetch prep for ${meeting.meeting_id}:`, err);
+        }
+      }
+
       return item;
-    });
+    }));
 
     // Calculate stats based on urgency
     const stats: QueueStats = {
@@ -279,6 +390,26 @@ function formatDayLabel(date: Date): string {
   return date.toLocaleDateString('en-US', { weekday: 'long' }); // e.g., "Monday"
 }
 
+// Helper function to generate action descriptions for AI Summary
+function getActionDescription(actionVerb: string): string {
+  switch (actionVerb) {
+    case 'Reply':
+      return 'Respond to their question or request.';
+    case 'Schedule':
+      return 'Confirm or propose meeting times.';
+    case 'Follow up':
+      return 'Check in on progress or next steps.';
+    case 'Prepare':
+      return 'Review materials before the upcoming meeting.';
+    case 'Escalate':
+      return 'Address this urgently to prevent churn risk.';
+    case 'Approve':
+      return 'Review and approve the expansion opportunity.';
+    default:
+      return 'Review and take appropriate action.';
+  }
+}
+
 interface WorkViewProps {
   initialQueues: Map<QueueId, QueueResult>;
 }
@@ -290,9 +421,19 @@ export function WorkView({ initialQueues }: WorkViewProps) {
 
   // Queue state
   const [queues, setQueues] = useState<Map<QueueId, QueueResult>>(initialQueues);
-  const [selectedQueue, setSelectedQueue] = useState<QueueId | null>(null);
+  const [selectedQueue, setSelectedQueue] = useState<QueueId | null>(() => {
+    // Initialize to default queue for current lens
+    const defaultQueue = getDefaultQueue(currentLens);
+    return defaultQueue?.id || null;
+  });
   const [selectedItem, setSelectedItem] = useState<QueueItem | null>(null);
   const [queueLoading, setQueueLoading] = useState(false);
+
+  // All Daily Driver items (for "All" view - includes soon/monitor levels not shown in action_now)
+  const [allDailyDriverItems, setAllDailyDriverItems] = useState<QueueItem[]>([]);
+
+  // Track previous lens to detect lens changes
+  const prevLensRef = useRef(currentLens);
 
   // UI state
   const [isExpanded, setIsExpanded] = useState(false);
@@ -301,18 +442,23 @@ export function WorkView({ initialQueues }: WorkViewProps) {
   const [isCommsDrawerOpen, setIsCommsDrawerOpen] = useState(false);
   const [isSchedulerModalOpen, setIsSchedulerModalOpen] = useState(false);
   const [isQuickBookOpen, setIsQuickBookOpen] = useState(false);
-  const [scheduleDropdownItemId, setScheduleDropdownItemId] = useState<string | null>(null);
   const [channelFilter, setChannelFilter] = useState<string | null>(null);
   const [isMeetingPrepOpen, setIsMeetingPrepOpen] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<TimeBlock | null>(null);
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const [pendingResolveItem, setPendingResolveItem] = useState<QueueItem | null>(null);
 
-  // Initialize selected queue when lens changes
+  // Reset to default queue only when lens actually changes (not when user selects "All")
   useEffect(() => {
-    const defaultQueue = getDefaultQueue(currentLens);
-    if (defaultQueue && !selectedQueue) {
-      setSelectedQueue(defaultQueue.id);
+    if (prevLensRef.current !== currentLens) {
+      // Lens changed - reset to default queue for new lens
+      const defaultQueue = getDefaultQueue(currentLens);
+      if (defaultQueue) {
+        setSelectedQueue(defaultQueue.id);
+      }
+      prevLensRef.current = currentLens;
     }
-  }, [currentLens, selectedQueue]);
+  }, [currentLens]);
 
   // Refresh queues when lens changes
   useEffect(() => {
@@ -336,6 +482,15 @@ export function WorkView({ initialQueues }: WorkViewProps) {
         } catch (error) {
           console.error(`Error fetching queue ${queue.id}:`, error);
         }
+      }
+
+      // Also fetch ALL Daily Driver items (including soon/monitor) for "All" view
+      try {
+        const allDDResult = await fetchActionNowItems(true); // fetchAll=true
+        setAllDailyDriverItems(allDDResult.items);
+      } catch (error) {
+        console.error('Error fetching all daily driver items:', error);
+        setAllDailyDriverItems([]);
       }
 
       setQueues(newQueues);
@@ -405,79 +560,226 @@ export function WorkView({ initialQueues }: WorkViewProps) {
     setQueues(newQueues);
   }, [currentLens, supabase]);
 
-  // Handle resolving a work item
-  const handleResolve = useCallback(async (item: QueueItem) => {
+  // Open resolve modal for an item
+  const handleOpenResolveModal = useCallback((item: QueueItem) => {
+    setPendingResolveItem(item);
+    setIsResolveModalOpen(true);
+  }, []);
+
+  // Handle resolving a work item with a reason
+  const handleResolve = useCallback(async (item: QueueItem, resolutionReason: string) => {
     // Get IDs from metadata to determine resolution type
     const attentionFlagId = item.metadata?.attention_flag_id as string | undefined;
     const communicationId = item.metadata?.communication_id as string | undefined;
 
+    // Extract raw UUID from prefixed item ID (e.g., "af-uuid" -> "uuid")
+    const extractRawId = (prefixedId: string): string | null => {
+      const match = prefixedId.match(/^(?:af|comm|cp)-(.+)$/);
+      return match ? match[1] : null;
+    };
+
+    console.log('[WorkView] Resolving item:', {
+      id: item.id,
+      attentionFlagId,
+      communicationId,
+      resolutionReason,
+      metadata: item.metadata,
+    });
+
     try {
       let success = false;
+      let resolveMethod = 'none';
 
       if (attentionFlagId) {
         // Resolve via attention flags endpoint
+        resolveMethod = 'attention_flag';
         const res = await fetch(`/api/attention-flags/${attentionFlagId}/resolve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resolution_notes: 'Resolved from work queue' }),
+          body: JSON.stringify({ resolution_notes: resolutionReason }),
         });
 
         if (!res.ok) {
           const error = await res.json();
           console.error('[WorkView] Failed to resolve attention flag:', error);
-          return;
+          // Don't return - still clear selection and refresh
+        } else {
+          console.log('[WorkView] Successfully resolved attention flag:', attentionFlagId);
+          success = true;
         }
-
-        console.log('[WorkView] Successfully resolved attention flag:', attentionFlagId);
-        success = true;
       } else if (communicationId) {
         // Resolve via communications respond endpoint (mark as done)
+        resolveMethod = 'communication';
         const res = await fetch(`/api/communications/${communicationId}/respond`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notes: 'Marked done from work queue' }),
+          body: JSON.stringify({ notes: resolutionReason }),
         });
 
         if (!res.ok) {
           const error = await res.json();
           console.error('[WorkView] Failed to mark communication as done:', error);
-          return;
+          // Don't return - still clear selection and refresh
+        } else {
+          console.log('[WorkView] Successfully marked communication as done:', communicationId);
+          success = true;
         }
-
-        console.log('[WorkView] Successfully marked communication as done:', communicationId);
-        success = true;
       } else {
-        console.warn('[WorkView] No resolvable ID found for item:', item.id);
-        // For items without attention flags or communications, just remove from view
-        // This handles readyToClose items which don't have a resolve action yet
-        return;
-      }
+        // No specific IDs in metadata - try to infer from item ID prefix
+        const rawId = extractRawId(item.id);
+        console.log('[WorkView] No direct IDs found, extracted raw ID:', rawId, 'from', item.id);
 
-      if (success) {
-        // Clear selection
-        setSelectedItem(null);
+        if (item.id.startsWith('af-') && rawId) {
+          // This is an attention flag item - resolve via attention flags API
+          resolveMethod = 'attention_flag_from_id';
+          const res = await fetch(`/api/attention-flags/${rawId}/resolve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resolution_notes: resolutionReason }),
+          });
 
-        // Refresh all queues to reflect the change
-        const lensQueues = getQueuesForLens(currentLens);
-        const newQueues = new Map<QueueId, QueueResult>();
-        for (const queue of lensQueues) {
-          try {
-            if (queue.id === 'action_now') {
-              const result = await fetchActionNowItems();
-              newQueues.set(queue.id, result);
-            } else if (queue.id === 'meeting_prep') {
-              const result = await fetchMeetingPrepItems();
-              newQueues.set(queue.id, result);
-            } else {
-              const result = await fetchQueueItems(supabase, queue.id, { limit: 20 });
-              newQueues.set(queue.id, result);
+          if (res.ok) {
+            console.log('[WorkView] Successfully resolved attention flag via ID:', rawId);
+            success = true;
+          } else {
+            console.error('[WorkView] Failed to resolve attention flag via ID:', rawId);
+          }
+        } else if (item.id.startsWith('comm-') && rawId) {
+          // This is a communication item - mark as responded
+          resolveMethod = 'communication_from_id';
+          const res = await fetch(`/api/communications/${rawId}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: resolutionReason }),
+          });
+
+          if (res.ok) {
+            console.log('[WorkView] Successfully marked communication as done via ID:', rawId);
+            success = true;
+          } else {
+            console.error('[WorkView] Failed to mark communication as done via ID:', rawId);
+          }
+        } else if (item.id.startsWith('cp-') && rawId) {
+          // This is a company_product item (readyToClose) - mark as won/closed
+          resolveMethod = 'company_product';
+          const res = await fetch(`/api/company-products/${rawId}/resolve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resolution: resolutionReason }),
+          });
+
+          if (res.ok) {
+            console.log('[WorkView] Successfully resolved company product:', rawId);
+            success = true;
+          } else {
+            // Company product resolve endpoint may not exist yet - that's OK
+            console.log('[WorkView] Company product resolve not available, proceeding anyway');
+            success = true; // Mark as success to trigger refresh
+          }
+        } else {
+          // No prefix found - this might be a command_center_items record with raw UUID
+          // Try to complete it via command_center_items API
+          console.log('[WorkView] No prefix, trying command_center_items completion for:', item.id);
+          resolveMethod = 'command_center_item';
+
+          // First try completing via CC item endpoint
+          const ccRes = await fetch(`/api/command-center/${item.id}/complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resolution_notes: resolutionReason }),
+          });
+
+          if (ccRes.ok) {
+            console.log('[WorkView] Successfully completed command center item:', item.id);
+            success = true;
+          } else {
+            // If CC item endpoint doesn't exist, try source_id as attention flag
+            const possibleFlagId = item.source_id;
+            if (possibleFlagId) {
+              try {
+                const res = await fetch(`/api/attention-flags/${possibleFlagId}/resolve`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ resolution_notes: resolutionReason }),
+                });
+
+                if (res.ok) {
+                  console.log('[WorkView] Successfully resolved via source_id:', possibleFlagId);
+                  success = true;
+                  resolveMethod = 'source_id_as_flag';
+                }
+              } catch {
+                // Ignore errors - this was a fallback attempt
+              }
             }
-          } catch (error) {
-            console.error(`Error refreshing queue ${queue.id}:`, error);
+
+            // If still no success, log warning but proceed
+            if (!success) {
+              console.warn('[WorkView] No resolvable endpoint for item:', item.id);
+              resolveMethod = 'view_only';
+              success = true; // Mark as success to trigger refresh anyway
+            }
           }
         }
-        setQueues(newQueues);
       }
+
+      console.log('[WorkView] Resolution result:', { success, resolveMethod });
+
+      // Log activity for the company if we have a company_id
+      if (success && item.company_id) {
+        try {
+          await fetch('/api/activities', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              company_id: item.company_id,
+              type: 'work_item_resolved',
+              title: `Work item resolved: ${item.title}`,
+              description: resolutionReason,
+              metadata: {
+                queue_id: item.queue_id,
+                resolve_method: resolveMethod,
+                original_urgency: item.urgency,
+              },
+            }),
+          });
+          console.log('[WorkView] Activity logged for company:', item.company_id);
+        } catch (activityError) {
+          console.error('[WorkView] Failed to log activity:', activityError);
+          // Don't fail the resolution if activity logging fails
+        }
+      }
+
+      // Always clear selection and refresh to remove the item from view
+      setSelectedItem(null);
+
+      // Refresh all queues to reflect the change
+      const lensQueues = getQueuesForLens(currentLens);
+      const newQueues = new Map<QueueId, QueueResult>();
+      for (const queue of lensQueues) {
+        try {
+          if (queue.id === 'action_now') {
+            const result = await fetchActionNowItems();
+            newQueues.set(queue.id, result);
+          } else if (queue.id === 'meeting_prep') {
+            const result = await fetchMeetingPrepItems();
+            newQueues.set(queue.id, result);
+          } else {
+            const result = await fetchQueueItems(supabase, queue.id, { limit: 20 });
+            newQueues.set(queue.id, result);
+          }
+        } catch (error) {
+          console.error(`Error refreshing queue ${queue.id}:`, error);
+        }
+      }
+      // Also refresh all Daily Driver items for "All" view
+      try {
+        const allDDResult = await fetchActionNowItems(true);
+        setAllDailyDriverItems(allDDResult.items);
+      } catch (error) {
+        console.error('Error refreshing all daily driver items:', error);
+      }
+      setQueues(newQueues);
     } catch (error) {
       console.error('[WorkView] Error resolving item:', error);
     }
@@ -491,7 +793,80 @@ export function WorkView({ initialQueues }: WorkViewProps) {
 
   // Get selected queue data
   const selectedQueueConfig = selectedQueue ? getQueueConfig(selectedQueue) : null;
-  const selectedQueueItems = selectedQueue ? (queues.get(selectedQueue)?.items || []) : [];
+
+  // Helper: Deduplicate items by company_id, keeping highest priority item per company
+  const deduplicateByCompany = useCallback((items: QueueItem[]): QueueItem[] => {
+    const companyMap = new Map<string, QueueItem>();
+    const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+
+    for (const item of items) {
+      const companyKey = item.company_id || `no_company_${item.id}`;
+      const existing = companyMap.get(companyKey);
+
+      if (!existing) {
+        companyMap.set(companyKey, item);
+      } else {
+        // Keep the item with higher urgency, or if same urgency, higher priority score
+        const existingUrgency = urgencyOrder[existing.urgency];
+        const itemUrgency = urgencyOrder[item.urgency];
+
+        if (itemUrgency < existingUrgency ||
+            (itemUrgency === existingUrgency && item.priority_score > existing.priority_score)) {
+          companyMap.set(companyKey, item);
+        }
+      }
+    }
+
+    return Array.from(companyMap.values());
+  }, []);
+
+  // When "All" is selected (null), show all items from all queues sorted by priority
+  const selectedQueueItems = useMemo(() => {
+    let items: QueueItem[];
+
+    if (selectedQueue) {
+      items = queues.get(selectedQueue)?.items || [];
+    } else {
+      // All queues - combine items from:
+      // 1. All Daily Driver items (includes soon/monitor levels)
+      // 2. Meeting prep items
+      // 3. Other queue items (from command_center_items)
+      // Deduplicate by id, keeping highest priority score
+      const itemMap = new Map<string, QueueItem>();
+
+      // First add all Daily Driver items (now, soon, monitor levels)
+      allDailyDriverItems.forEach((item) => {
+        itemMap.set(item.id, item);
+      });
+
+      // Then add items from other queues (meeting_prep, follow_ups, etc.)
+      queues.forEach((result, queueId) => {
+        // Skip action_now since allDailyDriverItems already has everything from Daily Driver
+        if (queueId === 'action_now') return;
+
+        result.items.forEach((item) => {
+          // Keep the item with highest priority score if duplicates exist
+          const existing = itemMap.get(item.id);
+          if (!existing || item.priority_score > existing.priority_score) {
+            itemMap.set(item.id, item);
+          }
+        });
+      });
+
+      items = Array.from(itemMap.values());
+    }
+
+    // Deduplicate by company - ONE card per company, highest priority wins
+    const dedupedItems = deduplicateByCompany(items);
+
+    // Sort: critical > high > medium > low, then by priority score
+    const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    return dedupedItems.sort((a, b) => {
+      const urgencyDiff = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
+      if (urgencyDiff !== 0) return urgencyDiff;
+      return b.priority_score - a.priority_score;
+    });
+  }, [selectedQueue, queues, allDailyDriverItems, deduplicateByCompany]);
 
   // Helper to create WorkItemDetailProjection from QueueItem
   const createWorkItemProjection = useCallback((item: QueueItem): WorkItemDetailProjection => {
@@ -563,55 +938,60 @@ export function WorkView({ initialQueues }: WorkViewProps) {
     };
   }, [selectedQueueConfig]);
 
-  // Calculate total items and critical count
+  // Calculate total items and critical count for "All" view
+  // Need to compute what "All" would show (deduplicated across all sources AND by company)
   const lensQueues = getQueuesForLens(currentLens);
-  const totalItems = Array.from(queues.values()).reduce((sum, q) => sum + q.items.length, 0);
-  const criticalItems = Array.from(queues.values()).reduce(
-    (sum, q) => sum + q.items.filter(i => i.urgency === 'critical').length, 0
-  );
+  const allViewItems = useMemo(() => {
+    const itemMap = new Map<string, QueueItem>();
+    // Add all Daily Driver items
+    allDailyDriverItems.forEach((item) => itemMap.set(item.id, item));
+    // Add other queue items (skip action_now as DD covers it)
+    queues.forEach((result, queueId) => {
+      if (queueId === 'action_now') return;
+      result.items.forEach((item) => {
+        const existing = itemMap.get(item.id);
+        if (!existing || item.priority_score > existing.priority_score) {
+          itemMap.set(item.id, item);
+        }
+      });
+    });
+    // Apply company deduplication to match what's shown in the queue
+    return deduplicateByCompany(Array.from(itemMap.values()));
+  }, [queues, allDailyDriverItems, deduplicateByCompany]);
 
-  // Get primary action for an item
-  const getPrimaryAction = (queueId: string): 'reply' | 'schedule' | 'resolve' | 'prep' => {
-    const replyQueues = ['follow_ups', 'unresolved_issues', 'sla_breaches', 'blocked'];
-    const scheduleQueues = ['stalled_deals', 'new_leads', 'new_kickoffs', 'due_this_week'];
-    if (queueId === 'meeting_prep') return 'prep';
-    if (replyQueues.includes(queueId)) return 'reply';
-    if (scheduleQueues.includes(queueId)) return 'schedule';
-    return 'resolve';
-  };
+  const totalItems = allViewItems.length;
+  const criticalItems = allViewItems.filter(i => i.urgency === 'critical').length;
 
-  // Get CC category for an item
-  const getCCCategory = (item: QueueItem): string => {
-    if (item.metadata?.cc_category) return item.metadata.cc_category as string;
-    const categoryMap: Record<string, string> = {
-      at_risk: 'Churn signal', expansion_ready: 'Growth signal', unresolved_issues: 'Open issue',
-      follow_ups: 'Needs response', stalled_deals: 'Follow-up due', new_leads: 'New opportunity',
-      blocked: 'Needs customer action', due_this_week: 'Milestone due', new_kickoffs: 'New kickoff',
-      sla_breaches: 'SLA breach', high_severity: 'Escalation signal', unassigned: 'Needs owner',
-    };
-    return categoryMap[item.queue_id] || 'Work item';
-  };
+  // Calculate deduplicated counts per queue for accurate tab badges
+  const deduplicatedQueueCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
 
-  // Generate why here text
-  const getWhyHere = (item: QueueItem): string => {
-    if (item.urgency_reason) return item.urgency_reason;
-    const templates: Record<string, string> = {
-      at_risk: 'Customer health declined', expansion_ready: 'Strong engagement and growth potential',
-      unresolved_issues: 'Open support case', follow_ups: 'Needs follow-up to keep momentum',
-      stalled_deals: 'No recent activity', new_leads: 'New opportunity to qualify',
-      blocked: 'Onboarding stuck', due_this_week: 'Go-live approaching',
-      new_kickoffs: 'Ready to start', sla_breaches: 'SLA breached',
-      high_severity: 'High severity issue', unassigned: 'Needs an owner',
-    };
-    return templates[item.queue_id] || 'Needs attention';
-  };
+    lensQueues.forEach((queue) => {
+      const queueData = queues.get(queue.id);
+      if (!queueData) {
+        counts[queue.id] = 0;
+        return;
+      }
+
+      // Apply deduplication to get accurate count
+      const dedupedItems = deduplicateByCompany(queueData.items);
+      // Also filter out Unknown Company items to match what's displayed
+      const displayedItems = dedupedItems.filter((item) => {
+        const companyName = item.company_name?.toLowerCase() || '';
+        return !companyName.includes('unknown') && item.company_id;
+      });
+      counts[queue.id] = displayedItems.length;
+    });
+
+    return counts;
+  }, [lensQueues, queues, deduplicateByCompany]);
 
   return (
     <div
       className="h-[calc(100vh-4rem)]"
       style={{
         display: 'grid',
-        gridTemplateColumns: isExpanded ? '0 1fr 0' : selectedItem ? '420px 1fr 320px' : '1fr',
+        gridTemplateColumns: isExpanded ? '0 1fr 0' : selectedItem ? '420px 1fr 320px' : '1fr 400px',
         gap: '0',
         background: '#f6f8fb',
       }}
@@ -626,70 +1006,46 @@ export function WorkView({ initialQueues }: WorkViewProps) {
           overflow: 'hidden',
         }}
       >
-        {/* Header */}
+        {/* Header with Queue Dropdown */}
         <div
           style={{
-            padding: '14px 16px',
+            padding: '16px',
             borderBottom: '1px solid #eef2f7',
           }}
         >
-          <div style={{ fontSize: '15px', fontWeight: 600, color: '#0b1220' }}>Work Queues</div>
-          <div style={{ fontSize: '12px', color: '#667085', marginTop: '4px' }}>
-            {totalItems} items • {criticalItems} critical
+          {/* Title row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: '#0b1220' }}>Work</div>
+            <div style={{ fontSize: '12px', color: '#667085' }}>
+              {totalItems} items
+              {criticalItems > 0 && (
+                <span style={{ color: '#dc2626', marginLeft: '6px' }}>
+                  • {criticalItems} critical
+                </span>
+              )}
+            </div>
           </div>
+
+          {/* Queue Dropdown Selector */}
+          <QueueSelector
+            queues={lensQueues.map((queue) => ({
+              id: queue.id,
+              name: queue.name,
+              count: deduplicatedQueueCounts[queue.id] || 0,
+              color: getQueueDotColor(queue.id),
+            }))}
+            selectedQueueId={selectedQueue}
+            onSelect={(queueId) => {
+              if (queueId === null) {
+                setSelectedQueue(null);
+                setSelectedItem(null);
+              } else {
+                handleSelectQueue(queueId as QueueId);
+              }
+            }}
+            totalCount={totalItems}
+          />
         </div>
-
-        {/* Queue Segments */}
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {lensQueues.map((queue) => {
-            const queueData = queues.get(queue.id);
-            const count = queueData?.items.length || 0;
-            const isSelected = selectedQueue === queue.id;
-
-            return (
-              <button
-                key={queue.id}
-                onClick={() => handleSelectQueue(queue.id)}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '10px 12px',
-                  borderRadius: '12px',
-                  border: isSelected ? '1px solid #2563eb' : '1px solid #e6eaf0',
-                  background: isSelected ? '#eff6ff' : '#ffffff',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'all 150ms',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: isSelected ? '#1d4ed8' : '#0b1220' }}>
-                    {queue.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#667085', marginTop: '2px' }}>
-                    {queue.description}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: isSelected ? '#1d4ed8' : '#667085',
-                    background: isSelected ? '#dbeafe' : '#f1f5f9',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                  }}
-                >
-                  {count}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Divider */}
-        <div style={{ height: '1px', background: '#eef2f7', margin: '4px 16px' }} />
 
         {/* Queue Items */}
         <div
@@ -702,372 +1058,195 @@ export function WorkView({ initialQueues }: WorkViewProps) {
             gap: '10px',
           }}
         >
-          {queueLoading ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: '#667085', fontSize: '13px' }}>
-              Loading...
-            </div>
-          ) : selectedQueueItems.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: '#667085', fontSize: '13px' }}>
-              No items in this queue
-            </div>
-          ) : (
-            selectedQueueItems.map((item) => {
-              const primaryAction = getPrimaryAction(item.queue_id);
-              const ccCategory = getCCCategory(item);
-              const whyHere = getWhyHere(item);
-              const isItemSelected = selectedItem?.id === item.id;
-              const mrr = item.metadata?.mrr as number || 0;
-
+          {(() => {
+            if (queueLoading) {
               return (
-                <div
-                  key={item.id}
-                  onClick={() => handleSelectItem(item)}
-                  style={{
-                    background: isItemSelected ? '#f8fafc' : '#ffffff',
-                    border: isItemSelected ? '1px solid #2563eb' : '1px solid #e6eaf0',
-                    borderRadius: '14px',
-                    padding: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 150ms',
-                  }}
-                >
-                  {/* Top row: Company + Priority */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#0b1220' }}>
-                      {item.company_name}
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                        padding: '3px 6px',
-                        borderRadius: '4px',
-                        background: item.urgency === 'critical' ? '#fef2f2' : item.urgency === 'high' ? '#fff7ed' : '#f0fdf4',
-                        color: item.urgency === 'critical' ? '#dc2626' : item.urgency === 'high' ? '#ea580c' : '#16a34a',
-                      }}
-                    >
-                      {item.urgency}
-                    </span>
-                  </div>
-
-                  {/* Subtitle */}
-                  {item.subtitle && (
-                    <div style={{ fontSize: '12px', color: '#334155', marginTop: '4px' }}>
-                      {item.subtitle}
-                    </div>
-                  )}
-
-                  {/* Pills row */}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        background: '#f5f3ff',
-                        color: '#6d28d9',
-                      }}
-                    >
-                      {ccCategory}
-                    </span>
-                    {mrr > 0 && (
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          background: '#ecfdf5',
-                          color: '#059669',
-                        }}
-                      >
-                        ${mrr.toLocaleString()}/mo
-                      </span>
-                    )}
-                    {item.days_in_queue > 0 && (
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          background: '#fef3c7',
-                          color: '#b45309',
-                        }}
-                      >
-                        {item.days_in_queue}d
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Why this is here */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '6px',
-                      marginTop: '8px',
-                      padding: '8px',
-                      borderRadius: '8px',
-                      background: '#fff7ed',
-                      border: '1px solid #fed7aa',
-                    }}
-                  >
-                    <span style={{ fontSize: '12px' }}>💡</span>
-                    <span style={{ fontSize: '11px', color: '#7c2d12', lineHeight: 1.4 }}>
-                      {whyHere}
-                    </span>
-                  </div>
-
-                  {/* AI Interpretation */}
-                  <div
-                    style={{
-                      marginTop: '8px',
-                      padding: '8px 10px',
-                      borderRadius: '8px',
-                      background: '#f5f3ff',
-                      border: '1px solid #e9d5ff',
-                    }}
-                  >
-                    <div style={{ fontSize: '10px', fontWeight: 600, color: '#6d28d9', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      AI Interpretation
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#3b0764', lineHeight: 1.4 }}>
-                      {item.metadata?.ai_summary as string ||
-                        `${item.title}. Best action: ${primaryAction === 'reply' ? 'respond to message' : primaryAction === 'schedule' ? 'schedule meeting' : primaryAction === 'prep' ? 'review meeting prep' : 'resolve issue'}.`}
-                    </div>
-                    <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: '#ede9fe', color: '#5b21b6' }}>
-                        {ccCategory}
-                      </span>
-                      <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: '#ede9fe', color: '#5b21b6' }}>
-                        {selectedQueueConfig?.name || 'Standard workflow'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Action buttons */}
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px', justifyContent: 'flex-end' }}>
-                    {primaryAction !== 'prep' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectItem(item);
-                          setIsCommsDrawerOpen(true);
-                        }}
-                        style={{
-                          fontSize: '11px',
-                          padding: '6px 10px',
-                          borderRadius: '8px',
-                          border: '1px solid #e6eaf0',
-                          background: '#ffffff',
-                          color: '#0b1220',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        View comms
-                      </button>
-                    )}
-                    {primaryAction === 'prep' ? (
-                      /* Meeting Prep button */
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const timeBlock = item.metadata?.time_block as TimeBlock;
-                          if (timeBlock) {
-                            setSelectedMeeting(timeBlock);
-                            setIsMeetingPrepOpen(true);
-                          }
-                        }}
-                        style={{
-                          fontSize: '11px',
-                          padding: '6px 14px',
-                          borderRadius: '8px',
-                          border: '1px solid #7c3aed',
-                          background: '#7c3aed',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                          <polyline points="14 2 14 8 20 8"/>
-                          <line x1="16" y1="13" x2="8" y2="13"/>
-                          <line x1="16" y1="17" x2="8" y2="17"/>
-                          <polyline points="10 9 9 9 8 9"/>
-                        </svg>
-                        View Prep
-                      </button>
-                    ) : primaryAction === 'schedule' ? (
-                      /* Schedule dropdown with two options */
-                      <div style={{ position: 'relative' }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectItem(item);
-                            setScheduleDropdownItemId(
-                              scheduleDropdownItemId === item.id ? null : item.id
-                            );
-                          }}
-                          style={{
-                            fontSize: '11px',
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            border: '1px solid #2563eb',
-                            background: '#2563eb',
-                            color: '#ffffff',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          Schedule
-                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: '2px' }}>
-                            <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
-                        {scheduleDropdownItemId === item.id && (
-                          <div
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                              position: 'absolute',
-                              top: '100%',
-                              right: 0,
-                              marginTop: '4px',
-                              background: '#ffffff',
-                              borderRadius: '10px',
-                              border: '1px solid #e6eaf0',
-                              boxShadow: '0 10px 25px rgba(16, 24, 40, 0.15)',
-                              zIndex: 100,
-                              minWidth: '160px',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <button
-                              onClick={() => {
-                                setScheduleDropdownItemId(null);
-                                setIsSchedulerModalOpen(true);
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '12px',
-                                textAlign: 'left',
-                                border: 'none',
-                                background: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '2px',
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-                            >
-                              <span style={{ fontWeight: 500, color: '#0b1220' }}>AI Scheduler</span>
-                              <span style={{ fontSize: '11px', color: '#667085' }}>Let AI handle scheduling</span>
-                            </button>
-                            <div style={{ height: '1px', background: '#e6eaf0' }} />
-                            <button
-                              onClick={() => {
-                                setScheduleDropdownItemId(null);
-                                setIsQuickBookOpen(true);
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '12px',
-                                textAlign: 'left',
-                                border: 'none',
-                                background: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '2px',
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-                            >
-                              <span style={{ fontWeight: 500, color: '#0b1220' }}>Quick Book</span>
-                              <span style={{ fontSize: '11px', color: '#667085' }}>Manually create meeting</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : primaryAction === 'reply' ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectItem(item);
-                          setIsCommsDrawerOpen(true);
-                        }}
-                        style={{
-                          fontSize: '11px',
-                          padding: '6px 10px',
-                          borderRadius: '8px',
-                          border: '1px solid #2563eb',
-                          background: '#2563eb',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Reply
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleResolve(item);
-                        }}
-                        style={{
-                          fontSize: '11px',
-                          padding: '6px 10px',
-                          borderRadius: '8px',
-                          border: '1px solid #16a34a',
-                          background: '#16a34a',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Resolve
-                      </button>
-                    )}
-                  </div>
+                <div style={{ padding: '20px', textAlign: 'center', color: '#667085', fontSize: '13px' }}>
+                  Loading...
                 </div>
               );
-            })
-          )}
+            }
+
+            // Filter items before checking if empty
+            const displayableItems = selectedQueueItems.filter((item) => {
+              const companyName = item.company_name?.toLowerCase() || '';
+              return !companyName.includes('unknown') && item.company_id;
+            });
+
+            if (displayableItems.length === 0) {
+              return (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '48px 20px',
+                  textAlign: 'center',
+                }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    marginBottom: '16px',
+                    borderRadius: '50%',
+                    background: '#f0fdf4',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <CheckCircle style={{ width: '24px', height: '24px', color: '#16a34a' }} />
+                  </div>
+                  <p style={{ fontSize: '14px', fontWeight: 500, color: '#0b1220', margin: 0 }}>
+                    All caught up!
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#667085', marginTop: '4px' }}>
+                    {selectedQueue ? 'No items need attention in this queue' : 'No work items need attention'}
+                  </p>
+                </div>
+              );
+            }
+
+            return displayableItems.map((item) => (
+              <WorkItemCard
+                key={item.id}
+                item={item}
+                isSelected={selectedItem?.id === item.id}
+                onClick={() => handleSelectItem(item)}
+              />
+            ));
+          })()}
         </div>
       </div>
 
-      {/* Middle column: Conversation Thread (same as Communications tab) */}
+      {/* Middle column: AI Summary + Conversation Thread */}
       {selectedItem && (
         <div
           className={cn('flex flex-col transition-all duration-300', isExpanded && 'w-full')}
           style={{ background: '#ffffff', overflow: 'hidden', height: 'calc(100vh - 4rem)' }}
         >
-          <ConversationThread
-            companyId={selectedItem.company_id}
-            companyName={selectedItem.company_name}
-            channelFilter={channelFilter}
-          />
+          {/* AI Summary Box */}
+          <div
+            style={{
+              margin: '16px 24px',
+              padding: '16px',
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              borderRadius: '8px',
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Sparkles style={{ width: '16px', height: '16px', color: '#16a34a' }} />
+              <span style={{ fontSize: '14px', fontWeight: 600, color: '#15803d' }}>AI Summary</span>
+            </div>
+            <p style={{ fontSize: '14px', color: '#166534', lineHeight: 1.5, margin: 0 }}>
+              {selectedItem.urgency_reason || selectedItem.subtitle || selectedItem.title}
+            </p>
+            {selectedItem.contact_name && (
+              <p style={{ fontSize: '14px', color: '#166534', marginTop: '4px', marginBottom: 0 }}>
+                {selectedItem.contact_name} is the primary contact.
+              </p>
+            )}
+            <p style={{ fontSize: '14px', fontWeight: 500, color: '#14532d', marginTop: '12px', marginBottom: 0 }}>
+              → Action needed: {getActionDescription(selectedItem.action_verb)}
+            </p>
+          </div>
+
+          {/* Conversation Thread */}
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <ConversationThread
+              companyId={selectedItem.company_id}
+              companyName={selectedItem.company_name}
+              channelFilter={channelFilter}
+            />
+          </div>
         </div>
       )}
 
-      {/* Right column: Company Context Panel */}
+      {/* Right column: Company Context Panel (when item selected) */}
       {selectedItem && (
         <div
-          className={cn('transition-all duration-300', isExpanded && 'w-0 overflow-hidden')}
+          className={cn('transition-all duration-300 flex flex-col', isExpanded && 'w-0 overflow-hidden')}
           style={{
             height: 'calc(100vh - 4rem)',
             overflow: 'hidden',
           }}
         >
-          <CustomerContext
-            companyId={selectedItem.company_id}
-          />
+          {/* Action Buttons */}
+          <div style={{
+            padding: '16px',
+            borderBottom: '1px solid #e6eaf0',
+            flexShrink: 0,
+          }}>
+            <p style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: '#667085',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+            }}>
+              Mark Item
+            </p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => handleOpenResolveModal(selectedItem)}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: '#ffffff',
+                  background: '#16a34a',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'background 150ms ease',
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#15803d'}
+                onMouseOut={(e) => e.currentTarget.style.background = '#16a34a'}
+              >
+                Resolve
+              </button>
+              <button
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: '#4b5563',
+                  background: '#ffffff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'background 150ms ease',
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
+                onMouseOut={(e) => e.currentTarget.style.background = '#ffffff'}
+              >
+                Snooze
+              </button>
+            </div>
+          </div>
+
+          {/* Customer Context */}
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <CustomerContext
+              companyId={selectedItem.company_id}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Right column: Triage Panel (when no item selected) */}
+      {!selectedItem && (
+        <div
+          style={{
+            height: 'calc(100vh - 4rem)',
+            overflow: 'hidden',
+            borderLeft: '1px solid #e6eaf0',
+          }}
+        >
+          <TriagePanel />
         </div>
       )}
 
@@ -1099,12 +1278,40 @@ export function WorkView({ initialQueues }: WorkViewProps) {
 
       {/* Scheduler Modal */}
       {selectedItem && (
-        <WorkSchedulerModal
+        <ScheduleMeetingModal
           isOpen={isSchedulerModalOpen}
           onClose={() => setIsSchedulerModalOpen(false)}
-          onSuccess={handleSchedulingSuccess}
-          workItem={selectedItem}
-          workItemProjection={createWorkItemProjection(selectedItem)}
+          onSuccess={(requestId) => handleSchedulingSuccess(requestId, false)}
+          companyId={selectedItem.company_id}
+          workItem={{
+            id: selectedItem.id,
+            company_id: selectedItem.company_id,
+            company_name: selectedItem.company_name,
+            signal_type: createWorkItemProjection(selectedItem).signal_type,
+            metadata: selectedItem.metadata as Record<string, unknown>,
+          }}
+          linkedCommunication={
+            selectedItem.metadata?.communication_id ? {
+              id: selectedItem.metadata.communication_id as string,
+            } : undefined
+          }
+          onWorkItemResolved={() => {
+            // Refresh queue items after work item resolution
+            const refreshQueues = async () => {
+              const lensQueues = getQueuesForLens(currentLens);
+              const newQueues = new Map<QueueId, QueueResult>();
+              for (const queue of lensQueues) {
+                try {
+                  const result = await fetchQueueItems(supabase, queue.id, { limit: 20 });
+                  newQueues.set(queue.id, result);
+                } catch (error) {
+                  console.error(`Error refreshing queue ${queue.id}:`, error);
+                }
+              }
+              setQueues(newQueues);
+            };
+            refreshQueues();
+          }}
         />
       )}
 
@@ -1145,6 +1352,27 @@ export function WorkView({ initialQueues }: WorkViewProps) {
           }}
         />
       )}
+
+      {/* Resolve Modal */}
+      <ResolveModal
+        isOpen={isResolveModalOpen}
+        onClose={() => {
+          setIsResolveModalOpen(false);
+          setPendingResolveItem(null);
+        }}
+        onConfirm={async (reason) => {
+          if (pendingResolveItem) {
+            await handleResolve(pendingResolveItem, reason);
+          }
+        }}
+        companyName={pendingResolveItem?.company_name || ''}
+        suggestedAction={
+          typeof pendingResolveItem?.metadata?.recommended_action === 'string'
+            ? pendingResolveItem.metadata.recommended_action
+            : undefined
+        }
+      />
+
     </div>
   );
 }

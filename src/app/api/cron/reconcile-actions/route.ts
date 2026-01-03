@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { reconcileCompanyActions, runBatchReconciliation } from '@/lib/commandCenter/actionReconciliation';
 
+// Required for Vercel Cron - extend timeout and ensure fresh execution
+export const runtime = 'nodejs';
+export const maxDuration = 120; // 2 minutes
+export const dynamic = 'force-dynamic';
+
 // Service client for cron jobs
 function createServiceClient() {
   return createClient(

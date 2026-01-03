@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -26,10 +26,12 @@ import {
   FileText,
   CheckCircle2,
   Copy,
-  Check
+  Check,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { ComposeModal } from '@/components/inbox/ComposeModal';
-import { ScheduleMeetingModal } from '@/components/dailyDriver/ScheduleMeetingModal';
+import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
 import { AssignToCompanyModal } from './AssignToCompanyModal';
 import { CreateLeadFromEmail } from './CreateLeadFromEmail';
 import { cn } from '@/lib/utils';
@@ -66,6 +68,148 @@ interface Communication {
     products_discussed: string[];
   } | null;
   contact: { id: string; name: string; email: string } | null;
+  thread_id: string | null;
+}
+
+// ============================================================================
+// THREAD GROUPING HELPERS
+// ============================================================================
+
+// Normalize subject by removing RE:, FW:, etc. prefixes
+function normalizeSubject(subject: string | null): string {
+  if (!subject) return '';
+  return subject.replace(/^(re:|fw:|fwd:|aw:|wg:)\s*/gi, '').trim();
+}
+
+interface ThreadGroup {
+  id: string;
+  subject: string;
+  communications: Communication[];
+  earliestDate: string;
+  latestDate: string;
+  hasInbound: boolean;
+  hasOutbound: boolean;
+  summary: string | null;
+}
+
+// Clean up AI summary to be thread-appropriate (remove "The email" references)
+function cleanSummaryForThread(summary: string): string {
+  return summary
+    .replace(/^The email\s+/i, 'Discussion about ')
+    .replace(/^This email\s+/i, 'Discussion about ')
+    .replace(/the email\s+/gi, 'the conversation ')
+    .replace(/this email\s+/gi, 'the conversation ');
+}
+
+// Truncate summary to fit in bubble (max ~300 chars - CSS line-clamp handles visual display)
+function truncateSummary(summary: string, maxLength: number = 300): string {
+  if (summary.length <= maxLength) return summary;
+  const truncated = summary.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return (lastSpace > maxLength * 0.7 ? truncated.substring(0, lastSpace) : truncated) + '...';
+}
+
+// Generate a summary for a thread from its communications
+function generateThreadSummary(communications: Communication[]): string | null {
+  if (communications.length === 0) return null;
+
+  const messageCount = communications.length;
+  const inboundCount = communications.filter(c => c.direction === 'inbound').length;
+  const outboundCount = communications.filter(c => c.direction === 'outbound').length;
+
+  // Collect all AI-generated summaries from the thread
+  const aiSummaries = communications
+    .filter(c => c.current_analysis?.summary)
+    .map(c => cleanSummaryForThread(c.current_analysis!.summary!));
+
+  // If we have AI summaries, combine them into a thread overview
+  if (aiSummaries.length > 0) {
+    let summary: string;
+    if (aiSummaries.length === 1) {
+      summary = aiSummaries[0];
+    } else {
+      // Combine multiple AI summaries - take key points from each
+      const combined = aiSummaries
+        .map(s => s.split('.')[0]) // Take first sentence from each
+        .filter(s => s.length > 10)
+        .slice(0, 2) // Max 2 key points
+        .join('. ');
+      summary = combined ? combined + '.' : aiSummaries[0];
+    }
+    return truncateSummary(summary);
+  }
+
+  // Fall back to building a conversation flow summary
+  let prefix: string;
+  if (inboundCount > 0 && outboundCount > 0) {
+    prefix = `${messageCount}-message conversation`;
+  } else if (inboundCount > 0) {
+    prefix = `${inboundCount} inbound`;
+  } else {
+    prefix = `${outboundCount} outbound`;
+  }
+
+  // Get content from first message to show topic
+  const firstPreview = communications
+    .map(c => c.content_preview)
+    .find((p): p is string => !!p && p.length > 20);
+
+  if (firstPreview) {
+    const snippet = firstPreview.substring(0, 100);
+    return truncateSummary(`${prefix}: "${snippet}${firstPreview.length > 100 ? '...' : ''}"`)
+  }
+
+  return prefix;
+}
+
+// Group communications into threads (by thread_id or normalized subject, across all dates)
+function groupCommunicationsIntoThreads(communications: Communication[]): ThreadGroup[] {
+  const threadMap = new Map<string, ThreadGroup>();
+
+  for (const comm of communications) {
+    // Group by thread_id if available, otherwise by normalized subject
+    const threadKey = comm.thread_id
+      ? `thread-${comm.thread_id}`
+      : `subject-${normalizeSubject(comm.subject)}`;
+
+    if (!threadMap.has(threadKey)) {
+      threadMap.set(threadKey, {
+        id: comm.thread_id || comm.id,
+        subject: normalizeSubject(comm.subject) || 'No subject',
+        communications: [],
+        earliestDate: comm.occurred_at,
+        latestDate: comm.occurred_at,
+        hasInbound: false,
+        hasOutbound: false,
+        summary: null,
+      });
+    }
+
+    const group = threadMap.get(threadKey)!;
+    group.communications.push(comm);
+    if (comm.direction === 'inbound') group.hasInbound = true;
+    if (comm.direction === 'outbound') group.hasOutbound = true;
+    if (new Date(comm.occurred_at) < new Date(group.earliestDate)) {
+      group.earliestDate = comm.occurred_at;
+    }
+    if (new Date(comm.occurred_at) > new Date(group.latestDate)) {
+      group.latestDate = comm.occurred_at;
+    }
+  }
+
+  // Sort communications within each thread by date (oldest first for conversation view)
+  // and generate summaries
+  for (const group of threadMap.values()) {
+    group.communications.sort((a, b) =>
+      new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
+    );
+    group.summary = generateThreadSummary(group.communications);
+  }
+
+  // Return sorted by earliest date (oldest first for conversation view)
+  return Array.from(threadMap.values()).sort((a, b) =>
+    new Date(a.earliestDate).getTime() - new Date(b.earliestDate).getTime()
+  );
 }
 
 const channelIcons: Record<string, React.ElementType> = {
@@ -255,6 +399,7 @@ interface CommunicationBubbleProps {
   onAssign?: (comm: Communication) => void;
   onCreateLead?: (comm: Communication) => void;
   onTaskClick?: (comm: Communication) => void;
+  onDraftFollowup?: (comm: Communication) => void;
 }
 
 // Internal domains that should be treated as "us" (outgoing)
@@ -287,6 +432,7 @@ function CommunicationBubble({
   onAssign,
   onCreateLead,
   onTaskClick,
+  onDraftFollowup,
   hasTask
 }: CommunicationBubbleProps & { hasTask?: boolean }) {
   const [showActions, setShowActions] = useState(false);
@@ -506,6 +652,23 @@ function CommunicationBubble({
             </div>
           )}
 
+          {/* Draft Follow-up Button for Meeting Transcripts */}
+          {comm.channel === 'meeting' && comm.source_table === 'meeting_transcriptions' && onDraftFollowup && (
+            <div className={`mt-2 pt-2 border-t ${isOutbound ? 'border-blue-400/30' : 'border-gray-200'}`}>
+              <button
+                onClick={() => onDraftFollowup(comm)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  isOutbound
+                    ? 'bg-blue-400 text-white hover:bg-blue-300'
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Draft Follow-up Email
+              </button>
+            </div>
+          )}
+
           {/* Action Buttons for Unlinked Communications */}
           {isUnlinked && (
             <div className={`mt-3 pt-3 border-t ${isOutbound ? 'border-blue-400' : 'border-gray-200'}`}>
@@ -560,6 +723,306 @@ function CommunicationBubble({
   );
 }
 
+// Full Meeting Analysis View Component
+function FullMeetingAnalysisView({ analysis }: { analysis: any }) {
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  if (!analysis) {
+    return (
+      <div className="text-center py-12 text-gray-500">
+        No analysis available for this meeting
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Headline & Summary */}
+      {analysis.headline && (
+        <div className="bg-purple-50 border border-purple-100 rounded-lg p-4">
+          <p className="text-lg font-medium text-purple-900">{analysis.headline}</p>
+        </div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Summary</h3>
+        <p className="text-gray-900 whitespace-pre-wrap">{analysis.summary}</p>
+      </div>
+
+      {/* Key Points */}
+      {analysis.keyPoints && analysis.keyPoints.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Key Points</h3>
+          <div className="space-y-3">
+            {analysis.keyPoints.map((point: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                  point.importance === 'high' ? 'bg-red-100 text-red-700' :
+                  point.importance === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>
+                  {point.importance}
+                </span>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">{point.topic}</p>
+                  <p className="text-sm text-gray-600 mt-1">{point.details}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sentiment Analysis */}
+      {analysis.sentiment && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Sentiment Analysis</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 bg-gray-50 rounded-lg text-center">
+              <p className="text-xs text-gray-500 mb-1">Overall</p>
+              <span className={`inline-flex items-center px-2 py-1 rounded text-sm font-medium ${
+                analysis.sentiment.overall === 'positive' ? 'bg-green-100 text-green-700' :
+                analysis.sentiment.overall === 'negative' ? 'bg-red-100 text-red-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {analysis.sentiment.overall}
+              </span>
+            </div>
+            {analysis.sentiment.interestLevel && (
+              <div className="p-3 bg-gray-50 rounded-lg text-center">
+                <p className="text-xs text-gray-500 mb-1">Interest</p>
+                <p className="text-sm font-medium text-gray-900">{analysis.sentiment.interestLevel}</p>
+              </div>
+            )}
+            {analysis.sentiment.urgency && (
+              <div className="p-3 bg-gray-50 rounded-lg text-center">
+                <p className="text-xs text-gray-500 mb-1">Urgency</p>
+                <p className="text-sm font-medium text-gray-900">{analysis.sentiment.urgency}</p>
+              </div>
+            )}
+            {analysis.sentiment.trustLevel && (
+              <div className="p-3 bg-gray-50 rounded-lg text-center">
+                <p className="text-xs text-gray-500 mb-1">Trust</p>
+                <p className="text-sm font-medium text-gray-900">{analysis.sentiment.trustLevel}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Buying Signals */}
+      {analysis.buyingSignals && analysis.buyingSignals.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Buying Signals</h3>
+          <div className="space-y-2">
+            {analysis.buyingSignals.map((signal: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                  signal.strength === 'strong' ? 'bg-green-200 text-green-800' :
+                  signal.strength === 'medium' ? 'bg-green-100 text-green-700' :
+                  'bg-green-50 text-green-600'
+                }`}>
+                  {signal.strength}
+                </span>
+                <p className="text-gray-900">{signal.signal}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Objections */}
+      {analysis.objections && analysis.objections.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Objections & Concerns</h3>
+          <div className="space-y-2">
+            {analysis.objections.map((obj: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 p-3 bg-orange-50 rounded-lg">
+                <span className={`mt-0.5 px-2 py-0.5 text-xs font-medium rounded ${
+                  obj.resolved ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                }`}>
+                  {obj.resolved ? 'Resolved' : 'Open'}
+                </span>
+                <div className="flex-1">
+                  <p className="text-gray-900">{obj.objection}</p>
+                  {obj.response && (
+                    <p className="text-sm text-gray-600 mt-1">Response: {obj.response}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action Items */}
+      {analysis.actionItems && analysis.actionItems.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Action Items</h3>
+          <div className="space-y-2">
+            {analysis.actionItems.map((item: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
+                <span className={`mt-0.5 px-2 py-0.5 text-xs font-medium rounded ${
+                  item.owner === 'us' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                }`}>
+                  {item.owner === 'us' ? 'Our Task' : 'Their Task'}
+                </span>
+                <div className="flex-1">
+                  <p className="text-gray-900">{item.task}</p>
+                  {item.deadline && (
+                    <p className="text-xs text-gray-500 mt-1">Due: {item.deadline}</p>
+                  )}
+                </div>
+                {item.priority && (
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                    item.priority === 'high' ? 'bg-red-100 text-red-700' :
+                    item.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {item.priority}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stakeholders */}
+      {analysis.stakeholders && analysis.stakeholders.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Stakeholders</h3>
+          <div className="grid gap-3">
+            {analysis.stakeholders.map((person: any, i: number) => (
+              <div key={i} className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-medium text-gray-900">{person.name}</p>
+                  {person.role && (
+                    <span className="text-xs text-gray-500">({person.role})</span>
+                  )}
+                  <span className={`ml-auto px-2 py-0.5 text-xs font-medium rounded ${
+                    person.sentiment === 'positive' ? 'bg-green-100 text-green-700' :
+                    person.sentiment === 'negative' ? 'bg-red-100 text-red-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {person.sentiment}
+                  </span>
+                </div>
+                {person.keyQuotes && person.keyQuotes.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {person.keyQuotes.slice(0, 2).map((quote: string, j: number) => (
+                      <p key={j} className="text-sm text-gray-600 italic pl-3 border-l-2 border-gray-300">
+                        "{quote}"
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recommendations */}
+      {analysis.recommendations && analysis.recommendations.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">AI Recommendations</h3>
+          <div className="space-y-2">
+            {analysis.recommendations.map((rec: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
+                <span className="text-purple-600 mt-0.5">💡</span>
+                <div className="flex-1">
+                  <p className="text-gray-900">{rec.recommendation}</p>
+                  {rec.reason && (
+                    <p className="text-sm text-gray-600 mt-1">{rec.reason}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Extracted Info */}
+      {analysis.extractedInfo && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Extracted Information</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {analysis.extractedInfo.budget && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Budget</p>
+                <p className="font-medium text-gray-900">{analysis.extractedInfo.budget}</p>
+              </div>
+            )}
+            {analysis.extractedInfo.timeline && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Timeline</p>
+                <p className="font-medium text-gray-900">{analysis.extractedInfo.timeline}</p>
+              </div>
+            )}
+            {analysis.extractedInfo.companySize && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Company Size</p>
+                <p className="font-medium text-gray-900">{analysis.extractedInfo.companySize}</p>
+              </div>
+            )}
+            {analysis.extractedInfo.competitors && analysis.extractedInfo.competitors.length > 0 && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Competitors Mentioned</p>
+                <p className="font-medium text-gray-900">{analysis.extractedInfo.competitors.join(', ')}</p>
+              </div>
+            )}
+          </div>
+          {analysis.extractedInfo.painPoints && analysis.extractedInfo.painPoints.length > 0 && (
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs text-gray-500 mb-2">Pain Points</p>
+              <ul className="space-y-1">
+                {analysis.extractedInfo.painPoints.map((pain: string, i: number) => (
+                  <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
+                    <span className="text-orange-500">•</span>
+                    {pain}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Follow-up Email Draft */}
+      {analysis.followUpEmail && analysis.followUpEmail.body && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Follow-up Email Draft</h3>
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+            {analysis.followUpEmail.subject && (
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Subject:</strong> {analysis.followUpEmail.subject}
+              </p>
+            )}
+            <p className="text-sm text-gray-700 whitespace-pre-wrap">{analysis.followUpEmail.body}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Confidence Score */}
+      {analysis.confidence && (
+        <div className="pt-4 border-t">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span>Analysis Confidence:</span>
+            <div className="flex-1 h-2 bg-gray-200 rounded-full max-w-32">
+              <div
+                className="h-full bg-purple-500 rounded-full"
+                style={{ width: `${analysis.confidence * 100}%` }}
+              />
+            </div>
+            <span className="font-medium">{Math.round(analysis.confidence * 100)}%</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Source Preview Modal Component - Shows email source or meeting analysis
 function SourcePreviewModal({
   communication,
@@ -569,17 +1032,27 @@ function SourcePreviewModal({
   onClose: () => void;
 }) {
   const isMeeting = communication.channel === 'meeting';
+  const isTranscript = communication.source_table === 'meeting_transcriptions';
   const isEmail = communication.source_table === 'email_messages';
 
-  // Only fetch source data for emails, not for meetings (we use analysis instead)
-  const { data, isLoading, error } = useSWR(
+  // Fetch full transcript data for meetings
+  const { data: transcriptData, isLoading: transcriptLoading } = useSWR(
+    isMeeting && isTranscript && communication.source_id
+      ? `/api/transcripts/${communication.source_id}`
+      : null,
+    fetcher
+  );
+
+  // Fetch source data for emails
+  const { data: emailData, isLoading: emailLoading, error } = useSWR(
     !isMeeting && communication.source_table && communication.source_id
       ? `/api/communications/source?table=${communication.source_table}&id=${communication.source_id}`
       : null,
     fetcher
   );
 
-  const analysis = communication.current_analysis;
+  const fullAnalysis = transcriptData?.transcript?.analysis;
+  const fallbackAnalysis = communication.current_analysis;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -603,10 +1076,10 @@ function SourcePreviewModal({
             </div>
             <div>
               <h2 className="font-semibold text-gray-900">
-                {isMeeting ? 'Meeting Analysis' : 'Original Email'}
+                {isMeeting ? 'Full Meeting Analysis' : 'Original Email'}
               </h2>
               <p className="text-sm text-gray-500">
-                {communication.subject || 'No subject'}
+                {transcriptData?.transcript?.title || communication.subject || 'No subject'}
               </p>
             </div>
           </div>
@@ -622,93 +1095,14 @@ function SourcePreviewModal({
         <div className="flex-1 overflow-y-auto p-6">
           {/* Meeting Analysis View */}
           {isMeeting ? (
-            analysis ? (
-              <div className="space-y-6">
-                {/* Summary */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Summary</h3>
-                  <p className="text-gray-900 whitespace-pre-wrap">{analysis.summary}</p>
-                </div>
-
-                {/* Sentiment */}
-                {analysis.sentiment && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Sentiment</h3>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
-                      analysis.sentiment === 'positive' ? 'bg-green-100 text-green-700' :
-                      analysis.sentiment === 'negative' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {analysis.sentiment}
-                      {analysis.sentiment_score && ` (${Math.round(analysis.sentiment_score * 100)}%)`}
-                    </span>
-                  </div>
-                )}
-
-                {/* Signals */}
-                {analysis.extracted_signals && analysis.extracted_signals.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Buying Signals</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.extracted_signals.map((signal, i) => (
-                        <span key={i} className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                          {signal.signal.replace(/_/g, ' ')}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Products Discussed */}
-                {analysis.products_discussed && analysis.products_discussed.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Products Discussed</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.products_discussed.map((product, i) => (
-                        <span key={i} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                          {product}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Our Commitments */}
-                {analysis.extracted_commitments_us && analysis.extracted_commitments_us.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Our Commitments</h3>
-                    <ul className="space-y-2">
-                      {analysis.extracted_commitments_us.map((c, i) => (
-                        <li key={i} className="flex items-start gap-2 text-gray-700">
-                          <span className="text-blue-500 mt-1">→</span>
-                          {c.commitment}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Their Commitments */}
-                {analysis.extracted_commitments_them && analysis.extracted_commitments_them.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Their Commitments</h3>
-                    <ul className="space-y-2">
-                      {analysis.extracted_commitments_them.map((c, i) => (
-                        <li key={i} className="flex items-start gap-2 text-gray-700">
-                          <span className="text-green-500 mt-1">←</span>
-                          {c.commitment}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+            transcriptLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full" />
               </div>
             ) : (
-              <div className="text-center py-12 text-gray-500">
-                No analysis available for this meeting
-              </div>
+              <FullMeetingAnalysisView analysis={fullAnalysis || fallbackAnalysis} />
             )
-          ) : isLoading ? (
+          ) : emailLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
@@ -716,36 +1110,36 @@ function SourcePreviewModal({
             <div className="text-center py-12 text-red-500">
               Failed to load source data
             </div>
-          ) : data?.source ? (
+          ) : emailData?.source ? (
             <div className="space-y-4">
               {/* Email-specific fields */}
-              {isEmail && data.source.from_email && (
+              {isEmail && emailData.source.from_email && (
                 <div className="grid grid-cols-[80px_1fr] gap-2 text-sm border-b pb-4">
                   <span className="text-gray-500">From:</span>
                   <span className="text-gray-900">
-                    {data.source.from_name ? `${data.source.from_name} <${data.source.from_email}>` : data.source.from_email}
+                    {emailData.source.from_name ? `${emailData.source.from_name} <${emailData.source.from_email}>` : emailData.source.from_email}
                   </span>
 
-                  {data.source.to_emails && (
+                  {emailData.source.to_emails && (
                     <>
                       <span className="text-gray-500">To:</span>
                       <span className="text-gray-900">
-                        {Array.isArray(data.source.to_emails)
-                          ? data.source.to_emails.join(', ')
-                          : data.source.to_emails}
+                        {Array.isArray(emailData.source.to_emails)
+                          ? emailData.source.to_emails.join(', ')
+                          : emailData.source.to_emails}
                       </span>
                     </>
                   )}
 
                   <span className="text-gray-500">Date:</span>
                   <span className="text-gray-900">
-                    {format(new Date(data.source.received_at || data.source.sent_at || communication.occurred_at), 'PPpp')}
+                    {format(new Date(emailData.source.received_at || emailData.source.sent_at || communication.occurred_at), 'PPpp')}
                   </span>
 
-                  {data.source.subject && (
+                  {emailData.source.subject && (
                     <>
                       <span className="text-gray-500">Subject:</span>
-                      <span className="text-gray-900 font-medium">{data.source.subject}</span>
+                      <span className="text-gray-900 font-medium">{emailData.source.subject}</span>
                     </>
                   )}
                 </div>
@@ -753,15 +1147,15 @@ function SourcePreviewModal({
 
               {/* Body Content (emails only - meetings use analysis view above) */}
               <div className="text-sm text-gray-700 leading-relaxed">
-                {data.source.body_html ? (
+                {emailData.source.body_html ? (
                   <div
-                    dangerouslySetInnerHTML={{ __html: data.source.body_html }}
+                    dangerouslySetInnerHTML={{ __html: emailData.source.body_html }}
                     className="email-html-content [&_*]:max-w-full [&_img]:max-w-full [&_img]:h-auto [&_table]:w-full [&_td]:p-1 [&_a]:text-blue-600 [&_a]:underline [&_p]:mb-3 [&_br]:block [&_br]:mb-2"
                     style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
                   />
                 ) : (
                   <div className="space-y-3">
-                    {(data.source.body_text || 'No content').split(/\n\n+/).map((paragraph: string, i: number) => (
+                    {(emailData.source.body_text || 'No content').split(/\n\n+/).map((paragraph: string, i: number) => (
                       <p key={i} className="whitespace-pre-wrap">
                         {paragraph.split('\n').map((line: string, j: number) => (
                           <span key={j}>
@@ -954,11 +1348,14 @@ function TaskResolutionModal({
         isOpen={true}
         onClose={() => setShowSchedule(false)}
         companyId={companyId}
-        companyName={companyName}
-        contactName={contactName}
-        contactEmail={contactEmail}
-        sourceCommunicationId={communication.id}
-        onScheduled={handleScheduleCompleted}
+        contactName={contactName || undefined}
+        contactEmail={contactEmail || undefined}
+        linkedCommunication={{
+          id: communication.id,
+          contact_name: contactName || undefined,
+          contact_email: contactEmail || undefined,
+        }}
+        onSuccess={() => handleScheduleCompleted()}
       />
     );
   }
@@ -1258,67 +1655,6 @@ function TaskResolutionModal({
   );
 }
 
-interface ConversationCluster {
-  id: string;
-  communications: Communication[];
-  startDate: Date;
-  endDate: Date;
-}
-
-// Group communications into conversation clusters (back-and-forth within 3 days on related topics)
-function groupIntoConversations(comms: Communication[]): ConversationCluster[] {
-  if (comms.length === 0) return [];
-
-  const clusters: ConversationCluster[] = [];
-  let currentCluster: Communication[] = [];
-  let clusterStartDate: Date | null = null;
-
-  for (const comm of comms) {
-    const commDate = new Date(comm.occurred_at);
-
-    if (currentCluster.length === 0) {
-      // Start new cluster
-      currentCluster = [comm];
-      clusterStartDate = commDate;
-    } else {
-      // Check if this message belongs to the current cluster
-      const lastComm = currentCluster[currentCluster.length - 1];
-      const lastDate = new Date(lastComm.occurred_at);
-      const daysDiff = (commDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
-
-      // Same cluster if: within 3 days AND (alternating direction OR same channel)
-      const isAlternating = comm.direction !== lastComm.direction;
-      const isSameChannel = comm.channel === lastComm.channel;
-
-      if (daysDiff <= 3 && (isAlternating || isSameChannel)) {
-        currentCluster.push(comm);
-      } else {
-        // Save current cluster and start new one
-        clusters.push({
-          id: currentCluster[0].id,
-          communications: currentCluster,
-          startDate: clusterStartDate!,
-          endDate: lastDate
-        });
-        currentCluster = [comm];
-        clusterStartDate = commDate;
-      }
-    }
-  }
-
-  // Add the last cluster
-  if (currentCluster.length > 0) {
-    clusters.push({
-      id: currentCluster[0].id,
-      communications: currentCluster,
-      startDate: clusterStartDate!,
-      endDate: new Date(currentCluster[currentCluster.length - 1].occurred_at)
-    });
-  }
-
-  return clusters;
-}
-
 interface ConversationThreadProps {
   companyId: string | null;
   companyName?: string | null;
@@ -1339,6 +1675,48 @@ export function ConversationThread({
   const [assigningComm, setAssigningComm] = useState<Communication | null>(null);
   const [creatingLeadComm, setCreatingLeadComm] = useState<Communication | null>(null);
   const [taskComm, setTaskComm] = useState<Communication | null>(null);
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+
+  // Draft follow-up email state
+  const [draftFollowup, setDraftFollowup] = useState<{
+    isOpen: boolean;
+    isLoading: boolean;
+    to: string[];
+    subject: string;
+    body: string;
+    transcriptId: string | null;
+  }>({ isOpen: false, isLoading: false, to: [], subject: '', body: '', transcriptId: null });
+
+  // Handle draft follow-up for meeting transcripts
+  const handleDraftFollowup = useCallback(async (comm: Communication) => {
+    if (!comm.source_id) return;
+
+    setDraftFollowup(prev => ({ ...prev, isLoading: true, transcriptId: comm.source_id }));
+
+    try {
+      const res = await fetch(`/api/meetings/transcriptions/${comm.source_id}/draft-followup`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+
+      if (data.success && data.draft) {
+        setDraftFollowup({
+          isOpen: true,
+          isLoading: false,
+          to: data.draft.to || [],
+          subject: data.draft.subject || '',
+          body: data.draft.body || '',
+          transcriptId: comm.source_id,
+        });
+      } else {
+        console.error('Failed to generate draft:', data.error);
+        setDraftFollowup(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (err) {
+      console.error('Error generating draft follow-up:', err);
+      setDraftFollowup(prev => ({ ...prev, isLoading: false }));
+    }
+  }, []);
 
   // Build query params
   const params = new URLSearchParams();
@@ -1359,6 +1737,25 @@ export function ConversationThread({
     shouldFetch ? `/api/communications?${params.toString()}` : null,
     fetcher,
     { refreshInterval: 30000 }
+  );
+
+  // Fetch meeting transcriptions for this company
+  const { data: transcriptsData } = useSWR<{ transcriptions: Array<{
+    id: string;
+    title: string;
+    meeting_date: string;
+    duration_minutes?: number;
+    attendees?: string[];
+    summary?: string;
+    analysis?: {
+      summary?: string;
+      key_points?: string[];
+      action_items?: Array<{ task: string; owner?: string }>;
+      sentiment?: string;
+    };
+  }> }>(
+    companyId ? `/api/meetings/transcriptions?companyId=${companyId}` : null,
+    fetcher
   );
 
   // Fetch attention flags for communications with open tasks
@@ -1388,15 +1785,64 @@ export function ConversationThread({
     }
   }
 
-  const communications: Communication[] = data?.communications || [];
+  // Convert transcripts to communication-like objects for unified display
+  const transcriptsAsComms: Communication[] = (transcriptsData?.transcriptions || []).map(t => ({
+    id: `transcript-${t.id}`,
+    channel: 'meeting',
+    direction: 'outbound', // Show as outbound so it displays on right side (we hosted)
+    subject: t.title,
+    content_preview: t.summary || t.analysis?.summary || null,
+    full_content: t.summary || t.analysis?.summary || null,
+    occurred_at: t.meeting_date,
+    duration_seconds: t.duration_minutes ? t.duration_minutes * 60 : null,
+    is_ai_generated: false,
+    ai_action_type: null,
+    recording_url: null,
+    attachments: [],
+    our_participants: [{ name: 'Meeting', email: '' }], // Generic "Meeting" as sender
+    their_participants: [], // Don't show attendees as participants
+    source_table: 'meeting_transcriptions',
+    source_id: t.id,
+    company_id: companyId,
+    awaiting_our_response: null,
+    responded_at: null,
+    current_analysis: t.analysis ? {
+      summary: t.analysis.summary || t.summary || null,
+      sentiment: t.analysis.sentiment || null,
+      sentiment_score: null,
+      extracted_signals: [],
+      extracted_commitments_us: (t.analysis.action_items || []).map(a => ({ commitment: a.task })),
+      extracted_commitments_them: [],
+      products_discussed: [],
+    } : null,
+    contact: null,
+    thread_id: null,
+  }));
 
-  // Sort oldest first (conversation order) and group by conversation clusters
+  const communications: Communication[] = [...(data?.communications || []), ...transcriptsAsComms];
+
+  // Sort oldest first (conversation order)
   const sortedComms = [...communications].sort(
     (a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
   );
 
-  // Group communications into conversation clusters (same topic within 3 days)
-  const groupedComms = groupIntoConversations(sortedComms);
+  // Group communications into threads (by thread_id or normalized subject)
+  const threadGroups = useMemo(() => {
+    return groupCommunicationsIntoThreads(sortedComms);
+  }, [sortedComms]);
+
+  // Toggle thread expansion
+  const toggleThread = useCallback((threadId: string) => {
+    setExpandedThreads(prev => {
+      const next = new Set(prev);
+      if (next.has(threadId)) {
+        next.delete(threadId);
+      } else {
+        next.add(threadId);
+      }
+      return next;
+    });
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -1456,41 +1902,104 @@ export function ConversationThread({
         </div>
       </div>
 
-      {/* Messages grouped by conversation clusters */}
+      {/* Messages grouped by collapsible threads */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4"
       >
-        {groupedComms.map((cluster, clusterIdx) => (
-          <div key={cluster.id} className="mb-2">
-            {/* Cluster separator - only show between clusters with multiple messages */}
-            {clusterIdx > 0 && groupedComms[clusterIdx - 1].communications.length > 1 && (
-              <div className="flex items-center gap-3 my-6">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400 px-2">
-                  {format(cluster.startDate, 'MMM d')}
-                </span>
-                <div className="flex-1 h-px bg-gray-200" />
-              </div>
-            )}
+        {threadGroups.map((thread, threadIdx) => {
+          const isExpanded = expandedThreads.has(thread.id);
+          const hasMultiple = thread.communications.length > 1;
 
-            {/* Cluster container - visual grouping for multi-message clusters */}
-            <div className={cluster.communications.length > 1 ? 'pl-2 border-l-2 border-blue-100' : ''}>
-              {cluster.communications.map((comm) => (
-                <CommunicationBubble
-                  key={comm.id}
-                  comm={comm}
-                  onViewSource={setSelectedSource}
-                  onExclude={() => mutate()}
-                  onAssign={setAssigningComm}
-                  onCreateLead={setCreatingLeadComm}
-                  onTaskClick={setTaskComm}
-                  hasTask={commsWithTasks.has(comm.id)}
-                />
-              ))}
+          // Calculate date span for display
+          const startDate = new Date(thread.earliestDate);
+          const endDate = new Date(thread.latestDate);
+          const sameDay = startDate.toDateString() === endDate.toDateString();
+          const dateDisplay = sameDay
+            ? format(startDate, 'MMM d')
+            : `${format(startDate, 'MMM d')} – ${format(endDate, 'MMM d')}`;
+
+          return (
+            <div key={thread.id} className="mb-3">
+              {/* Collapsible Thread Header - only for threads with multiple messages */}
+              {hasMultiple && (
+                <button
+                  onClick={() => toggleThread(thread.id)}
+                  className={cn(
+                    'w-full flex items-start gap-3 px-4 py-3 mb-2 rounded-xl text-left transition-all',
+                    thread.hasInbound && thread.hasOutbound
+                      ? 'bg-purple-50 border border-purple-200 hover:bg-purple-100'
+                      : thread.hasInbound
+                        ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100'
+                        : 'bg-green-50 border border-green-200 hover:bg-green-100'
+                  )}
+                >
+                  {/* Chevron */}
+                  <div className="pt-0.5">
+                    {isExpanded ? (
+                      <ChevronDown className={cn(
+                        'w-4 h-4 flex-shrink-0',
+                        thread.hasInbound && thread.hasOutbound ? 'text-purple-600' :
+                        thread.hasInbound ? 'text-blue-600' : 'text-green-600'
+                      )} />
+                    ) : (
+                      <ChevronRight className={cn(
+                        'w-4 h-4 flex-shrink-0',
+                        thread.hasInbound && thread.hasOutbound ? 'text-purple-600' :
+                        thread.hasInbound ? 'text-blue-600' : 'text-green-600'
+                      )} />
+                    )}
+                  </div>
+
+                  {/* Thread info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900 truncate text-sm">
+                        {thread.subject}
+                      </span>
+                      <span className={cn(
+                        'flex-shrink-0 inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 text-xs font-semibold rounded-full',
+                        thread.hasInbound && thread.hasOutbound ? 'bg-purple-600 text-white' :
+                        thread.hasInbound ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'
+                      )}>
+                        {thread.communications.length}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {dateDisplay}
+                      {thread.hasInbound && thread.hasOutbound && ' · Back & forth'}
+                    </div>
+                    {/* Thread Summary - only when collapsed */}
+                    {!isExpanded && thread.summary && (
+                      <p className="text-xs text-gray-600 mt-2 line-clamp-2">
+                        {thread.summary}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              )}
+
+              {/* Thread messages - show if expanded or single message */}
+              {(isExpanded || !hasMultiple) && (
+                <div className={hasMultiple ? 'pl-4 border-l-2 border-gray-200 ml-2' : ''}>
+                  {thread.communications.map((comm) => (
+                    <CommunicationBubble
+                      key={comm.id}
+                      comm={comm}
+                      onViewSource={setSelectedSource}
+                      onExclude={() => mutate()}
+                      onAssign={setAssigningComm}
+                      onCreateLead={setCreatingLeadComm}
+                      onTaskClick={setTaskComm}
+                      onDraftFollowup={handleDraftFollowup}
+                      hasTask={commsWithTasks.has(comm.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Source Preview Modal */}
@@ -1550,6 +2059,32 @@ export function ConversationThread({
             mutateTasks();
           }}
         />
+      )}
+
+      {/* Draft Follow-up Compose Modal */}
+      {draftFollowup.isOpen && (
+        <ComposeModal
+          isOpen={true}
+          onClose={() => setDraftFollowup({ isOpen: false, isLoading: false, to: [], subject: '', body: '', transcriptId: null })}
+          onSent={() => {
+            setDraftFollowup({ isOpen: false, isLoading: false, to: [], subject: '', body: '', transcriptId: null });
+            mutate();
+          }}
+          toEmail={draftFollowup.to[0] || ''}
+          subject={draftFollowup.subject}
+          initialBody={draftFollowup.body}
+          companyId={companyId || undefined}
+        />
+      )}
+
+      {/* Loading indicator for draft generation */}
+      {draftFollowup.isLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl p-6 flex items-center gap-3 shadow-xl">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+            <span className="text-gray-700">Generating follow-up email...</span>
+          </div>
+        </div>
       )}
     </div>
   );

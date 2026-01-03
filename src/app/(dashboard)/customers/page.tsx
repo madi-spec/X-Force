@@ -10,7 +10,9 @@ interface CompanyProduct {
   status: string;
   mrr: number | null;
   tier_id: string | null;
+  owner_user_id: string | null;
   product: { id: string; name: string; slug: string } | null;
+  owner_user: { id: string; name: string } | null;
 }
 
 interface Company {
@@ -19,6 +21,7 @@ interface Company {
   domain: string | null;
   customer_type: string | null;
   created_at: string;
+  vfp_support_contact: string | null;
   company_products: CompanyProduct[];
 }
 
@@ -29,12 +32,37 @@ interface Stats {
   total_mrr: number;
 }
 
-export default async function CustomersPage() {
-  const supabase = await createClient();
+// Raw company type from Supabase query
+interface RawCompanyProduct {
+  id: string;
+  product_id: string;
+  status: string;
+  mrr: number | null;
+  tier_id: string | null;
+  owner_user_id: string | null;
+  product: { id: string; name: string; slug: string } | { id: string; name: string; slug: string }[] | null;
+  owner_user: { id: string; name: string } | { id: string; name: string }[] | null;
+}
 
-  // Fetch companies with their products and health data
-  // Note: Supabase defaults to 1000 rows, so we explicitly set a higher limit
-  const { data: companiesRaw, error: companiesError } = await supabase
+interface RawCompany {
+  id: string;
+  name: string;
+  domain: string | null;
+  customer_type: string | null;
+  created_at: string;
+  vfp_support_contact: string | null;
+  company_products: RawCompanyProduct[];
+}
+
+// Helper to fetch all records using pagination (Supabase has 1000 row server limit)
+async function fetchAllCompanies(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const PAGE_SIZE = 1000;
+  let allCompanies: RawCompany[] = [];
+  let page = 0;
+  let hasMore = true;
+
+  // First page to get the shape
+  const { data: firstPage, error: firstError } = await supabase
     .from('companies')
     .select(`
       id,
@@ -42,17 +70,79 @@ export default async function CustomersPage() {
       domain,
       customer_type,
       created_at,
+      vfp_support_contact,
       company_products (
         id,
         product_id,
         status,
         mrr,
         tier_id,
-        product:products(id, name, slug)
+        owner_user_id,
+        product:products(id, name, slug),
+        owner_user:users!company_products_owner_user_id_fkey(id, name)
       )
     `)
     .order('name', { ascending: true })
-    .limit(5000);
+    .range(0, PAGE_SIZE - 1);
+
+  if (firstError) {
+    return { data: null, error: firstError };
+  }
+
+  allCompanies = (firstPage || []) as RawCompany[];
+  hasMore = (firstPage?.length || 0) === PAGE_SIZE;
+  page = 1;
+
+  // Fetch remaining pages
+  while (hasMore) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data: pageData, error: pageError } = await supabase
+      .from('companies')
+      .select(`
+        id,
+        name,
+        domain,
+        customer_type,
+        created_at,
+        vfp_support_contact,
+        company_products (
+          id,
+          product_id,
+          status,
+          mrr,
+          tier_id,
+          owner_user_id,
+          product:products(id, name, slug),
+          owner_user:users!company_products_owner_user_id_fkey(id, name)
+        )
+      `)
+      .order('name', { ascending: true })
+      .range(from, to);
+
+    if (pageError) {
+      console.error('[CustomersPage] Error fetching page', page, pageError.message);
+      break;
+    }
+
+    if (pageData && pageData.length > 0) {
+      allCompanies = [...allCompanies, ...(pageData as RawCompany[])];
+      hasMore = pageData.length === PAGE_SIZE;
+      page++;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return { data: allCompanies, error: null };
+}
+
+export default async function CustomersPage() {
+  const supabase = await createClient();
+
+  // Fetch all companies using pagination to bypass Supabase's 1000 row limit
+  const { data: companiesRaw, error: companiesError } = await fetchAllCompanies(supabase);
 
   // Debug logging
   console.log('[CustomersPage] Companies fetched:', companiesRaw?.length || 0, companiesError ? `Error: ${companiesError.message}` : '');
@@ -69,12 +159,13 @@ export default async function CustomersPage() {
     );
   }
 
-  // Transform the data to match expected types (product relation returns array)
+  // Transform the data to match expected types (product/owner relations may return arrays)
   const companies: Company[] = (companiesRaw || []).map((company) => ({
     ...company,
-    company_products: (company.company_products || []).map((cp: Record<string, unknown>) => ({
+    company_products: (company.company_products || []).map((cp: RawCompanyProduct) => ({
       ...cp,
       product: Array.isArray(cp.product) ? cp.product[0] || null : cp.product,
+      owner_user: Array.isArray(cp.owner_user) ? cp.owner_user[0] || null : cp.owner_user,
     })),
   })) as Company[];
 

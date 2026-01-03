@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { Users, Database, Sparkles, Bell, User, Award, Shield, Upload, Link2, FileText, ClipboardCheck, Loader2, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, Database, Sparkles, Bell, User, Award, Shield, Upload, Link2, FileText, ClipboardCheck, Loader2, Check, LayoutGrid, Target, HeartHandshake, Rocket, Ticket } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { cn, formatDate } from '@/lib/utils';
 import { TeamManagement } from './TeamManagement';
+import { LensType } from '@/lib/lens';
 
 interface UserProfile {
   id: string;
@@ -18,6 +19,7 @@ interface UserProfile {
   territory?: string;
   title?: string;
   phone?: string;
+  default_lens?: LensType;
 }
 
 interface Certification {
@@ -72,6 +74,18 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Default lens preference
+  const [defaultLens, setDefaultLens] = useState<LensType>(profile?.default_lens || 'sales');
+  const [savingLens, setSavingLens] = useState(false);
+  const [savedLens, setSavedLens] = useState(false);
+
+  // Update default lens when profile changes
+  useEffect(() => {
+    if (profile?.default_lens) {
+      setDefaultLens(profile.default_lens);
+    }
+  }, [profile?.default_lens]);
+
   const handleSaveProfile = async () => {
     if (!profile?.id) return;
 
@@ -94,6 +108,42 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
       setSaving(false);
     }
   };
+
+  const handleSaveDefaultLens = async (lens: LensType) => {
+    setSavingLens(true);
+    setSavedLens(false);
+    setDefaultLens(lens);
+
+    try {
+      const res = await fetch('/api/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_lens: lens }),
+      });
+
+      if (!res.ok) throw new Error('Failed to save');
+
+      // Clear the initialized flag so the lens provider will use the new default on next load
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('x-force-lens-initialized');
+      }
+
+      setSavedLens(true);
+      setTimeout(() => setSavedLens(false), 2000);
+    } catch (err) {
+      console.error('Failed to save default lens:', err);
+    } finally {
+      setSavingLens(false);
+    }
+  };
+
+  const lensOptions: { id: LensType; label: string; description: string; icon: typeof LayoutGrid }[] = [
+    { id: 'focus', label: 'Focus', description: 'See all work across all areas', icon: LayoutGrid },
+    { id: 'sales', label: 'Sales', description: 'Pipeline, deals, and revenue', icon: Target },
+    { id: 'customer_success', label: 'Customer Success', description: 'Retention, health, and expansion', icon: HeartHandshake },
+    { id: 'onboarding', label: 'Onboarding', description: 'Activation and time-to-value', icon: Rocket },
+    { id: 'support', label: 'Support', description: 'Issue resolution and SLAs', icon: Ticket },
+  ];
 
   const earnedCertIds = new Set(userCertifications?.map((uc) => uc.certification_id) || []);
 
@@ -225,6 +275,60 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
               ) : (
                 <p className="text-gray-500">Profile not found</p>
               )}
+            </div>
+
+            {/* Default Lens Preference Section */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center gap-3 mb-2">
+                <LayoutGrid className="h-5 w-5 text-gray-500" />
+                <h2 className="text-base font-medium text-gray-900">Default Focus Lens</h2>
+                {savedLens && (
+                  <span className="text-sm text-green-600 flex items-center gap-1">
+                    <Check className="h-4 w-4" />
+                    Saved
+                  </span>
+                )}
+                {savingLens && (
+                  <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                Choose which lens to start with when you open the Work view
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {lensOptions.map((lens) => {
+                  const Icon = lens.icon;
+                  const isSelected = defaultLens === lens.id;
+                  return (
+                    <button
+                      key={lens.id}
+                      onClick={() => handleSaveDefaultLens(lens.id)}
+                      disabled={savingLens}
+                      className={cn(
+                        'flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all',
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      )}
+                    >
+                      <Icon className={cn(
+                        'h-5 w-5 shrink-0 mt-0.5',
+                        isSelected ? 'text-blue-600' : 'text-gray-400'
+                      )} />
+                      <div>
+                        <p className={cn(
+                          'font-medium',
+                          isSelected ? 'text-blue-700' : 'text-gray-900'
+                        )}>
+                          {lens.label}
+                        </p>
+                        <p className="text-sm text-gray-500">{lens.description}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Team Members Section */}

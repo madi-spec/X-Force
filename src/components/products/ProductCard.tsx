@@ -1,15 +1,42 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import type { ProductCardData } from '@/types/products';
 
 interface ProductCardProps {
   product: ProductCardData;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, isFirst = false, isLast = false }: ProductCardProps) {
+  const router = useRouter();
+  const [isReordering, setIsReordering] = useState(false);
   const sortedStages = [...(product.stages || [])].sort((a, b) => a.stage_order - b.stage_order);
+
+  const handleReorder = async (direction: 'up' | 'down') => {
+    if (isReordering) return;
+    setIsReordering(true);
+
+    try {
+      const response = await fetch('/api/products/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: product.id, direction }),
+      });
+
+      if (response.ok) {
+        router.refresh();
+      }
+    } catch (error) {
+      console.error('Reorder failed:', error);
+    } finally {
+      setIsReordering(false);
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -17,6 +44,34 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className="p-4 border-b bg-gradient-to-r from-gray-50 to-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* Reorder buttons */}
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={() => handleReorder('up')}
+                disabled={isFirst || isReordering}
+                className={`p-0.5 rounded transition-colors ${
+                  isFirst || isReordering
+                    ? 'text-gray-200 cursor-not-allowed'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+                title="Move up"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleReorder('down')}
+                disabled={isLast || isReordering}
+                className={`p-0.5 rounded transition-colors ${
+                  isLast || isReordering
+                    ? 'text-gray-200 cursor-not-allowed'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+                title="Move down"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
               style={{ backgroundColor: `${product.color}20`, color: product.color || '#3B82F6' }}
@@ -43,7 +98,7 @@ export function ProductCard({ product }: ProductCardProps) {
               href={`/products/${product.slug}/process`}
               className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              Proven Process
+              Process Editor
             </Link>
             <Link
               href={`/products/${product.slug}`}

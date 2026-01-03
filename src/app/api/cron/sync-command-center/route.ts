@@ -8,6 +8,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+
+// Required for Vercel Cron - extend timeout and ensure fresh execution
+export const runtime = 'nodejs';
+export const maxDuration = 120; // 2 minutes - syncs multiple sources
+export const dynamic = 'force-dynamic';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { syncAllSources } from '@/lib/commandCenter';
 

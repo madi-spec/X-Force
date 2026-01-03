@@ -1,3 +1,12 @@
+/**
+ * @deprecated - Inbox sync API is deprecated.
+ * Email sync now goes directly to communications table via:
+ * - syncEmailsDirectToCommunications() from '@/lib/communicationHub'
+ * - /api/cron/sync-microsoft
+ *
+ * This route is kept for backward compatibility but should not be used for new integrations.
+ */
+
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { performInitialSync, setupOutlookFolders, getOutlookFolders } from '@/lib/inbox';

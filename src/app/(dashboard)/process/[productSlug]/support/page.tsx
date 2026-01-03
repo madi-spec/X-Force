@@ -1,65 +1,16 @@
-import { createClient } from '@/lib/supabase/server';
-import { notFound } from 'next/navigation';
-import { ProcessEditor } from '@/components/process/ProcessEditor';
+import { redirect } from 'next/navigation';
 
 interface Props {
   params: Promise<{ productSlug: string }>;
 }
 
+/**
+ * Support Process Route
+ *
+ * Redirects to the unified Process Editor with support tab selected.
+ * Maintains backwards compatibility.
+ */
 export default async function SupportProcessPage({ params }: Props) {
   const { productSlug } = await params;
-  const supabase = await createClient();
-
-  // Get product
-  const { data: product, error } = await supabase
-    .from('products')
-    .select('id, name, slug, color')
-    .eq('slug', productSlug)
-    .single();
-
-  if (error || !product) {
-    notFound();
-  }
-
-  // Get existing process and stages
-  const { data: process } = await supabase
-    .from('product_processes')
-    .select('id')
-    .eq('product_id', product.id)
-    .eq('process_type', 'support')
-    .in('status', ['published', 'draft'])
-    .order('version', { ascending: false })
-    .limit(1)
-    .single();
-
-  let initialStages: { id: string; name: string; description: string; order: number; config: Record<string, unknown> }[] = [];
-
-  if (process) {
-    const { data: stages } = await supabase
-      .from('product_process_stages')
-      .select('id, name, description, stage_order, sla_days, sla_warning_days')
-      .eq('process_id', process.id)
-      .order('stage_order');
-
-    initialStages = (stages || []).map((s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description || '',
-      order: s.stage_order,
-      config: {
-        response_sla_hours: s.sla_warning_days ? s.sla_warning_days * 24 : null,
-        resolution_sla_hours: s.sla_days ? s.sla_days * 24 : null,
-      },
-    }));
-  }
-
-  return (
-    <ProcessEditor
-      productSlug={product.slug}
-      productName={product.name}
-      productColor={product.color}
-      processType="support"
-      initialStages={initialStages}
-    />
-  );
+  redirect(`/products/${productSlug}/process?process=support`);
 }

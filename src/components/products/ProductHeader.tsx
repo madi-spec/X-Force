@@ -47,7 +47,7 @@ export function ProductHeader({ product }: ProductHeaderProps) {
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors"
           >
             <Settings className="w-4 h-4" />
-            Proven Process
+            Process Editor
           </Link>
         </div>
       </div>

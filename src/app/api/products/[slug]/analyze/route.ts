@@ -39,14 +39,24 @@ export async function POST(
       const patterns = await aggregatePatternsForProduct(product.id);
       results.patterns = patterns;
 
-      // Update each stage with suggestions
-      const { data: stages } = await supabase
-        .from('product_sales_stages')
+      // Get sales process and update each stage with suggestions
+      const { data: salesProcess } = await supabase
+        .from('product_processes')
         .select('id')
-        .eq('product_id', product.id);
+        .eq('product_id', product.id)
+        .eq('process_type', 'sales')
+        .eq('status', 'published')
+        .single();
 
-      for (const stage of stages || []) {
-        await updateStageWithAISuggestions(product.id, stage.id, patterns);
+      if (salesProcess) {
+        const { data: stages } = await supabase
+          .from('product_process_stages')
+          .select('id')
+          .eq('process_id', salesProcess.id);
+
+        for (const stage of stages || []) {
+          await updateStageWithAISuggestions(product.id, stage.id, patterns);
+        }
       }
     }
 
@@ -86,9 +96,17 @@ export async function GET(
     return NextResponse.json({ error: 'Product not found' }, { status: 404 });
   }
 
-  // Get stages with AI insights
-  const { data: stages } = await supabase
-    .from('product_sales_stages')
+  // Get sales process and its stages with AI insights
+  const { data: salesProcess } = await supabase
+    .from('product_processes')
+    .select('id')
+    .eq('product_id', product.id)
+    .eq('process_type', 'sales')
+    .eq('status', 'published')
+    .single();
+
+  const { data: stages } = salesProcess ? await supabase
+    .from('product_process_stages')
     .select(`
       id, name, stage_order,
       avg_days_in_stage,
@@ -97,8 +115,8 @@ export async function GET(
       ai_suggested_objections,
       ai_insights
     `)
-    .eq('product_id', product.id)
-    .order('stage_order');
+    .eq('process_id', salesProcess.id)
+    .order('stage_order') : { data: null };
 
   // Count analyzed transcripts
   const { count: analyzedCount } = await supabase

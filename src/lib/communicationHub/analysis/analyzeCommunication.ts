@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import { buildAnalysisPrompt, ANALYSIS_PROMPT_VERSION } from './prompts/v1';
 import { cleanEmailContent } from '@/lib/email/contentCleaner';
 import type { Communication } from '@/types/communicationHub';
@@ -108,23 +109,44 @@ export async function analyzeCommunication(
     const rawContent = comm.full_content || comm.content_preview || '';
     const cleanedContent = comm.channel === 'email' ? cleanEmailContent(rawContent) : rawContent;
 
-    const prompt = buildAnalysisPrompt({
-      channel: comm.channel,
-      direction: comm.direction,
-      subject: comm.subject,
+    // Prepare participants text
+    const ourParticipants = (comm.our_participants || []).map((p: { name?: string; email?: string }) => p.name || p.email).filter(Boolean) as string[];
+    const theirParticipants = (comm.their_participants || []).map((p: { name?: string; email?: string }) => p.name || p.email).filter(Boolean) as string[];
+
+    // Try to load the managed prompt from database
+    const promptResult = await getPromptWithVariables('communication_hub_analysis', {
+      channel: comm.channel || 'email',
+      direction: comm.direction || 'inbound',
+      subject: comm.subject || '',
       content: cleanedContent,
-      participants: {
-        our: (comm.our_participants || []).map((p: { name?: string; email?: string }) => p.name || p.email).filter(Boolean) as string[],
-        their: (comm.their_participants || []).map((p: { name?: string; email?: string }) => p.name || p.email).filter(Boolean) as string[],
-      },
+      ourParticipants: ourParticipants.join(', ') || 'Unknown',
+      theirParticipants: theirParticipants.join(', ') || 'Unknown',
     });
+
+    // Use managed prompt or fall back to buildAnalysisPrompt
+    let prompt: string;
+    if (promptResult?.prompt) {
+      prompt = promptResult.prompt;
+    } else {
+      console.warn('[analyzeCommunication] Failed to load communication_hub_analysis prompt, using fallback');
+      prompt = buildAnalysisPrompt({
+        channel: comm.channel,
+        direction: comm.direction,
+        subject: comm.subject,
+        content: cleanedContent,
+        participants: {
+          our: ourParticipants,
+          their: theirParticipants,
+        },
+      });
+    }
 
     // Call AI using existing client
     const { data: result } = await callAIJson<AnalysisResult>({
       prompt,
-      schema: ANALYSIS_SCHEMA,
-      model: 'claude-3-haiku-20240307', // Use Haiku for cost efficiency
-      maxTokens: 2000,
+      schema: promptResult?.schema || ANALYSIS_SCHEMA,
+      model: (promptResult?.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      maxTokens: promptResult?.maxTokens || 2000,
     });
 
     // Ensure arrays have defaults

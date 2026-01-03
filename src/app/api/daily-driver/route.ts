@@ -1,6 +1,10 @@
 /**
  * Daily Driver API
  *
+ * NOTE: This API is now primarily consumed by the Work Queue (/work) rather than
+ * the Daily Driver UI (which was removed from navigation). The Work Queue fetches
+ * Action Now items from this endpoint.
+ *
  * GET - Returns prioritized lists for daily sales execution:
  * - needsReply: Communications awaiting our response (from response queue)
  * - needsHuman: Open attention flags requiring human decision
@@ -155,7 +159,7 @@ function transformToItem(
     const companyProduct = firstOrNull(row.company_product as Record<string, unknown> | Record<string, unknown>[] | null);
     const product = firstOrNull(companyProduct?.product as Record<string, unknown> | Record<string, unknown>[] | null);
     const stage = firstOrNull(companyProduct?.current_stage as Record<string, unknown> | Record<string, unknown>[] | null);
-    const owner = firstOrNull(companyProduct?.owner as Record<string, unknown> | Record<string, unknown>[] | null);
+    const owner = firstOrNull(companyProduct?.owner_user as Record<string, unknown> | Record<string, unknown>[] | null);
 
     const flagType = row.flag_type as AttentionFlagType;
     const severity = row.severity as AttentionFlagSeverity;
@@ -285,7 +289,7 @@ function transformToItem(
     const company = firstOrNull(row.company as Record<string, unknown> | Record<string, unknown>[] | null);
     const product = firstOrNull(row.product as Record<string, unknown> | Record<string, unknown>[] | null);
     const stage = firstOrNull(row.current_stage as Record<string, unknown> | Record<string, unknown>[] | null);
-    const owner = firstOrNull(row.owner as Record<string, unknown> | Record<string, unknown>[] | null);
+    const owner = firstOrNull(row.owner_user as Record<string, unknown> | Record<string, unknown>[] | null);
 
     return {
       id: `cp-${row.id}`,
@@ -393,6 +397,7 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at,
         current_analysis_id,
+        thread_id,
         company:companies(id, name),
         contact:contacts(id, name, email),
         analysis:communication_analysis!communications_current_analysis_id_fkey(
@@ -405,6 +410,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('awaiting_our_response', true)
       .is('responded_at', null)
+      .is('excluded_at', null)  // Filter out ignored/excluded communications
       .order('response_due_by', { ascending: true, nullsFirst: false });
 
     // Exclude AI-handled communications
@@ -419,9 +425,54 @@ export async function GET(request: NextRequest) {
       throw needsReplyError;
     }
 
+    // THREAD DEDUPLICATION: Group communications by thread_id (or company_id if no thread)
+    // Show only the most recent/urgent communication per thread to avoid duplicates
+    const threadGroups = new Map<string, {
+      items: Array<Record<string, unknown>>;
+      mostUrgent: Record<string, unknown> | null;
+    }>();
+
+    for (const row of (needsReplyRaw || [])) {
+      // Use thread_id if available, otherwise fall back to company_id + subject combination
+      const threadKey = (row as Record<string, unknown>).thread_id as string
+        || `${(row as Record<string, unknown>).company_id || 'unknown'}_${((row as Record<string, unknown>).subject as string || '').toLowerCase().replace(/^re:\s*/i, '').trim()}`;
+
+      if (!threadGroups.has(threadKey)) {
+        threadGroups.set(threadKey, { items: [], mostUrgent: null });
+      }
+
+      const group = threadGroups.get(threadKey)!;
+      group.items.push(row as Record<string, unknown>);
+
+      // Keep track of most urgent (earliest response_due_by)
+      const rowDueBy = (row as Record<string, unknown>).response_due_by as string | null;
+      const currentDueBy = group.mostUrgent?.response_due_by as string | null;
+
+      if (!group.mostUrgent) {
+        group.mostUrgent = row as Record<string, unknown>;
+      } else if (rowDueBy && currentDueBy) {
+        if (new Date(rowDueBy) < new Date(currentDueBy)) {
+          group.mostUrgent = row as Record<string, unknown>;
+        }
+      } else if (rowDueBy && !currentDueBy) {
+        group.mostUrgent = row as Record<string, unknown>;
+      }
+    }
+
+    // Transform deduplicated items, adding thread count metadata
+    const needsReplyDeduplicated = Array.from(threadGroups.values())
+      .filter(group => group.mostUrgent !== null)
+      .map(group => {
+        const item = transformToItem(group.mostUrgent!, 'communication');
+        // Add thread info to metadata if there are multiple items
+        if (group.items.length > 1) {
+          item.reason = `${group.items.length} messages in thread${item.reason ? ` - ${item.reason}` : ''}`;
+        }
+        return item;
+      });
+
     // Transform and sort by urgency (overdue first, then due soon)
-    const needsReply: DailyDriverItem[] = (needsReplyRaw || [])
-      .map((row) => transformToItem(row as Record<string, unknown>, 'communication'))
+    const needsReply: DailyDriverItem[] = needsReplyDeduplicated
       .sort((a, b) => {
         // Sort by attention level first (now > soon > monitor)
         const levelOrder = { now: 1, soon: 2, monitor: 3 };
@@ -452,8 +503,8 @@ export async function GET(request: NextRequest) {
           stage_entered_at,
           last_stage_moved_at,
           product:products(id, name, slug),
-          current_stage:product_sales_stages(id, name, stage_order),
-          owner:users(id, name)
+          current_stage:product_process_stages(id, name, stage_order),
+          owner_user:users(id, name)
         )
       `)
       .eq('status', 'open')
@@ -498,8 +549,8 @@ export async function GET(request: NextRequest) {
           stage_entered_at,
           last_stage_moved_at,
           product:products(id, name, slug),
-          current_stage:product_sales_stages(id, name, stage_order),
-          owner:users(id, name)
+          current_stage:product_process_stages(id, name, stage_order),
+          owner_user:users(id, name)
         )
       `)
       .eq('status', 'open')
@@ -552,7 +603,7 @@ export async function GET(request: NextRequest) {
         *,
         company:companies(id, name),
         product:products(id, name, slug),
-        current_stage:product_sales_stages(id, name, stage_order),
+        current_stage:product_process_stages(id, name, stage_order),
         owner:users(id, name)
       `)
       .eq('status', 'in_sales')

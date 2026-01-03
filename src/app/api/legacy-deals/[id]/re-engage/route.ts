@@ -54,11 +54,26 @@ export async function POST(
       );
     }
 
-    // Get the first stage for this product
-    const { data: firstStage } = await supabase
-      .from('product_sales_stages')
-      .select('id, name')
+    // Get the sales process for this product, then get first stage
+    const { data: salesProcess } = await supabase
+      .from('product_processes')
+      .select('id')
       .eq('product_id', companyProduct.product_id)
+      .eq('process_type', 'sales')
+      .eq('status', 'published')
+      .single();
+
+    if (!salesProcess) {
+      return NextResponse.json(
+        { error: 'No sales process defined for this product' },
+        { status: 400 }
+      );
+    }
+
+    const { data: firstStage } = await supabase
+      .from('product_process_stages')
+      .select('id, name')
+      .eq('process_id', salesProcess.id)
       .order('stage_order', { ascending: true })
       .limit(1)
       .single();

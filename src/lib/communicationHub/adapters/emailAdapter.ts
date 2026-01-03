@@ -10,6 +10,60 @@ import { classifyEmailNoise } from '@/lib/email/noiseDetection';
 import { MicrosoftGraphClient } from '@/lib/microsoft/graph';
 import { getValidToken } from '@/lib/microsoft/auth';
 
+/**
+ * Normalize external_id by stripping common prefixes
+ * This allows deduplication across different sync sources
+ * e.g., "ms_email_AAkALg..." and "AAkALg..." are the same email
+ */
+function normalizeExternalId(externalId: string | null): string | null {
+  if (!externalId) return null;
+  // Strip common prefixes used by different sync sources
+  return externalId
+    .replace(/^ms_email_/, '')
+    .replace(/^graph_/, '');
+}
+
+/**
+ * Check if a communication with this external_id already exists
+ * Handles different prefixes from different sync sources
+ */
+async function findExistingByExternalId(
+  supabase: ReturnType<typeof createAdminClient>,
+  externalId: string | null
+): Promise<{ id: string } | null> {
+  if (!externalId) return null;
+
+  const normalizedId = normalizeExternalId(externalId);
+  if (!normalizedId) return null;
+
+  // Check for exact match first
+  const { data: exact } = await supabase
+    .from('communications')
+    .select('id')
+    .eq('external_id', externalId)
+    .single();
+
+  if (exact) return exact;
+
+  // Check for normalized match (with or without prefix)
+  const { data: withPrefix } = await supabase
+    .from('communications')
+    .select('id')
+    .eq('external_id', `ms_email_${normalizedId}`)
+    .single();
+
+  if (withPrefix) return withPrefix;
+
+  // Check without prefix
+  const { data: withoutPrefix } = await supabase
+    .from('communications')
+    .select('id')
+    .eq('external_id', normalizedId)
+    .single();
+
+  return withoutPrefix || null;
+}
+
 interface EmailMessage {
   id: string;
   subject: string | null;
@@ -122,16 +176,58 @@ export async function syncEmailToCommunications(emailId: string): Promise<string
     return null;
   }
 
-  // Check if already synced
-  const { data: existing } = await supabase
+  // Check if already synced by source_id
+  const { data: existingBySource } = await supabase
     .from('communications')
     .select('id')
     .eq('source_table', 'email_messages')
     .eq('source_id', emailId)
     .single();
 
-  if (existing) {
-    return existing.id;
+  if (existingBySource) {
+    // Even if already synced, check if we need to link responses
+    // (handles case where outbound was synced before inbound arrived)
+    const isOutbound = email.is_sent_by_user;
+    const threadId = email.conversation_ref;
+
+    if (isOutbound && threadId) {
+      const respondedAt = email.sent_at || new Date().toISOString();
+      await supabase
+        .from('communications')
+        .update({
+          awaiting_our_response: false,
+          responded_at: respondedAt,
+        })
+        .eq('thread_id', threadId)
+        .eq('direction', 'inbound')
+        .eq('awaiting_our_response', true);
+    }
+    return existingBySource.id;
+  }
+
+  // DEDUPLICATION: Check if this email was already synced from a different source
+  // (e.g., microsoft_graph vs email_messages can sync the same email with different prefixes)
+  const existingByExternalId = await findExistingByExternalId(supabase, email.message_id);
+  if (existingByExternalId) {
+    console.log(`[EmailAdapter] Skipping duplicate - email ${emailId} already exists as ${existingByExternalId.id} (external_id match)`);
+
+    // Still do response linking for the existing communication
+    const isOutbound = email.is_sent_by_user;
+    const threadId = email.conversation_ref;
+
+    if (isOutbound && threadId) {
+      const respondedAt = email.sent_at || new Date().toISOString();
+      await supabase
+        .from('communications')
+        .update({
+          awaiting_our_response: false,
+          responded_at: respondedAt,
+        })
+        .eq('thread_id', threadId)
+        .eq('direction', 'inbound')
+        .eq('awaiting_our_response', true);
+    }
+    return existingByExternalId.id;
   }
 
   // Convert and insert
@@ -149,6 +245,31 @@ export async function syncEmailToCommunications(emailId: string): Promise<string
   if (insertError) {
     console.error(`[EmailAdapter] Failed to insert communication:`, insertError);
     return null;
+  }
+
+  // If this is an outbound email with a thread_id, mark any prior inbound emails in this thread as responded
+  const isOutbound = email.is_sent_by_user;
+  const threadId = email.conversation_ref;
+
+  if (isOutbound && threadId) {
+    const respondedAt = email.sent_at || new Date().toISOString();
+    const { data: markedAsResponded, error: updateError } = await supabase
+      .from('communications')
+      .update({
+        awaiting_our_response: false,
+        responded_at: respondedAt,
+      })
+      .eq('thread_id', threadId)
+      .eq('direction', 'inbound')
+      .eq('awaiting_our_response', true)
+      .select('id, subject');
+
+    if (updateError) {
+      console.warn(`[EmailAdapter] Failed to mark prior inbound emails as responded:`, updateError);
+    } else if (markedAsResponded && markedAsResponded.length > 0) {
+      console.log(`[EmailAdapter] Marked ${markedAsResponded.length} inbound email(s) as responded in thread ${threadId}:`,
+        markedAsResponded.map(m => m.subject).join(', '));
+    }
   }
 
   if (noiseCheck.autoProcess) {

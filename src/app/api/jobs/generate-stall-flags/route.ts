@@ -161,7 +161,7 @@ export async function POST() {
         updated_at,
         last_stage_moved_at,
         next_step_due_at,
-        current_stage:product_sales_stages(id, name, slug, stage_order)
+        current_stage:product_process_stages(id, name, slug, stage_order)
       `)
       .not('current_stage_id', 'is', null);
 

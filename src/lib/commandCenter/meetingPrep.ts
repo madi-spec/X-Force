@@ -12,6 +12,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 import {
   MeetingAttendee,
   MeetingPrepContent,
@@ -104,48 +105,52 @@ export async function generateMeetingPrep(
   },
   recentContext?: string[]
 ): Promise<MeetingPrepContent> {
-  const prompt = `Generate meeting prep for a sales meeting:
+  // Format attendees for the prompt
+  const attendeesList = attendees.map(a =>
+    `- ${a.name}${a.title ? ` (${a.title})` : ''}${a.role !== 'unknown' ? ` - ${a.role}` : ''}${a.meeting_count ? ` [${a.meeting_count} past meetings]` : ''}`
+  ).join('\n');
 
-MEETING: ${title}
+  // Format deal context
+  const dealContextText = deal
+    ? `Deal: ${deal.name}, Stage: ${deal.stage}, Value: $${deal.value?.toLocaleString() || 'Unknown'}${deal.health_score ? `, Health Score: ${deal.health_score}/100` : ''}`
+    : 'No deal context';
 
-ATTENDEES:
-${attendees.map(a => `- ${a.name}${a.title ? ` (${a.title})` : ''}${a.role !== 'unknown' ? ` - ${a.role}` : ''}${a.meeting_count ? ` [${a.meeting_count} past meetings]` : ''}`).join('\n')}
-
-${deal ? `
-DEAL CONTEXT:
-- Deal: ${deal.name}
-- Stage: ${deal.stage}
-- Value: $${deal.value?.toLocaleString() || 'Unknown'}
-${deal.health_score ? `- Health Score: ${deal.health_score}/100` : ''}
-` : ''}
-
-${recentContext?.length ? `
-RECENT CONTEXT:
-${recentContext.join('\n')}
-` : ''}
-
-Generate:
-1. objective: A clear, specific objective for this meeting (1-2 sentences)
-2. talking_points: 3-5 key points to discuss
-3. landmines: 1-3 topics to avoid or handle carefully (if any)
-4. questions_to_ask: 2-4 good discovery questions
-
-Be specific and actionable based on the context provided.`;
-
-  const schema = `{
-  "objective": "string",
-  "talking_points": ["string array - 3-5 items"],
-  "landmines": ["string array - 1-3 items"],
-  "questions_to_ask": ["string array - 2-4 items"]
-}`;
+  // Format recent context
+  const recentCommsText = recentContext?.length
+    ? recentContext.join('\n')
+    : 'No recent context';
 
   try {
+    // Load the managed prompt from database
+    const promptResult = await getPromptWithVariables('meeting_prep_brief', {
+      meetingTitle: title || 'Meeting',
+      attendees: attendeesList,
+      dealContext: dealContextText,
+      recentCommunications: recentCommsText,
+    });
+
+    if (!promptResult || !promptResult.prompt) {
+      console.warn('[generateMeetingPrep] Failed to load meeting_prep_brief prompt, using fallback');
+      return {
+        objective: `Conduct productive ${title} meeting`,
+        talking_points: [
+          'Review current status and progress',
+          'Discuss next steps and action items',
+          'Address any questions or concerns',
+        ],
+        landmines: [],
+        questions_to_ask: [
+          'What are your main priorities right now?',
+          'What would success look like for you?',
+        ],
+      };
+    }
+
     const result = await callAIJson<MeetingPrepContent>({
-      prompt,
-      schema,
-      maxTokens: 800,
-      temperature: 0.7,
-      model: 'claude-3-haiku-20240307',
+      prompt: promptResult.prompt,
+      schema: promptResult.schema || undefined,
+      model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
+      maxTokens: promptResult.maxTokens || 800,
     });
 
     return result.data;

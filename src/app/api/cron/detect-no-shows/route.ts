@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { processAllNoShows } from '@/lib/scheduler/noShowRecovery';
 
+// Required for Vercel Cron - extend timeout and ensure fresh execution
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 1 minute should be sufficient
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/cron/detect-no-shows
  *

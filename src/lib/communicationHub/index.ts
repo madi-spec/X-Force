@@ -43,8 +43,15 @@ export {
 
 // Live sync
 export {
+  // Legacy sync from email_messages (deprecated)
   syncEmailToCommunication,
   syncRecentEmailsToCommunications,
+  // Direct Microsoft Graph sync (recommended)
+  syncEmailsDirectToCommunications,
+  syncRecentEmailsDirectToCommunications,
+  type DirectSyncResult,
+  type DirectSyncOptions,
+  // Transcript sync
   syncTranscriptToCommunication,
   syncRecentTranscriptsToCommunications,
 } from './sync';

@@ -142,12 +142,20 @@ export async function aggregatePatternsForProduct(
     .sort((a, b) => b.effectiveness_score - a.effectiveness_score)
     .slice(0, 10);
 
-  // Get stage metrics from company_product_history
-  const { data: stages } = await supabase
-    .from('product_sales_stages')
-    .select('id, name, stage_order')
+  // Get sales process and its stages from unified table
+  const { data: salesProcess } = await supabase
+    .from('product_processes')
+    .select('id')
     .eq('product_id', productId)
-    .order('stage_order');
+    .eq('process_type', 'sales')
+    .eq('status', 'published')
+    .single();
+
+  const { data: stages } = salesProcess ? await supabase
+    .from('product_process_stages')
+    .select('id, name, stage_order')
+    .eq('process_id', salesProcess.id)
+    .order('stage_order') : { data: null };
 
   const stage_insights = (stages || []).map(stage => ({
     stage_id: stage.id,
@@ -236,9 +244,9 @@ export async function updateStageWithAISuggestions(
 ): Promise<void> {
   const supabase = await createClient();
 
-  // Get current stage
+  // Get current stage from unified table
   const { data: stage } = await supabase
-    .from('product_sales_stages')
+    .from('product_process_stages')
     .select('*')
     .eq('id', stageId)
     .single();
@@ -266,9 +274,9 @@ export async function updateStageWithAISuggestions(
       success_rate: obj.success_rate
     }));
 
-  // Update stage with suggestions
+  // Update stage with suggestions in unified table
   await supabase
-    .from('product_sales_stages')
+    .from('product_process_stages')
     .update({
       ai_suggested_pitch_points: suggestedPitchPoints,
       ai_suggested_objections: suggestedObjections,

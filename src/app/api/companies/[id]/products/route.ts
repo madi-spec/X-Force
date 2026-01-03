@@ -16,7 +16,7 @@ export async function GET(
       *,
       product:products(*),
       tier:product_tiers(*),
-      current_stage:product_sales_stages(*),
+      current_stage:product_process_stages(*),
       owner:users!company_products_owner_user_id_fkey(id, name, email)
     `)
     .eq('company_id', id)
@@ -74,20 +74,36 @@ export async function POST(
   nextStepDue.setDate(nextStepDue.getDate() + 3);
   const nextStepDueIso = nextStepDue.toISOString();
 
-  // Get first stage for this product (order by stage_order ascending)
-  const { data: firstStageData, error: stageError } = await supabase
-    .from('product_sales_stages')
-    .select('id, name')
+  // Get the sales process for this product, then find first stage
+  const { data: salesProcess, error: processError } = await supabase
+    .from('product_processes')
+    .select('id')
     .eq('product_id', product_id)
-    .order('stage_order', { ascending: true })
-    .limit(1);
+    .eq('process_type', 'sales')
+    .eq('status', 'published')
+    .single();
 
-  if (stageError) {
-    console.error('[StartSale] Error fetching first stage:', stageError);
-    return NextResponse.json({ error: 'Failed to fetch product stages' }, { status: 500 });
+  let firstStage: { id: string; name: string } | null = null;
+
+  if (salesProcess) {
+    const { data: firstStageData, error: stageError } = await supabase
+      .from('product_process_stages')
+      .select('id, name')
+      .eq('process_id', salesProcess.id)
+      .order('stage_order', { ascending: true })
+      .limit(1);
+
+    if (stageError) {
+      console.error('[StartSale] Error fetching first stage:', stageError);
+      return NextResponse.json({ error: 'Failed to fetch product stages' }, { status: 500 });
+    }
+
+    firstStage = firstOrNull(firstStageData);
+  } else if (processError && processError.code !== 'PGRST116') {
+    // PGRST116 = no rows found, which is ok (product may not have a sales process yet)
+    console.error('[StartSale] Error fetching sales process:', processError);
+    return NextResponse.json({ error: 'Failed to fetch product process' }, { status: 500 });
   }
-
-  const firstStage = firstOrNull(firstStageData);
 
   if (!firstStage && status === 'in_sales') {
     return NextResponse.json({
@@ -126,7 +142,7 @@ export async function POST(
       .select(`
         *,
         product:products(id, name, slug),
-        current_stage:product_sales_stages(id, name, slug, stage_order)
+        current_stage:product_process_stages(id, name, slug, stage_order)
       `)
       .single();
 
@@ -176,7 +192,7 @@ export async function POST(
       .select(`
         *,
         product:products(id, name, slug),
-        current_stage:product_sales_stages(id, name, slug, stage_order)
+        current_stage:product_process_stages(id, name, slug, stage_order)
       `)
       .single();
 
@@ -365,7 +381,7 @@ export async function PUT(
       *,
       product:products(id, name, slug, icon, color),
       tier:product_tiers(id, name),
-      current_stage:product_sales_stages(id, name, slug, stage_order)
+      current_stage:product_process_stages(id, name, slug, stage_order)
     `)
     .single();
 

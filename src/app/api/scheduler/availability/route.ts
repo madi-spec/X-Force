@@ -50,13 +50,15 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    if (result.error) {
-      return NextResponse.json({ error: result.error }, { status: 500 });
-    }
-
+    // Return full availability info including source metadata
+    // Don't fail on error - return the error info so UI can show warnings
     return NextResponse.json({
       slots: result.slots,
+      source: result.source,
+      calendarChecked: result.calendarChecked,
       warnings: result.warnings,
+      // Only include error as a warning if we still got some slots
+      ...(result.error && { warning: result.error }),
     });
 
   } catch (err) {

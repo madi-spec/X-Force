@@ -171,11 +171,46 @@ interface CreateFlagInput {
 /**
  * Create an attention flag for human review.
  * Returns the created flag's ID.
+ *
+ * IDEMPOTENCY: If an open flag already exists with the same source_id and flag_type,
+ * returns the existing flag's ID instead of creating a duplicate.
  */
 export async function createAttentionFlag(
   input: CreateFlagInput
 ): Promise<string | null> {
   const supabase = createAdminClient();
+
+  // IDEMPOTENCY CHECK: Don't create duplicate flags for the same source
+  if (input.sourceId) {
+    const { data: existingFlag } = await supabase
+      .from('attention_flags')
+      .select('id')
+      .eq('source_id', input.sourceId)
+      .eq('flag_type', input.flagType)
+      .eq('status', 'open')
+      .single();
+
+    if (existingFlag) {
+      console.log(`[Autopilot] Skipping duplicate flag creation: ${input.flagType} for source ${input.sourceId} already exists`);
+      return existingFlag.id;
+    }
+  }
+
+  // Also check by company_id + flag_type for certain flag types to avoid multiple flags per company
+  if (input.flagType === 'BOOK_MEETING_APPROVAL') {
+    const { data: existingCompanyFlag } = await supabase
+      .from('attention_flags')
+      .select('id')
+      .eq('company_id', input.companyId)
+      .eq('flag_type', input.flagType)
+      .eq('status', 'open')
+      .single();
+
+    if (existingCompanyFlag) {
+      console.log(`[Autopilot] Skipping duplicate BOOK_MEETING_APPROVAL for company ${input.companyId}`);
+      return existingCompanyFlag.id;
+    }
+  }
 
   const { data, error } = await supabase
     .from('attention_flags')

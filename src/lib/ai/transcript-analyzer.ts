@@ -161,19 +161,25 @@ export async function batchAnalyzeTranscripts(
 ): Promise<{ analyzed: number; errors: number }> {
   const supabase = await createClient();
 
-  // Get product with stages
+  // Get product with stages from unified table
   const { data: product } = await supabase
     .from('products')
     .select(`
       id, name, slug,
-      stages:product_sales_stages(id, name, stage_order)
+      processes:product_processes(
+        id, process_type,
+        stages:product_process_stages(id, name, stage_order)
+      )
     `)
     .eq('id', productId)
     .single();
 
   if (!product) throw new Error('Product not found');
 
-  const stageNames = ((product.stages as ProductStage[]) || [])
+  // Extract sales stages from unified structure
+  const salesProcess = (product.processes as Array<{ process_type: string; stages: ProductStage[] }> || [])
+    .find(p => p.process_type === 'sales');
+  const stageNames = ((salesProcess?.stages || []) as ProductStage[])
     .sort((a, b) => a.stage_order - b.stage_order)
     .map(s => s.name);
 

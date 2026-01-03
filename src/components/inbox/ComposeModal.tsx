@@ -24,6 +24,7 @@ interface ComposeModalProps {
   toEmail?: string;
   toName?: string;
   subject?: string;
+  initialBody?: string;
   contactId?: string;
   companyId?: string;
   dealId?: string;
@@ -60,6 +61,7 @@ export function ComposeModal({
   toEmail,
   toName,
   subject: initialSubject,
+  initialBody,
   contactId: initialContactId,
   companyId: initialCompanyId,
   dealId: initialDealId,
@@ -81,9 +83,14 @@ export function ComposeModal({
   // Search state
   const [contactSearch, setContactSearch] = useState('');
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [showContactSearch, setShowContactSearch] = useState(false);
+
+  // Company search state
+  const [companySearch, setCompanySearch] = useState('');
+  const [companySearchResults, setCompanySearchResults] = useState<Company[]>([]);
+  const [showCompanySearch, setShowCompanySearch] = useState(false);
+  const [selectedCompanyName, setSelectedCompanyName] = useState<string>('');
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -131,11 +138,12 @@ export function ComposeModal({
         setRecipients([{ email: toEmail, name: toName }]);
       }
       if (initialSubject) setSubject(initialSubject);
+      if (initialBody) setContent(initialBody);
       if (initialContactId) setContactId(initialContactId);
       if (initialCompanyId) setCompanyId(initialCompanyId);
       if (initialDealId) setDealId(initialDealId);
     }
-  }, [isOpen, toEmail, toName, initialSubject, initialContactId, initialCompanyId, initialDealId]);
+  }, [isOpen, toEmail, toName, initialSubject, initialBody, initialContactId, initialCompanyId, initialDealId]);
 
   // Reset on close
   useEffect(() => {
@@ -150,6 +158,10 @@ export function ComposeModal({
       setDealId(undefined);
       setContactSearch('');
       setShowContactSearch(false);
+      setCompanySearch('');
+      setCompanySearchResults([]);
+      setShowCompanySearch(false);
+      setSelectedCompanyName('');
       setError(null);
     }
   }, [isOpen]);
@@ -180,21 +192,62 @@ export function ComposeModal({
     return () => clearTimeout(debounce);
   }, [contactSearch, supabase]);
 
-  // Load companies and deals
+  // Load initial company name if companyId is provided
+  useEffect(() => {
+    if (!isOpen || !initialCompanyId) return;
+
+    const loadInitialCompany = async () => {
+      const { data } = await supabase
+        .from('companies')
+        .select('id, name')
+        .eq('id', initialCompanyId)
+        .single();
+
+      if (data) {
+        setSelectedCompanyName(data.name);
+      }
+    };
+
+    loadInitialCompany();
+  }, [isOpen, initialCompanyId, supabase]);
+
+  // Search companies
+  useEffect(() => {
+    if (!companySearch || companySearch.length < 2) {
+      setCompanySearchResults([]);
+      return;
+    }
+
+    const search = async () => {
+      const { data } = await supabase
+        .from('companies')
+        .select('id, name')
+        .ilike('name', `%${companySearch}%`)
+        .order('name')
+        .limit(10);
+
+      if (data) {
+        setCompanySearchResults(data);
+      }
+    };
+
+    const debounce = setTimeout(search, 200);
+    return () => clearTimeout(debounce);
+  }, [companySearch, supabase]);
+
+  // Load deals
   useEffect(() => {
     if (!isOpen) return;
 
     const loadData = async () => {
-      const [companiesRes, dealsRes] = await Promise.all([
-        supabase.from('companies').select('id, name').order('name').limit(50),
-        supabase.from('deals').select('id, name, company_id')
-          .not('stage', 'in', '("closed_won","closed_lost")')
-          .order('created_at', { ascending: false })
-          .limit(50),
-      ]);
+      const { data: dealsRes } = await supabase
+        .from('deals')
+        .select('id, name, company_id')
+        .not('stage', 'in', '("closed_won","closed_lost")')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-      if (companiesRes.data) setCompanies(companiesRes.data);
-      if (dealsRes.data) setDeals(dealsRes.data);
+      if (dealsRes) setDeals(dealsRes);
     };
 
     loadData();
@@ -477,19 +530,71 @@ ${htmlBody}
           <div className="px-4 py-2 border-b border-gray-100">
             <div className="flex items-center gap-3 text-sm">
               <span className="text-gray-500">Link to:</span>
-              <select
-                value={companyId || ''}
-                onChange={(e) => {
-                  setCompanyId(e.target.value || undefined);
-                  setDealId(undefined);
-                }}
-                className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
-              >
-                <option value="">Company (optional)</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+
+              {/* Searchable Company Selector */}
+              <div className="relative">
+                <div className="flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={showCompanySearch ? companySearch : selectedCompanyName}
+                    onChange={(e) => {
+                      setCompanySearch(e.target.value);
+                      setShowCompanySearch(true);
+                    }}
+                    onFocus={() => setShowCompanySearch(true)}
+                    placeholder="Search company..."
+                    className="w-40 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  {companyId && (
+                    <button
+                      onClick={() => {
+                        setCompanyId(undefined);
+                        setSelectedCompanyName('');
+                        setCompanySearch('');
+                        setDealId(undefined);
+                      }}
+                      className="p-0.5 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Company search dropdown */}
+                {showCompanySearch && companySearchResults.length > 0 && (
+                  <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                    {companySearchResults.map((company) => (
+                      <button
+                        key={company.id}
+                        onClick={() => {
+                          setCompanyId(company.id);
+                          setSelectedCompanyName(company.name);
+                          setCompanySearch('');
+                          setShowCompanySearch(false);
+                          setDealId(undefined);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                        {company.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Click outside to close */}
+                {showCompanySearch && (
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => {
+                      setShowCompanySearch(false);
+                      setCompanySearch('');
+                    }}
+                  />
+                )}
+              </div>
+
               <select
                 value={dealId || ''}
                 onChange={(e) => setDealId(e.target.value || undefined)}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { format } from 'date-fns';
 import {
@@ -13,6 +13,8 @@ import {
   Maximize2,
   UserPlus,
   Package,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { AddContactModal } from '@/components/commandCenter/AddContactModal';
 import { ManageProductsModal } from '@/components/dailyDriver/ManageProductsModal';
@@ -46,6 +48,148 @@ interface Communication {
     sentiment_score: number | null;
   } | null;
   contact: { id: string; name: string; email: string } | null;
+  thread_id: string | null;
+}
+
+// ============================================================================
+// THREAD GROUPING HELPERS
+// ============================================================================
+
+// Normalize subject by removing RE:, FW:, etc. prefixes
+function normalizeSubject(subject: string | null): string {
+  if (!subject) return '';
+  return subject.replace(/^(re:|fw:|fwd:|aw:|wg:)\s*/gi, '').trim();
+}
+
+interface ThreadGroup {
+  id: string;
+  subject: string;
+  communications: Communication[];
+  latestDate: string;
+  earliestDate: string;
+  hasInbound: boolean;
+  hasOutbound: boolean;
+  summary: string | null;
+}
+
+// Clean up AI summary to be thread-appropriate (remove "The email" references)
+function cleanSummaryForThread(summary: string): string {
+  return summary
+    .replace(/^The email\s+/i, 'Discussion about ')
+    .replace(/^This email\s+/i, 'Discussion about ')
+    .replace(/the email\s+/gi, 'the conversation ')
+    .replace(/this email\s+/gi, 'the conversation ');
+}
+
+// Truncate summary to fit in bubble (max ~300 chars - CSS line-clamp handles visual display)
+function truncateSummary(summary: string, maxLength: number = 300): string {
+  if (summary.length <= maxLength) return summary;
+  const truncated = summary.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return (lastSpace > maxLength * 0.7 ? truncated.substring(0, lastSpace) : truncated) + '...';
+}
+
+// Generate a summary for a thread from its communications
+function generateThreadSummary(communications: Communication[]): string | null {
+  if (communications.length === 0) return null;
+
+  // Collect all AI-generated summaries from the thread
+  const aiSummaries = communications
+    .filter(c => c.current_analysis?.summary)
+    .map(c => cleanSummaryForThread(c.current_analysis!.summary!));
+
+  // If we have AI summaries, combine them into a thread overview
+  if (aiSummaries.length > 0) {
+    let summary: string;
+    if (aiSummaries.length === 1) {
+      summary = aiSummaries[0];
+    } else {
+      // Combine multiple AI summaries - take key points from each
+      const combined = aiSummaries
+        .map(s => s.split('.')[0]) // Take first sentence from each
+        .filter(s => s.length > 10)
+        .slice(0, 2) // Max 2 key points
+        .join('. ');
+      summary = combined ? combined + '.' : aiSummaries[0];
+    }
+    return truncateSummary(summary);
+  }
+
+  // Fall back to building a conversation flow summary
+  const inboundComms = communications.filter(c => c.direction === 'inbound');
+  const outboundComms = communications.filter(c => c.direction === 'outbound');
+
+  // Build a narrative of the thread
+  let prefix: string;
+  if (inboundComms.length > 0 && outboundComms.length > 0) {
+    prefix = `${communications.length}-message conversation`;
+  } else if (inboundComms.length > 0) {
+    prefix = `${inboundComms.length} inbound`;
+  } else {
+    prefix = `${outboundComms.length} outbound`;
+  }
+
+  // Get content from first message to show topic
+  const firstPreview = communications
+    .map(c => c.content_preview)
+    .find((p): p is string => !!p && p.length > 20);
+
+  if (firstPreview) {
+    const snippet = firstPreview.substring(0, 100);
+    return truncateSummary(`${prefix}: "${snippet}${firstPreview.length > 100 ? '...' : ''}"`)
+  }
+
+  return prefix;
+}
+
+// Group communications into threads (by thread_id or normalized subject, across all dates)
+function groupCommunicationsIntoThreads(communications: Communication[]): ThreadGroup[] {
+  const threadMap = new Map<string, ThreadGroup>();
+
+  for (const comm of communications) {
+    // Group by thread_id if available, otherwise by normalized subject
+    const threadKey = comm.thread_id
+      ? `thread-${comm.thread_id}`
+      : `subject-${normalizeSubject(comm.subject)}`;
+
+    if (!threadMap.has(threadKey)) {
+      threadMap.set(threadKey, {
+        id: comm.thread_id || comm.id,
+        subject: normalizeSubject(comm.subject) || 'No subject',
+        communications: [],
+        latestDate: comm.occurred_at,
+        earliestDate: comm.occurred_at,
+        hasInbound: false,
+        hasOutbound: false,
+        summary: null,
+      });
+    }
+
+    const group = threadMap.get(threadKey)!;
+    group.communications.push(comm);
+    if (comm.direction === 'inbound') group.hasInbound = true;
+    if (comm.direction === 'outbound') group.hasOutbound = true;
+    if (new Date(comm.occurred_at) > new Date(group.latestDate)) {
+      group.latestDate = comm.occurred_at;
+    }
+    if (new Date(comm.occurred_at) < new Date(group.earliestDate)) {
+      group.earliestDate = comm.occurred_at;
+    }
+  }
+
+  // Sort communications within each thread by date (oldest first for conversation view)
+  // and generate summaries
+  for (const group of threadMap.values()) {
+    group.communications.sort((a, b) =>
+      new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
+    );
+    group.summary = generateThreadSummary(group.communications);
+  }
+
+  // Return sorted by earliest date (oldest first for conversation view)
+  return Array.from(threadMap.values()).sort((a, b) =>
+    new Date(a.earliestDate).getTime() - new Date(b.earliestDate).getTime()
+  );
 }
 
 interface CommunicationsDrawerProps {
@@ -441,6 +585,9 @@ export function CommunicationsDrawer({
   const [showAddContact, setShowAddContact] = useState(false);
   const [showManageProducts, setShowManageProducts] = useState(false);
 
+  // Thread expansion state
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+
   // Fetch communications
   const { data, isLoading, mutate } = useSWR<{ communications: Communication[] }>(
     isOpen ? `/api/communications?company_id=${companyId}&limit=50` : null,
@@ -454,6 +601,24 @@ export function CommunicationsDrawer({
   const sortedComms = [...communications].sort(
     (a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
   );
+
+  // Group communications into threads
+  const threadGroups = useMemo(() => {
+    return groupCommunicationsIntoThreads(communications);
+  }, [communications]);
+
+  // Toggle thread expansion
+  const toggleThread = useCallback((threadId: string) => {
+    setExpandedThreads(prev => {
+      const next = new Set(prev);
+      if (next.has(threadId)) {
+        next.delete(threadId);
+      } else {
+        next.add(threadId);
+      }
+      return next;
+    });
+  }, []);
 
   // Scroll to highlighted message when data loads
   useEffect(() => {
@@ -566,7 +731,7 @@ export function CommunicationsDrawer({
             </button>
           </div>
 
-          {/* Body (message thread) */}
+          {/* Body (message thread with collapsible threads) */}
           <div
             ref={scrollRef}
             style={{
@@ -582,21 +747,128 @@ export function CommunicationsDrawer({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
                 <Loader2 style={{ width: '32px', height: '32px', color: '#3b82f6', animation: 'spin 1s linear infinite' }} />
               </div>
-            ) : sortedComms.length === 0 ? (
+            ) : threadGroups.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: '#667085' }}>
                 <Mail style={{ width: '48px', height: '48px', marginBottom: '16px', color: '#e6eaf0' }} />
                 <p>No communications yet</p>
               </div>
             ) : (
-              sortedComms.map((comm) => (
-                <MessageBubble
-                  key={comm.id}
-                  comm={comm}
-                  isHighlighted={comm.id === highlightCommunicationId}
-                  highlightRef={comm.id === highlightCommunicationId ? highlightRef : undefined}
-                  onReply={() => handleReply(comm)}
-                />
-              ))
+              threadGroups.map((thread) => {
+                const isExpanded = expandedThreads.has(thread.id);
+                const hasMultiple = thread.communications.length > 1;
+                const latestComm = thread.communications[thread.communications.length - 1];
+                const containsHighlight = thread.communications.some(c => c.id === highlightCommunicationId);
+
+                // Auto-expand threads containing the highlighted message
+                if (containsHighlight && !isExpanded && hasMultiple) {
+                  // Defer state update to avoid render loop
+                  setTimeout(() => toggleThread(thread.id), 0);
+                }
+
+                return (
+                  <div key={thread.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Thread Header - show when multiple messages */}
+                    {hasMultiple && (() => {
+                      const startDate = new Date(thread.earliestDate);
+                      const endDate = new Date(thread.latestDate);
+                      const sameDay = startDate.toDateString() === endDate.toDateString();
+                      const dateDisplay = sameDay
+                        ? format(startDate, 'MMM d')
+                        : `${format(startDate, 'MMM d')} – ${format(endDate, 'MMM d')}`;
+
+                      return (
+                        <button
+                          onClick={() => toggleThread(thread.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: thread.hasInbound && thread.hasOutbound ? '#f5f3ff' : thread.hasInbound ? '#eff6ff' : '#f0fdf4',
+                            border: `1px solid ${thread.hasInbound && thread.hasOutbound ? '#e9d5ff' : thread.hasInbound ? '#dbeafe' : '#bbf7d0'}`,
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            width: '100%',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <div style={{ paddingTop: '2px' }}>
+                            {isExpanded ? (
+                              <ChevronDown style={{
+                                width: '16px',
+                                height: '16px',
+                                color: thread.hasInbound && thread.hasOutbound ? '#7c3aed' : thread.hasInbound ? '#3b82f6' : '#22c55e',
+                              }} />
+                            ) : (
+                              <ChevronRight style={{
+                                width: '16px',
+                                height: '16px',
+                                color: thread.hasInbound && thread.hasOutbound ? '#7c3aed' : thread.hasInbound ? '#3b82f6' : '#22c55e',
+                              }} />
+                            )}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: '#0b1220', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                {thread.subject}
+                              </div>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                minWidth: '22px',
+                                height: '22px',
+                                padding: '0 6px',
+                                borderRadius: '11px',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                flexShrink: 0,
+                                background: thread.hasInbound && thread.hasOutbound ? '#7c3aed' : thread.hasInbound ? '#3b82f6' : '#22c55e',
+                                color: '#ffffff',
+                              }}>
+                                {thread.communications.length}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#667085', marginTop: '2px' }}>
+                              {dateDisplay}{thread.hasInbound && thread.hasOutbound ? ' · Back & forth' : ''}
+                            </div>
+                            {/* Thread Summary - only when collapsed */}
+                            {!isExpanded && thread.summary && (
+                              <div style={{
+                                fontSize: '11px',
+                                color: '#4b5563',
+                                marginTop: '6px',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                lineHeight: '1.4',
+                              }}>
+                                {thread.summary}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })()}
+
+                    {/* Thread Messages */}
+                    {(isExpanded || !hasMultiple) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: hasMultiple ? '12px' : '0' }}>
+                        {thread.communications.map((comm) => (
+                          <MessageBubble
+                            key={comm.id}
+                            comm={comm}
+                            isHighlighted={comm.id === highlightCommunicationId}
+                            highlightRef={comm.id === highlightCommunicationId ? highlightRef : undefined}
+                            onReply={() => handleReply(comm)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
 

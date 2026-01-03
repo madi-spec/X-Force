@@ -166,7 +166,7 @@ export async function POST(
           last_stage_moved_at,
           next_step_due_at,
           product:products(id, name, slug),
-          current_stage:product_sales_stages(id, name)
+          current_stage:product_process_stages(id, name)
         `)
         .eq('id', flag.company_product_id)
         .single();

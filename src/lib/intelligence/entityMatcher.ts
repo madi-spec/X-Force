@@ -9,6 +9,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import Anthropic from '@anthropic-ai/sdk';
+import { getPromptWithVariables } from '@/lib/ai/promptManager';
 
 // ============================================
 // TYPES
@@ -537,7 +538,39 @@ export async function callAIForMatching(
 ): Promise<AIMatchResult> {
   const client = new Anthropic();
 
-  const prompt = `You are matching an incoming communication to existing CRM records.
+  // Format candidate companies for the prompt
+  const candidateCompaniesText = candidateCompanies.length === 0
+    ? 'No candidate companies found in CRM.'
+    : candidateCompanies.map((c, i) => `${i + 1}. ID: ${c.id}, Name: ${c.name}, Domain: ${c.domain || 'N/A'}, Location: ${c.city || 'Unknown'}${c.state ? `, ${c.state}` : ''}, Industry: ${c.industry || 'Unknown'}`).join('\n');
+
+  // Format candidate contacts for the prompt
+  const candidateContactsText = candidateContacts.length === 0
+    ? 'No candidate contacts found in CRM.'
+    : candidateContacts.map((c, i) => `${i + 1}. ID: ${c.id}, Name: ${c.name}, Email: ${c.email || 'N/A'}, Title: ${c.title || 'Unknown'}, Company: ${c.company_name || 'None'}`).join('\n');
+
+  // Try to load the managed prompt from database
+  const promptResult = await getPromptWithVariables('entity_matching', {
+    communicationType: communication.type,
+    fromEmail: rawIdentifiers.from_email,
+    fromName: rawIdentifiers.from_name || '',
+    subject: communication.subject || 'N/A',
+    contentPreview: (communication.body || communication.transcript_text || '').substring(0, 1500),
+    emailsMentioned: rawIdentifiers.emails.join(', ') || 'none',
+    phonesMentioned: rawIdentifiers.phones.join(', ') || 'none',
+    namesMentioned: rawIdentifiers.names_mentioned.join(', ') || 'none',
+    companyMentions: rawIdentifiers.company_mentions.join(', ') || 'none',
+    emailDomain: rawIdentifiers.domain || 'N/A (common provider)',
+    candidateCompanies: candidateCompaniesText,
+    candidateContacts: candidateContactsText,
+  });
+
+  // Use managed prompt or fall back to inline prompt
+  let prompt: string;
+  if (promptResult?.prompt) {
+    prompt = promptResult.prompt;
+  } else {
+    console.warn('[callAIForMatching] Failed to load entity_matching prompt, using fallback');
+    prompt = `You are matching an incoming communication to existing CRM records.
 
 ## THE COMMUNICATION
 Type: ${communication.type}
@@ -554,78 +587,24 @@ Company mentions: ${rawIdentifiers.company_mentions.join(', ') || 'none'}
 Email domain: ${rawIdentifiers.domain || 'N/A (common provider)'}
 
 ## CANDIDATE COMPANIES IN OUR CRM
-${candidateCompanies.length === 0 ? 'No candidate companies found in CRM.' : candidateCompanies.map((c, i) => `
-${i + 1}. ID: ${c.id}
-   Name: ${c.name}
-   Domain: ${c.domain || 'N/A'}
-   Location: ${c.city || 'Unknown'}${c.state ? `, ${c.state}` : ''}
-   Industry: ${c.industry || 'Unknown'}
-   Segment: ${c.segment || 'Unknown'}
-   Agent count: ${c.agent_count || 'Unknown'}
-   Previous contacts: ${c.contact_count}
-`).join('\n')}
+${candidateCompaniesText}
 
 ## CANDIDATE CONTACTS IN OUR CRM
-${candidateContacts.length === 0 ? 'No candidate contacts found in CRM.' : candidateContacts.map((c, i) => `
-${i + 1}. ID: ${c.id}
-   Name: ${c.name}
-   Email: ${c.email || 'N/A'}
-   Phone: ${c.phone || 'N/A'}
-   Title: ${c.title || 'Unknown'}
-   Company: ${c.company_name || 'None'} (${c.company_id || 'no company'})
-`).join('\n')}
+${candidateContactsText}
 
 ## YOUR TASK
-
 Determine which company and contact this communication is from/about.
 
-Consider:
-- Email domain matches (lawndoctorma.com → Lawn Doctor)
-- Name variations (Andy = Andrew, Rob = Robert, Bill = William, etc.)
-- Company name variations (Lawn Doctor of Hanover = Lawn Doctor Hanover)
-- Context clues ("Following up on our demo" = existing relationship)
-- Franchise/location qualifiers
-- When someone uses personal email but company is clear from content
-- Signatures in the email body
-
-Return JSON only (no markdown):
+Return JSON only:
 {
-  "company_match": {
-    "match_type": "exact|confident|probable|none",
-    "company_id": "uuid or null",
-    "reasoning": "Why this is the right company",
-    "confidence": 0.0-1.0
-  },
-  "contact_match": {
-    "match_type": "exact|confident|probable|none",
-    "contact_id": "uuid or null",
-    "reasoning": "Why this is the right contact",
-    "confidence": 0.0-1.0
-  },
-  "create_company": {
-    "should_create": true/false,
-    "suggested_name": "Company Name or null",
-    "suggested_domain": "domain.com or null",
-    "suggested_industry": "industry if determinable or null",
-    "reasoning": "Why we should/shouldn't create"
-  },
-  "create_contact": {
-    "should_create": true/false,
-    "suggested_name": "Contact Name or null",
-    "suggested_email": "email or null",
-    "suggested_phone": "phone or null",
-    "suggested_title": "title if known or null",
-    "reasoning": "Why we should/shouldn't create"
-  },
+  "company_match": { "match_type": "exact|confident|probable|none", "company_id": "uuid or null", "reasoning": "string", "confidence": 0.0-1.0 },
+  "contact_match": { "match_type": "exact|confident|probable|none", "contact_id": "uuid or null", "reasoning": "string", "confidence": 0.0-1.0 },
+  "create_company": { "should_create": true/false, "suggested_name": "string or null", "suggested_domain": "string or null", "suggested_industry": "string or null", "reasoning": "string" },
+  "create_contact": { "should_create": true/false, "suggested_name": "string or null", "suggested_email": "string or null", "suggested_phone": "string or null", "suggested_title": "string or null", "reasoning": "string" },
   "overall_confidence": 0.0-1.0,
-  "overall_reasoning": "Summary of matching logic"
-}
-
-Match types:
-- exact: Email or phone directly matches a record
-- confident: Strong signals (domain + name match, clear context)
-- probable: Good signals but some ambiguity
-- none: No match found, should create new record`;
+  "overall_reasoning": "string"
+}`;
+  }
 
   try {
     const response = await client.messages.create({

@@ -1,3 +1,9 @@
+// Base UI components
+export { Button } from './button';
+export type { ButtonProps } from './button';
+export { Badge } from './badge';
+export type { BadgeProps } from './badge';
+
 // Tooltip components
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './Tooltip';
 export { InfoTooltip, MetricLabel, TableHeaderWithInfo } from './InfoTooltip';

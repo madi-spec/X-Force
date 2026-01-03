@@ -319,7 +319,7 @@ async function generateMeetingFollowup(
       .join('\n');
 
     // Try to use the AI prompts system
-    const promptData = await getPromptWithVariables('email_meeting_followup', {
+    const promptData = await getPromptWithVariables('email_followup_stalled', {
       contactName,
       companyName,
       meetingTitle: transcript.title || 'Our meeting',

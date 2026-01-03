@@ -14,7 +14,10 @@ export async function GET(
     .select(`
       *,
       tiers:product_tiers(*),
-      stages:product_sales_stages(*),
+      processes:product_processes(
+        id, process_type,
+        stages:product_process_stages(*)
+      ),
       modules:products!parent_product_id(*)
     `)
     .eq('slug', slug)
@@ -24,10 +27,10 @@ export async function GET(
     return NextResponse.json({ error: 'Product not found' }, { status: 404 });
   }
 
-  // Sort stages by order
-  if (product.stages) {
-    product.stages.sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order);
-  }
+  // Extract and sort sales stages from unified table
+  const salesProcess = product.processes?.find((p: { process_type: string }) => p.process_type === 'sales');
+  product.stages = (salesProcess?.stages || [])
+    .sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order);
 
   // Get pipeline (companies in sales for this product)
   const { data: pipeline } = await supabase
@@ -35,8 +38,8 @@ export async function GET(
     .select(`
       *,
       company:companies(id, name, domain),
-      current_stage:product_sales_stages(id, name, slug, stage_order),
-      owner:users(id, name)
+      current_stage:product_process_stages(id, name, slug, stage_order),
+      owner_user:users(id, name)
     `)
     .eq('product_id', product.id)
     .eq('status', 'in_sales')

@@ -2,42 +2,33 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { ProvenProcessEditor } from '@/components/products/ProvenProcessEditor';
+import { UnifiedProcessEditor } from '@/components/process/UnifiedProcessEditor';
+
+type ProcessType = 'sales' | 'onboarding' | 'support' | 'engagement';
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ process?: string }>;
 }
 
-export default async function ProvenProcessPage({ params }: Props) {
+export default async function ProcessEditorPage({ params, searchParams }: Props) {
   const supabase = await createClient();
   const { slug } = await params;
+  const sp = await searchParams;
+
+  // Get initial process type from query param, default to 'sales'
+  const initialProcessType = (sp.process as ProcessType) || 'sales';
 
   const { data: product } = await supabase
     .from('products')
-    .select(`
-      *,
-      stages:product_sales_stages(*)
-    `)
+    .select('id, name, slug, color, icon')
     .eq('slug', slug)
     .single();
 
   if (!product) notFound();
 
-  // Normalize stages to ensure arrays are never null
-  const stages = (product.stages || [])
-    .sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order)
-    .map((stage: Record<string, unknown>) => ({
-      ...stage,
-      pitch_points: stage.pitch_points || [],
-      objection_handlers: stage.objection_handlers || [],
-      resources: stage.resources || [],
-      ai_suggested_pitch_points: stage.ai_suggested_pitch_points || [],
-      ai_suggested_objections: stage.ai_suggested_objections || [],
-      ai_insights: stage.ai_insights || {},
-    }));
-
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto">
       <Link
         href={`/products/${slug}`}
         className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4"
@@ -55,15 +46,18 @@ export default async function ProvenProcessPage({ params }: Props) {
             {product.icon || '📦'}
           </div>
           <div>
-            <h1 className="text-xl font-normal text-gray-900">Proven Process</h1>
+            <h1 className="text-xl font-normal text-gray-900">Process Editor</h1>
             <p className="text-sm text-gray-500">
-              Define the sales stages, pitch points, and objection handlers for {product.name}
+              Configure lifecycle processes for {product.name}
             </p>
           </div>
         </div>
       </div>
 
-      <ProvenProcessEditor product={product} initialStages={stages} />
+      <UnifiedProcessEditor
+        product={product}
+        initialProcessType={initialProcessType}
+      />
     </div>
   );
 }

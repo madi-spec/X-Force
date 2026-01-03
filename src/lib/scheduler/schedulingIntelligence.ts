@@ -414,8 +414,11 @@ function analyzeResponsePattern(request: SchedulingRequest): SchedulingIntellige
   const preferredTimes: string[] = [];
   if (request.scheduled_time) {
     const scheduledDate = new Date(request.scheduled_time);
-    const hour = scheduledDate.getHours();
-    const day = scheduledDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    const timezone = request.timezone || 'America/New_York';
+    // Use timezone-aware hour extraction
+    const hourStr = scheduledDate.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: timezone });
+    const hour = parseInt(hourStr);
+    const day = scheduledDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase();
 
     if (hour < 12) preferredTimes.push('morning');
     else if (hour < 17) preferredTimes.push('afternoon');

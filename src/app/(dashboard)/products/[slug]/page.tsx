@@ -30,12 +30,11 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   // Normalize view - 'customers' is alias for 'active', 'pipeline' is alias for 'in_sales'
   const view: ViewType = rawView === 'customers' ? 'active' : rawView as ViewType;
 
-  // Get product with stages
+  // Get product with tiers and modules
   const { data: product, error } = await supabase
     .from('products')
     .select(`
       *,
-      stages:product_sales_stages(*),
       tiers:product_tiers(*),
       modules:products!parent_product_id(*)
     `)
@@ -108,16 +107,19 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
     }
   }
 
-  // Sort stages by order
-  const stages = (product.stages || []).sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order);
+  // Get sales stages from processStages (unified table)
+  const salesProcess = processes?.find(p => p.process_type === 'sales');
+  const stages = (processStages || [])
+    .filter(s => s.process_id === salesProcess?.id)
+    .sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order);
 
   // Get pipeline (companies in sales)
   const { data: pipeline } = await supabase
     .from('company_products')
     .select(`
       *,
-      company:companies(id, name, domain, city, state),
-      current_stage:product_sales_stages(id, name, slug, stage_order),
+      company:companies(id, name, domain),
+      current_stage:product_process_stages(id, name, slug, stage_order),
       owner_user:users(id, name)
     `)
     .eq('product_id', product.id)
@@ -176,8 +178,12 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   };
 
   // Group pipeline by stage
-  const pipelineByStage = stages.map((stage: { id: string; name: string; slug: string; stage_order: number; goal?: string }) => ({
-    ...stage,
+  const pipelineByStage = stages.map((stage: { id: string; name: string; slug: string; stage_order: number; goal?: string | null }) => ({
+    id: stage.id,
+    name: stage.name,
+    slug: stage.slug,
+    stage_order: stage.stage_order,
+    goal: stage.goal ?? null,
     companies: (pipeline || []).filter((p: { current_stage_id: string }) => p.current_stage_id === stage.id),
   }));
 
@@ -358,19 +364,16 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         </a>
       </div>
 
-      {/* Process Pipeline View (if process is selected and has stages) */}
-      {view === 'pipeline' && projectionByStage.length > 0 && (
-        <div className="mb-6">
-          <ProcessPipeline
-            processType={selectedProcess}
-            stages={projectionByStage}
-            productSlug={slug}
-          />
-        </div>
+      {/* Pipeline View - use projection data if available, otherwise fall back to company_products */}
+      {(view === 'pipeline' || view === 'in_sales') && (
+        <ProductPipeline
+          product={product}
+          stages={pipelineByStage}
+        />
       )}
 
-      {/* Legacy Views */}
-      {view !== 'pipeline' && getViewContent()}
+      {/* Other Views */}
+      {view !== 'pipeline' && view !== 'in_sales' && getViewContent()}
     </div>
   );
 }

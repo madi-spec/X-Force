@@ -13,6 +13,23 @@ import {
   MeetingPlatform,
   MEETING_PLATFORMS,
 } from './types';
+import {
+  TaggedTimestamp,
+  createTaggedTimestamp,
+  createTaggedFromDate,
+  formatTaggedForDisplay,
+  formatTaggedForGraphAPI,
+  addMinutesToTagged,
+  isTaggedInFuture,
+  getTaggedLocalHour,
+  getTaggedLocalDayOfWeek,
+  logTaggedTimestamp,
+} from './taggedTimestamp';
+import {
+  validateProposedTime,
+  validateProposedTimes,
+  ValidationContext,
+} from './timestampValidator';
 
 interface CreateMeetingEventInput {
   schedulingRequestId: string;
@@ -32,12 +49,26 @@ interface CreateMeetingEventResult {
   error?: string;
 }
 
+// SAFEGUARD: Prevent automatic calendar event creation
+// Set to true to require manual calendar creation until timezone issues are verified fixed
+const CALENDAR_AUTO_CREATE_DISABLED = true;
+
 /**
  * Creates a calendar event when a meeting is confirmed
  */
 export async function createMeetingCalendarEvent(
   input: CreateMeetingEventInput
 ): Promise<CreateMeetingEventResult> {
+  // SAFEGUARD: Block all automatic calendar creation
+  if (CALENDAR_AUTO_CREATE_DISABLED) {
+    console.log('[createMeetingCalendarEvent] SAFEGUARD ACTIVE - Calendar auto-creation disabled');
+    console.log('[createMeetingCalendarEvent] Would have created event at:', input.scheduledTime.toISOString());
+    return {
+      success: false,
+      error: 'Calendar auto-creation disabled for manual review. Please create calendar event manually.',
+    };
+  }
+
   const supabase = createAdminClient();
   const schedulingService = new SchedulingService({ useAdmin: true });
 
@@ -72,7 +103,20 @@ export async function createMeetingCalendarEvent(
       input.platform === MEETING_PLATFORMS.ZOOM ||
       input.platform === MEETING_PLATFORMS.GOOGLE_MEET;
 
-    // Create the calendar event
+    // Get timezone from the scheduling request (default to America/New_York)
+    const timezone = request.timezone || 'America/New_York';
+
+    // Enhanced timezone logging for debugging
+    console.log('[TZ] createMeetingCalendarEvent:', {
+      inputTimeUTC: input.scheduledTime.toISOString(),
+      inputTimeUserLocal: input.scheduledTime.toLocaleString('en-US', { timeZone: timezone }),
+      timezone,
+      subject,
+      endTimeUTC: endTime.toISOString(),
+      endTimeUserLocal: endTime.toLocaleString('en-US', { timeZone: timezone }),
+    });
+
+    // Create the calendar event with proper timezone
     const result = await createCalendarEvent(input.userId, {
       subject,
       body,
@@ -80,6 +124,7 @@ export async function createMeetingCalendarEvent(
       end: endTime,
       attendees: attendeeEmails,
       isOnlineMeeting,
+      timezone,
     });
 
     if (!result.success) {
@@ -130,40 +175,25 @@ function generateMeetingSubject(request: SchedulingRequest): string {
 
 /**
  * Generates meeting body/description with relevant context
+ * Note: This content is visible to external attendees, so only include
+ * appropriate professional information - not internal notes or AI context.
  */
 function generateMeetingBody(request: SchedulingRequest): string {
-  const lines: string[] = [];
+  const companyName = request.company?.name || 'Prospect';
 
-  lines.push(`<p><strong>Meeting Type:</strong> ${request.meeting_type}</p>`);
-  lines.push(`<p><strong>Duration:</strong> ${request.duration_minutes} minutes</p>`);
+  // Map meeting types to professional descriptions
+  const meetingDescriptions: Record<string, string> = {
+    discovery: `Looking forward to our discovery call to learn more about ${companyName}'s needs.`,
+    demo: `Looking forward to demonstrating our solution for ${companyName}.`,
+    follow_up: `Looking forward to our follow-up conversation.`,
+    technical: `Looking forward to our technical discussion.`,
+    executive: `Looking forward to our executive briefing.`,
+    custom: `Looking forward to our meeting.`,
+  };
 
-  if (request.context) {
-    lines.push(`<p><strong>Context:</strong></p>`);
-    lines.push(`<p>${request.context}</p>`);
-  }
+  const description = meetingDescriptions[request.meeting_type] || meetingDescriptions.custom;
 
-  if (request.company?.name) {
-    lines.push(`<p><strong>Company:</strong> ${request.company.name}</p>`);
-  }
-
-  if (request.attendees && request.attendees.length > 0) {
-    const external = request.attendees.filter((a) => a.side === 'external');
-    if (external.length > 0) {
-      lines.push(`<p><strong>External Attendees:</strong></p>`);
-      lines.push('<ul>');
-      external.forEach((a) => {
-        const name = a.name || a.email;
-        const title = a.title ? ` - ${a.title}` : '';
-        lines.push(`<li>${name}${title}</li>`);
-      });
-      lines.push('</ul>');
-    }
-  }
-
-  lines.push('<hr/>');
-  lines.push('<p><em>Created by X-FORCE AI Scheduler</em></p>');
-
-  return lines.join('\n');
+  return `<p>${description}</p>`;
 }
 
 /**
@@ -326,13 +356,43 @@ interface GetRealAvailabilityOptions {
 }
 
 /**
+ * Result from availability checking - includes metadata about how slots were obtained
+ */
+export interface AvailabilityResult {
+  slots: RealAvailableSlot[];
+  /** Where the slots came from: 'calendar' = real check, 'generated' = fallback, 'error' = check failed */
+  source: 'calendar' | 'generated' | 'error';
+  /** Whether the calendar was actually checked (vs generated fallback) */
+  calendarChecked: boolean;
+  /** Error message if something went wrong (shown to user) */
+  error?: string;
+  /** Warnings that should be shown to user even on success */
+  warnings?: string[];
+  /** Debug info for troubleshooting */
+  debug?: {
+    timezone: string;
+    rangeStart: string;
+    rangeEnd: string;
+    busySlotsFound: number;
+    candidatesGenerated: number;
+    availableFound: number;
+    attendeesChecked: number;
+  };
+}
+
+/**
  * Get REAL available time slots by checking the user's actual calendar
  * Returns slots that are genuinely free (no conflicting events)
+ *
+ * IMPORTANT: This function now returns an AvailabilityResult which includes:
+ * - source: 'calendar' | 'generated' | 'error' - indicates where slots came from
+ * - calendarChecked: boolean - whether calendar was actually checked
+ * - error/warnings: any issues the user should be aware of
  */
 export async function getRealAvailableSlots(
   userId: string,
   options: GetRealAvailabilityOptions = {}
-): Promise<{ slots: RealAvailableSlot[]; error?: string }> {
+): Promise<AvailabilityResult> {
   const {
     daysAhead = 15,  // 3 weeks of business days
     slotDuration = 30,
@@ -350,7 +410,22 @@ export async function getRealAvailableSlots(
     // Get a valid access token (will refresh if expired)
     const token = await getValidToken(userId);
     if (!token) {
-      return { slots: [], error: 'No valid Microsoft token - please reconnect your account' };
+      console.warn('[getRealAvailableSlots] No valid Microsoft token - returning error result');
+      return {
+        slots: [],
+        source: 'error',
+        calendarChecked: false,
+        error: 'Could not connect to your calendar. Please reconnect your Microsoft account in Settings.',
+        debug: {
+          timezone,
+          rangeStart: '',
+          rangeEnd: '',
+          busySlotsFound: 0,
+          candidatesGenerated: 0,
+          availableFound: 0,
+          attendeesChecked: 0
+        }
+      };
     }
 
     // Create graph client with the access token
@@ -395,7 +470,12 @@ export async function getRealAvailableSlots(
 
     if (!eventsResult.value) {
       console.error('[getRealAvailableSlots] No calendar data returned');
-      return { slots: [], error: 'Could not fetch calendar' };
+      return {
+        slots: [],
+        source: 'error',
+        calendarChecked: false,
+        error: 'Could not fetch calendar'
+      };
     }
 
     // Build busy time blocks (excluding only cancelled and explicitly free events)
@@ -512,10 +592,56 @@ export async function getRealAvailableSlots(
     const totalSlots = Array.from(slotsByDay.values()).reduce((sum, arr) => sum + arr.length, 0);
     console.log(`[getRealAvailableSlots] Found ${totalSlots} slots across ${slotsByDay.size} days, returning ${diverseSlots.length} diverse slots`);
 
-    return { slots: diverseSlots };
+    // Check if we found any available slots
+    if (diverseSlots.length === 0) {
+      return {
+        slots: [],
+        source: 'calendar',
+        calendarChecked: true,
+        error: 'No available times found in the selected date range. Your calendar appears fully booked. Try expanding the date range.',
+        debug: {
+          timezone,
+          rangeStart: startDate.toISOString(),
+          rangeEnd: endDate.toISOString(),
+          busySlotsFound: busyBlocks.length,
+          candidatesGenerated: totalSlots,
+          availableFound: 0,
+          attendeesChecked: 1
+        }
+      };
+    }
+
+    return {
+      slots: diverseSlots,
+      source: 'calendar',
+      calendarChecked: true,
+      debug: {
+        timezone,
+        rangeStart: startDate.toISOString(),
+        rangeEnd: endDate.toISOString(),
+        busySlotsFound: busyBlocks.length,
+        candidatesGenerated: totalSlots,
+        availableFound: diverseSlots.length,
+        attendeesChecked: 1
+      }
+    };
   } catch (error) {
     console.error('[getRealAvailableSlots] Error:', error);
-    return { slots: [], error: (error as Error).message };
+    return {
+      slots: [],
+      source: 'error',
+      calendarChecked: false,
+      error: `Calendar check failed: ${(error as Error).message}. Please try again or check your calendar connection.`,
+      debug: {
+        timezone,
+        rangeStart: '',
+        rangeEnd: '',
+        busySlotsFound: 0,
+        candidatesGenerated: 0,
+        availableFound: 0,
+        attendeesChecked: 0
+      }
+    };
   }
 }
 
@@ -958,11 +1084,22 @@ interface GetMultiAttendeeAvailabilityOptions {
  * Checks each attendee's calendar and finds overlapping free time
  * Also excludes US holidays
  */
+/**
+ * Result from multi-attendee availability checking
+ */
+export interface MultiAttendeeAvailabilityResult {
+  slots: MultiAttendeeSlot[];
+  source: 'calendar' | 'generated' | 'error';
+  calendarChecked: boolean;
+  error?: string;
+  warnings?: string[];
+}
+
 export async function getMultiAttendeeAvailability(
   primaryUserId: string,
   attendeeEmails: string[],
   options: GetMultiAttendeeAvailabilityOptions = {}
-): Promise<{ slots: MultiAttendeeSlot[]; error?: string; warnings?: string[] }> {
+): Promise<MultiAttendeeAvailabilityResult> {
   const {
     daysAhead = 15,
     slotDuration = 30,
@@ -986,7 +1123,12 @@ export async function getMultiAttendeeAvailability(
 
     const token = await getValidToken(primaryUserId);
     if (!token) {
-      return { slots: [], error: 'No valid Microsoft token - please reconnect your account' };
+      return {
+        slots: [],
+        source: 'error',
+        calendarChecked: false,
+        error: 'No valid Microsoft token - please reconnect your account'
+      };
     }
 
     const graphClient = new MicrosoftGraphClient(token);
@@ -1395,9 +1537,310 @@ export async function getMultiAttendeeAvailability(
     const totalSlots = Array.from(slotsByDay.values()).reduce((sum, arr) => sum + arr.length, 0);
     console.log(`[getMultiAttendeeAvailability] Found ${totalSlots} slots across ${slotsByDay.size} days, returning ${diverseSlots.length} diverse slots (seed: ${seed.substring(0, 8)}...)`);
 
-    return { slots: diverseSlots, warnings: warnings.length > 0 ? warnings : undefined };
+    return {
+      slots: diverseSlots,
+      source: 'calendar',
+      calendarChecked: true,
+      warnings: warnings.length > 0 ? warnings : undefined
+    };
   } catch (error) {
     console.error('[getMultiAttendeeAvailability] Error:', error);
-    return { slots: [], error: (error as Error).message };
+    return {
+      slots: [],
+      source: 'error',
+      calendarChecked: false,
+      error: (error as Error).message
+    };
   }
+}
+
+// ============================================
+// TAGGED TIMESTAMP AVAILABILITY
+// ============================================
+
+/**
+ * Tagged availability slot - includes full timezone information
+ */
+export interface TaggedAvailabilitySlot {
+  tagged: TaggedTimestamp;
+  end: TaggedTimestamp;
+  formatted: string;
+  available: boolean;
+}
+
+/**
+ * Result from tagged availability checking
+ */
+export interface TaggedAvailabilityResult {
+  slots: TaggedAvailabilitySlot[];
+  source: 'calendar' | 'generated' | 'error';
+  calendarChecked: boolean;
+  error?: string;
+  warnings?: string[];
+  debug?: AvailabilityResult['debug'];
+}
+
+/**
+ * Get available time slots as TaggedTimestamps
+ * This is the preferred method for new code as it prevents timezone bugs
+ */
+export async function getTaggedAvailableSlots(
+  userId: string,
+  options: GetRealAvailabilityOptions = {}
+): Promise<TaggedAvailabilityResult> {
+  const timezone = options.timezone || 'America/New_York';
+  const slotDuration = options.slotDuration || 30;
+
+  // Get raw slots from existing function
+  const result = await getRealAvailableSlots(userId, options);
+
+  // If there's an error or no slots, pass through the metadata
+  if (result.error || !result.slots.length) {
+    return {
+      slots: [],
+      source: result.source,
+      calendarChecked: result.calendarChecked,
+      error: result.error,
+      warnings: result.warnings,
+      debug: result.debug
+    };
+  }
+
+  // Convert to tagged timestamps
+  const taggedSlots: TaggedAvailabilitySlot[] = [];
+
+  for (const slot of result.slots) {
+    try {
+      const startTagged = createTaggedFromDate(slot.start, timezone);
+      const endTagged = addMinutesToTagged(startTagged, slotDuration);
+
+      // Validate the slot
+      const validation = validateProposedTime(startTagged, {
+        userTimezone: timezone,
+        businessHoursStart: options.businessHoursStart || 9,
+        businessHoursEnd: options.businessHoursEnd || 17,
+        minHoursInFuture: 1,
+      });
+
+      if (validation.valid) {
+        taggedSlots.push({
+          tagged: startTagged,
+          end: endTagged,
+          formatted: slot.formatted,
+          available: true,
+        });
+      } else {
+        console.warn('[getTaggedAvailableSlots] Slot failed validation:', validation.error);
+      }
+    } catch (error) {
+      console.error('[getTaggedAvailableSlots] Failed to create tagged slot:', error);
+    }
+  }
+
+  console.log(`[getTaggedAvailableSlots] Returning ${taggedSlots.length} validated tagged slots`);
+
+  return {
+    slots: taggedSlots,
+    source: result.source,
+    calendarChecked: result.calendarChecked,
+    warnings: result.warnings,
+    debug: result.debug
+  };
+}
+
+/**
+ * Result type for tagged multi-attendee availability
+ */
+export interface TaggedMultiAttendeeAvailabilityResult {
+  slots: TaggedAvailabilitySlot[];
+  source: 'calendar' | 'generated' | 'error';
+  calendarChecked: boolean;
+  error?: string;
+  warnings?: string[];
+}
+
+/**
+ * Get multi-attendee availability as TaggedTimestamps
+ * This is the preferred method for new code as it prevents timezone bugs
+ * and checks ALL internal attendees' calendars.
+ */
+export async function getTaggedMultiAttendeeAvailability(
+  primaryUserId: string,
+  attendeeEmails: string[],
+  options: GetMultiAttendeeAvailabilityOptions = {}
+): Promise<TaggedMultiAttendeeAvailabilityResult> {
+  const timezone = options.timezone || 'America/New_York';
+  const slotDuration = options.slotDuration || 30;
+
+  // Get raw slots from existing function
+  const result = await getMultiAttendeeAvailability(primaryUserId, attendeeEmails, options);
+
+  if (result.error || !result.slots.length) {
+    return {
+      slots: [],
+      source: result.source,
+      calendarChecked: result.calendarChecked,
+      error: result.error,
+      warnings: result.warnings
+    };
+  }
+
+  // Convert to tagged timestamps
+  const taggedSlots: TaggedAvailabilitySlot[] = [];
+
+  for (const slot of result.slots) {
+    try {
+      const startTagged = createTaggedFromDate(slot.start, timezone);
+      const endTagged = addMinutesToTagged(startTagged, slotDuration);
+
+      // Validate the slot
+      const validation = validateProposedTime(startTagged, {
+        userTimezone: timezone,
+        businessHoursStart: options.businessHoursStart || 9,
+        businessHoursEnd: options.businessHoursEnd || 17,
+        minHoursInFuture: 1,
+      });
+
+      if (validation.valid) {
+        taggedSlots.push({
+          tagged: startTagged,
+          end: endTagged,
+          formatted: slot.formatted,
+          available: true,
+        });
+      } else {
+        console.warn('[getTaggedMultiAttendeeAvailability] Slot failed validation:', validation.error);
+      }
+    } catch (error) {
+      console.error('[getTaggedMultiAttendeeAvailability] Failed to create tagged slot:', error);
+    }
+  }
+
+  console.log(`[getTaggedMultiAttendeeAvailability] Returning ${taggedSlots.length} validated tagged slots (checked ${attendeeEmails.length + 1} calendars)`);
+
+  return {
+    slots: taggedSlots,
+    source: result.source,
+    calendarChecked: result.calendarChecked,
+    warnings: result.warnings
+  };
+}
+
+// ============================================
+// TAGGED TIMESTAMP CALENDAR EVENT CREATION
+// ============================================
+
+interface CreateMeetingEventWithTaggedInput {
+  schedulingRequestId: string;
+  userId: string;
+  scheduledTime: TaggedTimestamp;
+  durationMinutes: number;
+  title?: string;
+  description?: string;
+  platform: MeetingPlatform;
+  location?: string;
+}
+
+/**
+ * Creates a calendar event using a TaggedTimestamp for precise timezone handling
+ * This is the preferred method for new code
+ */
+export async function createMeetingCalendarEventWithTagged(
+  input: CreateMeetingEventWithTaggedInput
+): Promise<CreateMeetingEventResult> {
+  // Log the tagged timestamp for debugging
+  logTaggedTimestamp('createMeetingCalendarEventWithTagged', input.scheduledTime);
+
+  // Validate the scheduled time
+  const validation = validateProposedTime(input.scheduledTime, {
+    userTimezone: input.scheduledTime.timezone,
+    businessHoursStart: 7,
+    businessHoursEnd: 19,
+    minHoursInFuture: 0.5, // Allow 30 minutes in future for last-minute bookings
+  });
+
+  if (!validation.valid) {
+    console.error('[createMeetingCalendarEventWithTagged] Invalid scheduled time:', validation.error);
+    return {
+      success: false,
+      error: `Invalid scheduled time: ${validation.error}`,
+    };
+  }
+
+  // SAFEGUARD: Block all automatic calendar creation
+  if (CALENDAR_AUTO_CREATE_DISABLED) {
+    console.log('[createMeetingCalendarEventWithTagged] SAFEGUARD ACTIVE - Calendar auto-creation disabled');
+    console.log('[createMeetingCalendarEventWithTagged] Would have created event:');
+    console.log('  Local:', input.scheduledTime.localDateTime, input.scheduledTime.timezone);
+    console.log('  UTC:', input.scheduledTime.utc);
+    console.log('  Display:', formatTaggedForDisplay(input.scheduledTime));
+    return {
+      success: false,
+      error: 'Calendar auto-creation disabled for manual review. Please create calendar event manually.',
+    };
+  }
+
+  // Convert TaggedTimestamp to Date for the existing function
+  // The existing function expects a Date in UTC
+  const scheduledDate = new Date(input.scheduledTime.utc);
+
+  // Call the existing function with the converted date
+  return createMeetingCalendarEvent({
+    schedulingRequestId: input.schedulingRequestId,
+    userId: input.userId,
+    scheduledTime: scheduledDate,
+    durationMinutes: input.durationMinutes,
+    title: input.title,
+    description: input.description,
+    platform: input.platform,
+    location: input.location,
+  });
+}
+
+/**
+ * Verify that a TaggedTimestamp matches what we expect
+ * Use this before booking to catch any timezone conversion errors
+ */
+export function verifyTaggedTimestamp(
+  tagged: TaggedTimestamp,
+  expectedDescription: string // e.g., "Monday at 2pm Eastern"
+): { matches: boolean; actual: string; issues: string[] } {
+  const issues: string[] = [];
+
+  // Get actual display
+  const actual = formatTaggedForDisplay(tagged, { includeTimezone: true, format: 'long' });
+
+  // Validate the timestamp
+  const validation = validateProposedTime(tagged, {
+    userTimezone: tagged.timezone,
+    businessHoursStart: 6,
+    businessHoursEnd: 22,
+  });
+
+  if (!validation.valid) {
+    issues.push(validation.error || 'Validation failed');
+  }
+
+  // Check if it's in the past
+  if (!isTaggedInFuture(tagged, 0)) {
+    issues.push('Time is in the past');
+  }
+
+  // Basic sanity check - does the hour seem reasonable?
+  const hour = getTaggedLocalHour(tagged);
+  if (hour < 6 || hour > 21) {
+    issues.push(`Unusual hour: ${hour}:00 local time`);
+  }
+
+  // Check if it's on a weekend
+  const dayOfWeek = getTaggedLocalDayOfWeek(tagged);
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    issues.push('Falls on a weekend');
+  }
+
+  return {
+    matches: issues.length === 0,
+    actual,
+    issues,
+  };
 }

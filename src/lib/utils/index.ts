@@ -35,6 +35,42 @@ export function formatRelativeTime(date: string | Date): string {
   return formatDate(date);
 }
 
+/**
+ * Formats a date as a human-readable distance from now.
+ * Returns strings like "2 hours", "3 days", "in 5 minutes"
+ */
+export function formatDistanceToNow(date: Date): string {
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const isPast = diffMs < 0;
+  const absDiffMs = Math.abs(diffMs);
+
+  const seconds = Math.floor(absDiffMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+  const months = Math.floor(days / 30);
+
+  let result: string;
+
+  if (seconds < 60) {
+    result = 'less than a minute';
+  } else if (minutes < 60) {
+    result = `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+  } else if (hours < 24) {
+    result = `${hours} hour${hours !== 1 ? 's' : ''}`;
+  } else if (days < 7) {
+    result = `${days} day${days !== 1 ? 's' : ''}`;
+  } else if (weeks < 4) {
+    result = `${weeks} week${weeks !== 1 ? 's' : ''}`;
+  } else {
+    result = `${months} month${months !== 1 ? 's' : ''}`;
+  }
+
+  return isPast ? result : `in ${result}`;
+}
+
 export function generateSlug(text: string): string {
   return text
     .toLowerCase()

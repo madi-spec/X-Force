@@ -537,6 +537,15 @@ export interface PipelineStage {
   color: string;
 }
 
+/**
+ * @deprecated Use product_process_stages table instead.
+ * These hardcoded stages are only kept for backward compatibility with the legacy deals system.
+ * New code should query stages from the database via the unified API.
+ *
+ * Migration path:
+ * - Use getSalesStages() from '@/lib/process/queries' to fetch dynamic stages
+ * - Or query /api/products/[slug]/process/sales for product-specific stages
+ */
 export const PIPELINE_STAGES: PipelineStage[] = [
   { id: 'new_lead', name: 'New Lead', order: 1, color: 'bg-gray-500' },
   { id: 'qualifying', name: 'Qualifying', order: 2, color: 'bg-blue-500' },
@@ -975,4 +984,10 @@ export interface FirefliesSyncResult {
 // ============================================
 
 export * from "./operatingLayer";
+
+// ============================================
+// EVENT SOURCING (Re-exports)
+// ============================================
+
+export * from "./eventSourcing";
 

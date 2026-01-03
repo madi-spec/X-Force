@@ -362,6 +362,9 @@ export async function syncCalendarEvents(userId: string, options: CalendarSyncOp
 
 /**
  * Create a calendar event via Microsoft Graph
+ *
+ * IMPORTANT: The start/end Date objects should represent the correct UTC time.
+ * The timezone parameter determines how the event is displayed in Outlook.
  */
 export async function createCalendarEvent(
   userId: string,
@@ -372,6 +375,7 @@ export async function createCalendarEvent(
     end: Date;
     attendees?: string[];
     isOnlineMeeting?: boolean;
+    timezone?: string; // e.g., 'America/New_York' - defaults to ET
   }
 ): Promise<{ success: boolean; eventId?: string; joinUrl?: string; error?: string }> {
   const token = await getValidToken(userId);
@@ -380,23 +384,34 @@ export async function createCalendarEvent(
   }
 
   const client = new MicrosoftGraphClient(token);
+  const timezone = event.timezone || 'America/New_York';
 
   try {
-    // Format datetime for Microsoft Graph (without Z suffix, with timezone specified separately)
-    const formatForGraph = (date: Date) => {
-      return date.toISOString().replace('Z', '');
+    // Format datetime for Microsoft Graph
+    // Convert UTC Date to local time string in the target timezone
+    const formatForGraph = (date: Date): string => {
+      // Use sv-SE locale for ISO-like format (YYYY-MM-DD HH:mm:ss)
+      return date.toLocaleString('sv-SE', { timeZone: timezone }).replace(' ', 'T');
     };
+
+    console.log('[createCalendarEvent] Creating event:', {
+      startUTC: event.start.toISOString(),
+      startFormatted: formatForGraph(event.start),
+      endUTC: event.end.toISOString(),
+      endFormatted: formatForGraph(event.end),
+      timezone,
+    });
 
     const result = await client.createEvent({
       subject: event.subject,
       body: event.body ? { contentType: 'HTML', content: event.body } : undefined,
       start: {
         dateTime: formatForGraph(event.start),
-        timeZone: 'UTC',
+        timeZone: timezone,
       },
       end: {
         dateTime: formatForGraph(event.end),
-        timeZone: 'UTC',
+        timeZone: timezone,
       },
       attendees: event.attendees?.map(email => ({
         emailAddress: { address: email },
@@ -406,11 +421,16 @@ export async function createCalendarEvent(
       onlineMeetingProvider: event.isOnlineMeeting ? 'teamsForBusiness' : undefined,
     });
 
+    // Cast result to include onlineMeeting which Graph API returns but isn't in our typed response
+    const fullResult = result as { id: string; webLink: string; onlineMeeting?: { joinUrl?: string } };
+
     return {
       success: true,
-      eventId: result.id,
+      eventId: fullResult.id,
+      joinUrl: fullResult.onlineMeeting?.joinUrl,
     };
   } catch (err) {
+    console.error('[createCalendarEvent] Error:', err);
     return { success: false, error: String(err) };
   }
 }
