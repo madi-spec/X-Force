@@ -248,15 +248,10 @@ async function sendInitialProposal(
       return { error: sendResult.error };
     }
 
-    // Capture email_thread_id for response matching
-    if (sendResult.conversationId) {
-      await supabase
-        .from('scheduling_requests')
-        .update({ email_thread_id: sendResult.conversationId })
-        .eq('id', request.id);
-
-      console.log(`[AutomationProcessor] Captured email_thread_id: ${sendResult.conversationId} for request ${request.id}`);
-    }
+    // Note: We don't capture Microsoft's conversationId here because it doesn't match
+    // our internal communications.thread_id format. The email_thread_id will be set
+    // by the response matching logic when a reply comes in, using the correct
+    // internal thread_id from the communications table.
 
     // Update request
     const proposedTimeStrings = proposedTimes.map(t => t.toISOString());
@@ -391,15 +386,10 @@ async function sendFollowUp(
       return { error: sendResult.error };
     }
 
-    // Capture email_thread_id for response matching (update if not already set)
-    if (sendResult.conversationId && !request.email_thread_id) {
-      await supabase
-        .from('scheduling_requests')
-        .update({ email_thread_id: sendResult.conversationId })
-        .eq('id', request.id);
-
-      console.log(`[AutomationProcessor] Captured email_thread_id on follow-up: ${sendResult.conversationId} for request ${request.id}`);
-    }
+    // Note: We don't capture Microsoft's conversationId here because it doesn't match
+    // our internal communications.thread_id format. The email_thread_id will be set
+    // by the response matching logic when a reply comes in, using the correct
+    // internal thread_id from the communications table.
 
     // Log action
     await adminSchedulingService.logAction(request.id, {
@@ -612,15 +602,10 @@ export async function handleNoShowRecovery(
       return { success: false, error: sendResult.error };
     }
 
-    // Capture email_thread_id for response matching
-    if (sendResult.conversationId) {
-      await supabase
-        .from('scheduling_requests')
-        .update({ email_thread_id: sendResult.conversationId })
-        .eq('id', schedulingRequestId);
-
-      console.log(`[AutomationProcessor] Captured email_thread_id on no-show recovery: ${sendResult.conversationId} for request ${schedulingRequestId}`);
-    }
+    // Note: We don't capture Microsoft's conversationId here because it doesn't match
+    // our internal communications.thread_id format. The email_thread_id will be set
+    // by the response matching logic when a reply comes in, using the correct
+    // internal thread_id from the communications table.
 
     // Transition back to proposing for rescheduling
     await adminSchedulingService.transitionState(

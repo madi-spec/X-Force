@@ -765,7 +765,9 @@ export async function processSchedulingResponse(
       .from('scheduling_requests')
       .update({
         conversation_history: conversationHistory,
-        email_thread_id: email.conversationId || schedulingRequest.email_thread_id,
+        // Preserve existing email_thread_id - don't overwrite with current email's thread
+        // This prevents corruption when fallback matching links to the wrong thread
+        email_thread_id: schedulingRequest.email_thread_id || email.conversationId,
         last_action_at: new Date().toISOString(),
       })
       .eq('id', schedulingRequest.id);

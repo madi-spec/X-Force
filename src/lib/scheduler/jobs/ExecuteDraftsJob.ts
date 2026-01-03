@@ -117,17 +117,12 @@ export class ExecuteDraftsJob extends JobRunner {
       })
       .eq('id', draft.id);
 
-    // Capture email_thread_id if this is the first email
-    if (sendResult.conversationId && !request.email_thread_id) {
-      await context.supabase
-        .from('scheduling_requests')
-        .update({
-          email_thread_id: sendResult.conversationId,
-        })
-        .eq('id', request.id);
-
-      context.log(`Captured email_thread_id: ${sendResult.conversationId}`);
-    }
+    // Note: We don't capture Microsoft's conversationId here because it doesn't match
+    // our internal communications.thread_id format. Instead, the email_thread_id will be
+    // set by the response matching logic when a reply comes in, using the correct
+    // internal thread_id from the communications table.
+    //
+    // The messageId is stored in scheduling_drafts.sent_message_id for tracing purposes.
 
     // Update request next action based on draft type
     const nextAction = this.getNextAction(draft.draft_type);

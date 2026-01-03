@@ -126,7 +126,6 @@ export async function POST(
     }
 
     console.log('[Send] Email sent successfully, isDraft:', sendResult.isDraft);
-    console.log('[Send] ConversationId (for thread matching):', sendResult.conversationId);
 
     // Mark draft as sent
     await markDraftSent(id);
@@ -135,7 +134,7 @@ export async function POST(
     const proposedTimeStrings = draft.proposedTimes.map((t) => t.display);
     const proposedTimeUtc = draft.proposedTimes.map((t) => t.utc);
 
-    // Build update object with email_thread_id if available
+    // Build update object
     const updateData: Record<string, unknown> = {
       status: SCHEDULING_STATUS.AWAITING_RESPONSE,
       proposed_times: proposedTimeStrings,
@@ -145,12 +144,10 @@ export async function POST(
       attempt_count: (schedulingRequest.attempt_count || 0) + 1,
     };
 
-    // CRITICAL: Capture email_thread_id for response matching
-    // This enables Strategy 1 (thread-based) matching in findMatchingSchedulingRequest
-    if (sendResult.conversationId) {
-      updateData.email_thread_id = sendResult.conversationId;
-      console.log('[Send] Setting email_thread_id:', sendResult.conversationId);
-    }
+    // Note: We don't capture Microsoft's conversationId here because it doesn't match
+    // our internal communications.thread_id format. The email_thread_id will be set
+    // by the response matching logic when a reply comes in, using the correct
+    // internal thread_id from the communications table.
 
     // Update scheduling request status
     const { error: updateError } = await adminSupabase
