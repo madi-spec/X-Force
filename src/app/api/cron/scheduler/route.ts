@@ -120,11 +120,11 @@ const HUMAN_REVIEW_ACTION_TYPES = [
 ] as const;
 
 export async function GET(request: NextRequest) {
-  // Validate cron secret
-  const cronSecret = request.headers.get('x-cron-secret');
+  // Validate cron secret - use Authorization header (same as other crons)
+  const authHeader = request.headers.get('authorization');
   const expectedSecret = process.env.CRON_SECRET;
 
-  if (expectedSecret && cronSecret !== expectedSecret) {
+  if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
     console.log('[Cron/Scheduler] Invalid or missing cron secret');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

@@ -1844,3 +1844,248 @@ export function verifyTaggedTimestamp(
     issues,
   };
 }
+
+// ============================================
+// FOCUSED ALTERNATIVES FOR COUNTER-PROPOSALS
+// ============================================
+
+export interface FocusedAlternativesOptions {
+  /** The time the prospect requested */
+  requestedTime: Date;
+  /** Duration in minutes */
+  durationMinutes?: number;
+  /** Times to exclude (already declined by prospect) */
+  excludeTimes?: string[];
+  /** Maximum number of alternatives to return */
+  maxAlternatives?: number;
+  /** Hours before/after requested time to search */
+  hourRange?: number;
+  /** Timezone for display */
+  timezone?: string;
+}
+
+export interface FocusedAlternativesResult {
+  slots: MultiAttendeeSlot[];
+  source: 'calendar' | 'generated' | 'error';
+  calendarChecked: boolean;
+  error?: string;
+  warnings?: string[];
+}
+
+/**
+ * Get alternative times focused around a prospect's requested time
+ *
+ * This function:
+ * 1. Looks for available slots on the requested day
+ * 2. Looks for slots on the next day
+ * 3. Prioritizes times close to the requested hour
+ * 4. Excludes times the prospect already declined
+ */
+export async function getAlternativesAroundTime(
+  primaryUserId: string,
+  attendeeEmails: string[],
+  options: FocusedAlternativesOptions
+): Promise<FocusedAlternativesResult> {
+  const {
+    requestedTime,
+    durationMinutes = 30,
+    excludeTimes = [],
+    maxAlternatives = 4,
+    hourRange = 3,
+    timezone = 'America/New_York',
+  } = options;
+
+  console.log('[getAlternativesAroundTime] Finding alternatives around:', requestedTime.toISOString());
+  console.log('[getAlternativesAroundTime] Requested hour:', requestedTime.getHours());
+  console.log('[getAlternativesAroundTime] Exclude times:', excludeTimes);
+
+  try {
+    const { MicrosoftGraphClient } = await import('@/lib/microsoft/graph');
+    const { getValidToken } = await import('@/lib/microsoft/auth');
+
+    const token = await getValidToken(primaryUserId);
+    if (!token) {
+      return {
+        slots: [],
+        source: 'error',
+        calendarChecked: false,
+        error: 'No valid Microsoft token'
+      };
+    }
+
+    const graphClient = new MicrosoftGraphClient(token);
+
+    // Get the requested hour in the target timezone
+    const requestedHourLocal = parseInt(
+      requestedTime.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: timezone })
+    );
+
+    console.log('[getAlternativesAroundTime] Requested hour in', timezone, ':', requestedHourLocal);
+
+    // Calculate search range: requested day + next 2 days
+    const startDate = getStartOfDayInTimezone(requestedTime, timezone);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 3); // Search 3 days
+
+    // Get busy blocks for primary user
+    const eventsResult = await graphClient.getCalendarEvents({
+      startDateTime: startDate.toISOString(),
+      endDateTime: endDate.toISOString(),
+      top: 100,
+      timezone,
+    });
+
+    const busyBlocks: Array<{ start: Date; end: Date }> = [];
+    for (const event of eventsResult.value || []) {
+      if (event.isCancelled || event.showAs === 'free' || event.showAs === 'workingElsewhere') {
+        continue;
+      }
+      const parseEventDateTime = (dt: string): Date => {
+        const [datePart, timePart] = dt.split('T');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute] = timePart.split(':').map((s) => parseInt(s));
+        return createDateInTimezone(year, month - 1, day, hour, minute, timezone);
+      };
+      busyBlocks.push({
+        start: parseEventDateTime(event.start.dateTime),
+        end: parseEventDateTime(event.end.dateTime),
+      });
+    }
+
+    // Get busy blocks for other attendees
+    if (attendeeEmails.length > 0) {
+      try {
+        const scheduleResponse = await graphClient.getSchedule({
+          schedules: attendeeEmails,
+          startTime: { dateTime: startDate.toISOString(), timeZone: timezone },
+          endTime: { dateTime: endDate.toISOString(), timeZone: timezone },
+        });
+        for (const schedule of scheduleResponse.value || []) {
+          for (const item of schedule.scheduleItems || []) {
+            if (item.status === 'busy' || item.status === 'tentative' || item.status === 'oof') {
+              busyBlocks.push({
+                start: new Date(item.start.dateTime + 'Z'),
+                end: new Date(item.end.dateTime + 'Z'),
+              });
+            }
+          }
+        }
+      } catch (scheduleError) {
+        console.warn('[getAlternativesAroundTime] Could not check attendee schedules:', scheduleError);
+      }
+    }
+
+    // Generate candidate slots for the search window
+    const candidateSlots: MultiAttendeeSlot[] = [];
+    const businessHoursStart = 9;
+    const businessHoursEnd = 17;
+    const minHour = Math.max(businessHoursStart, requestedHourLocal - hourRange);
+    const maxHour = Math.min(businessHoursEnd, requestedHourLocal + hourRange);
+
+    // Generate slots for each day in the range
+    for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
+      const currentDay = new Date(startDate);
+      currentDay.setDate(currentDay.getDate() + dayOffset);
+
+      // Skip weekends
+      const dayOfWeek = getDayOfWeekInTimezone(currentDay, timezone);
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+      // Generate 30-minute slots within the hour range
+      for (let hour = minHour; hour < maxHour; hour++) {
+        for (const minute of [0, 30]) {
+          const slotStart = createDateInTimezone(
+            currentDay.getFullYear(),
+            currentDay.getMonth(),
+            currentDay.getDate(),
+            hour,
+            minute,
+            timezone
+          );
+          const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
+
+          // Skip if in the past
+          if (slotStart <= new Date()) continue;
+
+          // Skip if too close to now (need at least 2 hours buffer)
+          if (slotStart.getTime() - Date.now() < 2 * 60 * 60 * 1000) continue;
+
+          // Check if slot overlaps with any busy block
+          const isBusy = busyBlocks.some(block =>
+            slotStart < block.end && slotEnd > block.start
+          );
+          if (isBusy) continue;
+
+          // Format for display
+          const formatted = slotStart.toLocaleString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short',
+            timeZone: timezone,
+          });
+
+          // Check if this time was previously declined
+          const isExcluded = excludeTimes.some(excluded => {
+            const excludedLower = excluded.toLowerCase();
+            const formattedLower = formatted.toLowerCase();
+            // Check if the formatted time matches the excluded time
+            return formattedLower.includes(excludedLower) ||
+                   excludedLower.includes(formatted.split(' at ')[0].toLowerCase());
+          });
+          if (isExcluded) {
+            console.log('[getAlternativesAroundTime] Excluding previously declined:', formatted);
+            continue;
+          }
+
+          candidateSlots.push({
+            start: slotStart,
+            end: slotEnd,
+            formatted,
+          });
+        }
+      }
+    }
+
+    // Sort by proximity to requested time
+    candidateSlots.sort((a, b) => {
+      const aHour = parseInt(a.start.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: timezone }));
+      const bHour = parseInt(b.start.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: timezone }));
+      const aDiff = Math.abs(aHour - requestedHourLocal);
+      const bDiff = Math.abs(bHour - requestedHourLocal);
+
+      // Prioritize same day first
+      const aDay = a.start.toLocaleDateString('en-US', { timeZone: timezone });
+      const bDay = b.start.toLocaleDateString('en-US', { timeZone: timezone });
+      const requestedDay = requestedTime.toLocaleDateString('en-US', { timeZone: timezone });
+
+      if (aDay === requestedDay && bDay !== requestedDay) return -1;
+      if (bDay === requestedDay && aDay !== requestedDay) return 1;
+
+      // Then by proximity to requested hour
+      return aDiff - bDiff;
+    });
+
+    // Take top alternatives
+    const selectedSlots = candidateSlots.slice(0, maxAlternatives);
+
+    console.log('[getAlternativesAroundTime] Found', candidateSlots.length, 'candidates, returning', selectedSlots.length);
+
+    return {
+      slots: selectedSlots,
+      source: 'calendar',
+      calendarChecked: true,
+    };
+
+  } catch (error) {
+    console.error('[getAlternativesAroundTime] Error:', error);
+    return {
+      slots: [],
+      source: 'error',
+      calendarChecked: false,
+      error: String(error),
+    };
+  }
+}

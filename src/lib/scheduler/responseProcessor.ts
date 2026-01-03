@@ -102,6 +102,23 @@ interface ResponseAnalysis {
 }
 
 // ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Get ordinal suffix for a day number (1st, 2nd, 3rd, 4th, etc.)
+ */
+function getDaySuffix(day: number): string {
+  if (day >= 11 && day <= 13) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+}
+
+// ============================================
 // UNIFIED RESPONSE ANALYSIS (Managed Prompt)
 // ============================================
 
@@ -149,6 +166,22 @@ async function analyzeSchedulingResponse(
     yearGuidance = `Note: Today is in late ${currentYear}. If they mention January/February/March, use ${nextYear}.`;
   }
 
+  // Generate explicit calendar reference for next 3 weeks
+  // This prevents AI from guessing day-to-date mappings incorrectly
+  const calendarLines: string[] = [];
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (let i = 0; i < 21; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const dayName = dayNames[date.getDay()];
+    const monthName = date.toLocaleDateString('en-US', { month: 'long', timeZone: timezone });
+    const dayNum = date.getDate();
+    const year = date.getFullYear();
+    const suffix = getDaySuffix(dayNum);
+    calendarLines.push(`${dayName} = ${monthName} ${dayNum}${suffix}, ${year}`);
+  }
+  const calendarContext = calendarLines.join('\n');
+
   // Format proposed times for the prompt
   let proposedTimesFormatted = 'None provided';
   if (proposedTimes && proposedTimes.length > 0) {
@@ -169,6 +202,7 @@ async function analyzeSchedulingResponse(
     const promptResult = await getPromptWithVariables('scheduler_response_parsing', {
       todayFormatted,
       yearGuidance,
+      calendarContext,
       proposedTimes: proposedTimesFormatted,
       emailBody,
     });
@@ -1661,24 +1695,53 @@ async function confirmAndBookMeeting(
       hour: 'numeric',
       minute: '2-digit',
       timeZoneName: 'short',
-      timeZone: 'America/New_York',
+      timeZone: request.timezone || 'America/New_York',
     });
 
-    // Generate confirmation email (for future use with AI-generated content)
-    const _generatedEmail = await generateSchedulingEmail({
-      emailType: 'confirmation',
-      request,
-      attendees: request.attendees || [],
-      senderName: 'Brent Allen',
-      senderTitle: 'Sales, X-RAI Labs',
-    });
+    // Generate confirmation email using managed prompt
+    let emailBody: string;
+    try {
+      const promptResult = await getPromptWithVariables('scheduler_counter_proposal_response', {
+        prospectName,
+        companyName: 'your company',
+        meetingTitle: request.title || 'our meeting',
+        proposedTime: formattedTime,
+        isAvailable: 'true',
+        alternativeTimes: '',
+        declinedTimes: '',
+        senderName: 'Brent',
+      });
+
+      if (promptResult && promptResult.prompt) {
+        const { data: aiResponse } = await callAIJson<{ emailBody: string }>({
+          prompt: promptResult.prompt + '\n\nReturn JSON: { "emailBody": "your email text here" }',
+          model: (promptResult.model as 'claude-sonnet-4-20250514') || 'claude-sonnet-4-20250514',
+          maxTokens: promptResult.maxTokens || 500,
+        });
+        emailBody = aiResponse.emailBody || '';
+      } else {
+        throw new Error('Prompt not found');
+      }
+    } catch (promptError) {
+      console.warn('[confirmAndBookMeeting] Falling back to default email template:', promptError);
+      emailBody = `Hi ${prospectName},
+
+Great news! Our meeting is confirmed for ${formattedTime}.
+
+You'll receive a calendar invite shortly with the meeting link.
+
+Looking forward to speaking with you!
+
+Best,
+Brent`;
+    }
 
     // Send confirmation email with X-FORCE category (as reply if we have the original message ID)
     const emailResult = await sendEmailWithCategory(token, {
       subject: `Confirmed: ${request.title} - ${formattedTime}`,
       body: {
         contentType: 'Text',
-        content: `Hi ${prospectName},\n\nGreat news! Our meeting is confirmed for ${formattedTime}.\n\nYou'll receive a calendar invite shortly with the Microsoft Teams link.\n\nLooking forward to speaking with you!\n\nBest,\nBrent Allen\nX-RAI Labs`,
+        content: emailBody,
       },
       toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
     }, replyToMessageId);
@@ -1921,6 +1984,8 @@ async function sendAlternativeTimes(
 ): Promise<{ success: boolean; error?: string; isDraft?: boolean }> {
   try {
     const { getValidToken } = await import('@/lib/microsoft/auth');
+    const { getAlternativesAroundTime } = await import('./calendarIntegration');
+
     const token = await getValidToken(userId);
 
     if (!token) {
@@ -1932,69 +1997,109 @@ async function sendAlternativeTimes(
       .filter((a: SchedulingAttendee) => a.side === 'internal')
       .map((a: SchedulingAttendee) => a.email);
 
-    // Find alternative slots
-    const slotsResult = await getMultiAttendeeAvailability(userId, internalEmails, {
-      daysAhead: 10,
-      slotDuration: request.duration_minutes || 30,
-      maxSlots: 4,
+    // Parse the proposed time to use as focal point
+    let proposedDate: Date;
+    if (proposedTimeDescription.match(/^\d{4}-\d{2}-\d{2}/)) {
+      proposedDate = new Date(proposedTimeDescription);
+    } else {
+      // If not ISO format, try to parse
+      proposedDate = new Date(proposedTimeDescription);
+    }
+
+    if (isNaN(proposedDate.getTime())) {
+      // Default to next business day at noon if parsing fails
+      proposedDate = new Date();
+      proposedDate.setDate(proposedDate.getDate() + 1);
+      proposedDate.setHours(12, 0, 0, 0);
+    }
+
+    // Get previously proposed times (these are times the prospect implicitly declined)
+    const declinedTimes = request.proposed_times || [];
+
+    console.log('[sendAlternativeTimes] Finding alternatives around:', proposedDate.toISOString());
+    console.log('[sendAlternativeTimes] Excluding previously proposed times:', declinedTimes);
+
+    // Find alternative slots FOCUSED around the prospect's requested time
+    const slotsResult = await getAlternativesAroundTime(userId, internalEmails, {
+      requestedTime: proposedDate,
+      durationMinutes: request.duration_minutes || 30,
+      excludeTimes: declinedTimes,
+      maxAlternatives: 4,
+      hourRange: 3, // Look ±3 hours from their requested time
+      timezone: request.timezone || 'America/New_York',
     });
 
     if (!slotsResult.slots || slotsResult.slots.length === 0) {
       // No slots available - flag for human review
-      return { success: false, error: 'No alternative slots available' };
+      return { success: false, error: 'No alternative slots available around requested time' };
     }
 
-    // Format slots for email
-    const formattedSlots = slotsResult.slots.map(slot => {
-      const date = new Date(slot.start);
-      return date.toLocaleString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        timeZoneName: 'short',
-        timeZone: 'America/New_York',
-      });
-    });
+    // Format slots for display
+    const formattedSlots = slotsResult.slots.map(slot => slot.formatted);
 
-    // Format the proposed time nicely (in case it's an ISO string)
+    // Format the proposed time nicely
     let formattedProposedTime = proposedTimeDescription;
     if (proposedTimeDescription.match(/^\d{4}-\d{2}-\d{2}/)) {
-      // It's an ISO timestamp - format it nicely
       try {
-        const proposedDate = new Date(proposedTimeDescription);
-        formattedProposedTime = proposedDate.toLocaleString('en-US', {
+        const pDate = new Date(proposedTimeDescription);
+        formattedProposedTime = pDate.toLocaleString('en-US', {
           weekday: 'long',
           month: 'long',
           day: 'numeric',
           hour: 'numeric',
           minute: '2-digit',
           timeZoneName: 'short',
-          timeZone: 'America/New_York',
+          timeZone: request.timezone || 'America/New_York',
         });
       } catch {
         // Keep original if parsing fails
       }
     }
 
-    const emailBody = `Hi ${prospectName},
+    // Use the managed prompt for email generation
+    let emailBody: string;
+    try {
+      const promptResult = await getPromptWithVariables('scheduler_counter_proposal_response', {
+        prospectName,
+        companyName: 'your company',
+        meetingTitle: request.title || 'our meeting',
+        proposedTime: formattedProposedTime,
+        isAvailable: 'false',
+        alternativeTimes: formattedSlots.map((t, i) => `• ${t}`).join('\n'),
+        declinedTimes: declinedTimes.join(', ') || 'None',
+        senderName: 'Brent',
+      });
+
+      if (promptResult && promptResult.prompt) {
+        const { data: aiResponse } = await callAIJson<{ emailBody: string }>({
+          prompt: promptResult.prompt + '\n\nReturn JSON: { "emailBody": "your email text here" }',
+          model: (promptResult.model as 'claude-sonnet-4-20250514') || 'claude-sonnet-4-20250514',
+          maxTokens: promptResult.maxTokens || 500,
+        });
+        emailBody = aiResponse.emailBody || '';
+      } else {
+        throw new Error('Prompt not found');
+      }
+    } catch (promptError) {
+      console.warn('[sendAlternativeTimes] Falling back to default email template:', promptError);
+      // Fallback to simple template if prompt fails
+      emailBody = `Hi ${prospectName},
 
 Thank you for your response! Unfortunately, ${formattedProposedTime} doesn't work with our team's availability.
 
-Here are some alternative times that work for everyone:
+Here are some alternative times around when you suggested that work for everyone:
 
-${formattedSlots.map((t, i) => `• ${t}`).join('\n')}
+${formattedSlots.map((t) => `• ${t}`).join('\n')}
 
 Just reply with which time works best for you, and I'll get us scheduled right away.
 
 Best,
-Brent Allen
-X-RAI Labs`;
+Brent`;
+    }
 
-    // Send alternative times email with X-FORCE category (as reply if we have the original message ID)
+    // Send alternative times email with X-FORCE category (as reply to preserve thread)
     const sendResult = await sendEmailWithCategory(token, {
-      subject: `Re: ${request.title} - Alternative Times`,
+      subject: `Re: ${request.title}`,
       body: { contentType: 'Text', content: emailBody },
       toRecipients: [{ emailAddress: { address: prospectEmail, name: prospectName } }],
     }, replyToMessageId);
@@ -2003,12 +2108,12 @@ X-RAI Labs`;
       return { success: false, error: `Email send failed: ${sendResult.error}` };
     }
 
-    // Update the proposed times on the request
+    // Update the proposed times on the request (replace with new alternatives)
     const supabase = createAdminClient();
     await supabase
       .from('scheduling_requests')
       .update({
-        proposed_times: slotsResult.slots.map(s => s.start),
+        proposed_times: slotsResult.slots.map(s => s.formatted),
         last_action_at: new Date().toISOString(),
         status: SCHEDULING_STATUS.AWAITING_RESPONSE,
         next_action_type: null, // Clear since automation handled it
@@ -2016,7 +2121,8 @@ X-RAI Labs`;
       })
       .eq('id', request.id);
 
-    console.log('[sendAlternativeTimes] Alternative times email sent, isDraft:', sendResult.isDraft);
+    console.log('[sendAlternativeTimes] Alternative times email created, isDraft:', sendResult.isDraft);
+    console.log('[sendAlternativeTimes] Alternatives focused around:', formattedProposedTime);
     return { success: true, isDraft: sendResult.isDraft };
   } catch (err) {
     console.error('[sendAlternativeTimes] Error:', err);
