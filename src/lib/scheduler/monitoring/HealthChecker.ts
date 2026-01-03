@@ -82,7 +82,7 @@ export async function checkSchedulerHealth(): Promise<SchedulerHealth> {
   // Get all active requests
   const { data: activeRequests } = await supabase
     .from('scheduling_requests')
-    .select('id, status, email_thread_id, last_action_at, follow_up_count, created_at')
+    .select('id, status, email_thread_id, last_action_at, attempt_count, created_at')
     .not('status', 'in', `(${STATUS.COMPLETED},${STATUS.CANCELLED})`);
 
   const requests = activeRequests || [];
@@ -105,7 +105,7 @@ export async function checkSchedulerHealth(): Promise<SchedulerHealth> {
   );
 
   // Find high attempt count
-  const highAttempts = requests.filter((r) => (r.follow_up_count || 0) >= 4);
+  const highAttempts = requests.filter((r) => (r.attempt_count || 0) >= 4);
 
   // Get draft counts
   const { data: pendingDrafts } = await supabase
