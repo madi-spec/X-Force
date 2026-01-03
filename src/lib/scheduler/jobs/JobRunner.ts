@@ -153,7 +153,7 @@ export abstract class JobRunner {
     supabase: ReturnType<typeof createAdminClient>
   ): Promise<boolean> {
     const { data } = await supabase
-      .from('cron_execution_log')
+      .from('cron_executions')
       .select('id')
       .eq('job_name', this.jobId)
       .is('completed_at', null)
@@ -167,11 +167,11 @@ export abstract class JobRunner {
     supabase: ReturnType<typeof createAdminClient>,
     correlationId: string
   ): Promise<void> {
-    await supabase.from('cron_execution_log').insert({
+    await supabase.from('cron_executions').insert({
       job_name: this.jobId,
-      correlation_id: correlationId,
       started_at: new Date().toISOString(),
       status: 'running',
+      result: { correlation_id: correlationId },
     });
   }
 
@@ -181,17 +181,22 @@ export abstract class JobRunner {
     result: JobExecutionResult
   ): Promise<void> {
     await supabase
-      .from('cron_execution_log')
+      .from('cron_executions')
       .update({
         completed_at: result.completedAt.toISOString(),
         status: result.success ? 'success' : 'failed',
         duration_ms: result.durationMs,
-        items_processed: result.itemsProcessed,
-        items_failed: result.itemsFailed,
         error_message: result.errors.length > 0 ? result.errors.join('; ') : null,
-        metadata: result.metadata,
+        result: {
+          correlation_id: correlationId,
+          items_processed: result.itemsProcessed,
+          items_failed: result.itemsFailed,
+          metadata: result.metadata,
+        },
       })
-      .eq('correlation_id', correlationId);
+      .eq('job_name', this.jobId)
+      .is('completed_at', null)
+      .gte('started_at', new Date(Date.now() - 5 * 60 * 1000).toISOString());
   }
 
   private buildResult(
@@ -225,7 +230,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
 
   // Get last 10 executions
   const { data: executions } = await supabase
-    .from('cron_execution_log')
+    .from('cron_executions')
     .select('*')
     .eq('job_name', jobId)
     .order('started_at', { ascending: false })

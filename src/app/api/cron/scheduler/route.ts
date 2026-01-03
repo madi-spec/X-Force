@@ -130,9 +130,18 @@ export async function GET(request: NextRequest) {
   }
 
   const runId = `run_${Date.now()}`;
+  const startedAt = new Date();
   console.log(`[Cron/Scheduler:${runId}] === STARTING UNIFIED SCHEDULER CRON ===`);
 
   const supabase = createAdminClient();
+
+  // Log job start
+  await supabase.from('cron_executions').insert({
+    job_name: 'scheduler',
+    started_at: startedAt.toISOString(),
+    status: 'running',
+    result: { run_id: runId },
+  });
   const now = new Date().toISOString();
   const results: Array<{
     requestId: string;
@@ -175,6 +184,21 @@ export async function GET(request: NextRequest) {
 
     if (!deferredRequests || deferredRequests.length === 0) {
       console.log(`[Cron/Scheduler:${runId}] No deferred tasks found`);
+
+      // Log job completion with no tasks
+      const completedAt = new Date();
+      await supabase
+        .from('cron_executions')
+        .update({
+          completed_at: completedAt.toISOString(),
+          status: 'success',
+          duration_ms: completedAt.getTime() - startedAt.getTime(),
+          result: { run_id: runId, processed: 0, message: 'No deferred tasks' },
+        })
+        .eq('job_name', 'scheduler')
+        .is('completed_at', null)
+        .gte('started_at', new Date(startedAt.getTime() - 1000).toISOString());
+
       return NextResponse.json({
         success: true,
         processed: 0,
@@ -261,6 +285,24 @@ export async function GET(request: NextRequest) {
     console.log(`[Cron/Scheduler:${runId}] === PROCESSING COMPLETE ===`);
     console.log(`[Cron/Scheduler:${runId}] Results:`, JSON.stringify(results, null, 2));
 
+    // Log job completion
+    const completedAt = new Date();
+    await supabase
+      .from('cron_executions')
+      .update({
+        completed_at: completedAt.toISOString(),
+        status: 'success',
+        duration_ms: completedAt.getTime() - startedAt.getTime(),
+        result: {
+          run_id: runId,
+          processed: results.length,
+          results,
+        },
+      })
+      .eq('job_name', 'scheduler')
+      .is('completed_at', null)
+      .gte('started_at', new Date(startedAt.getTime() - 1000).toISOString());
+
     return NextResponse.json({
       success: true,
       runId,
@@ -269,6 +311,22 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error(`[Cron/Scheduler:${runId}] Fatal error:`, err);
+
+    // Log job failure
+    const completedAt = new Date();
+    await supabase
+      .from('cron_executions')
+      .update({
+        completed_at: completedAt.toISOString(),
+        status: 'failed',
+        duration_ms: completedAt.getTime() - startedAt.getTime(),
+        error_message: String(err),
+        result: { run_id: runId, error: String(err) },
+      })
+      .eq('job_name', 'scheduler')
+      .is('completed_at', null)
+      .gte('started_at', new Date(startedAt.getTime() - 1000).toISOString());
+
     return NextResponse.json(
       { error: String(err), runId },
       { status: 500 }
