@@ -6,7 +6,12 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { parseSchedulingResponse, generateSchedulingEmail, formatTimeSlotsForEmail } from './emailGeneration';
+import {
+  parseSchedulingResponse,
+  generateSchedulingEmail,
+  formatTimeSlotsForEmail,
+  ParsedSchedulingResponse,
+} from './emailGeneration';
 import { adminSchedulingService } from './schedulingService';
 import { sendEmail } from '@/lib/microsoft/emailSync';
 import { createMeetingCalendarEvent, getMultiAttendeeAvailability } from './calendarIntegration';
@@ -31,6 +36,17 @@ import {
   DEFAULT_TIMEZONE,
   addMinutes,
 } from './timezone';
+import {
+  TaggedTimestamp,
+  createTaggedTimestamp,
+  createTaggedFromUtc,
+  formatTaggedForDisplay,
+  logTaggedTimestamp,
+} from './taggedTimestamp';
+import {
+  validateProposedTime,
+  logTimestampConversion,
+} from './timestampValidator';
 
 // ============================================
 // TYPES
@@ -60,12 +76,15 @@ interface ProcessingResult {
 interface ResponseAnalysis {
   intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'unclear';
   selectedTime?: string;
+  selectedTimeTagged?: TaggedTimestamp;
   counterProposedTimes?: string[];
+  counterProposedTimesTagged?: TaggedTimestamp[];
   question?: string;
   sentiment: 'positive' | 'neutral' | 'negative';
   reasoning: string;
   isConfused?: boolean;
   confusionReason?: string;
+  validationErrors?: string[];
 }
 
 // ============================================
@@ -74,15 +93,27 @@ interface ResponseAnalysis {
 
 /**
  * Find scheduling request matching an incoming email
+ *
+ * Strategies (in order of priority):
+ * 1. Thread ID match - Most reliable when we have it
+ * 2. Attendee email match - Match sender to external attendee
+ * 3. Subject line fallback - For "Re:" replies when thread ID is missing
  */
 export async function findMatchingSchedulingRequest(
   email: IncomingEmail
 ): Promise<SchedulingRequest | null> {
   const supabase = createAdminClient();
+  const senderEmail = email.from.address.toLowerCase();
+
+  console.log('[findMatch] ====== FINDING MATCHING REQUEST ======');
+  console.log('[findMatch] Email subject:', email.subject);
+  console.log('[findMatch] From:', senderEmail);
+  console.log('[findMatch] ConversationId:', email.conversationId || 'NONE');
 
   // Strategy 1: Match by conversation/thread ID
+  console.log('[findMatch] Strategy 1: Thread ID match...');
   if (email.conversationId) {
-    const { data: byThread } = await supabase
+    const { data: byThread, error: threadError } = await supabase
       .from('scheduling_requests')
       .select(`
         *,
@@ -92,13 +123,22 @@ export async function findMatchingSchedulingRequest(
       .not('status', 'in', `(${SCHEDULING_STATUS.COMPLETED},${SCHEDULING_STATUS.CANCELLED},${SCHEDULING_STATUS.CONFIRMED})`)
       .single();
 
+    if (threadError && threadError.code !== 'PGRST116') {
+      console.log('[findMatch]   Query error:', threadError.message);
+    }
+
     if (byThread) {
+      console.log('[findMatch]   ✓ MATCHED by thread_id! Request:', byThread.id, 'Title:', byThread.title);
       return byThread as SchedulingRequest;
     }
+    console.log('[findMatch]   ✗ No match - email_thread_id not found in any active request');
+  } else {
+    console.log('[findMatch]   ✗ Skipped - no conversationId on email');
   }
 
   // Strategy 2: Match by sender email to active scheduling request attendees
-  const { data: byEmail } = await supabase
+  console.log('[findMatch] Strategy 2: Attendee email match for:', senderEmail);
+  const { data: byEmail, error: emailError } = await supabase
     .from('scheduling_attendees')
     .select(`
       scheduling_request_id,
@@ -107,35 +147,114 @@ export async function findMatchingSchedulingRequest(
         attendees:scheduling_attendees(*)
       )
     `)
-    .eq('email', email.from.address.toLowerCase())
+    .eq('email', senderEmail)
     .eq('side', 'external');
+
+  if (emailError) {
+    console.log('[findMatch]   Query error:', emailError.message);
+  }
+
+  console.log('[findMatch]   Found', byEmail?.length || 0, 'attendee records for this sender');
 
   if (byEmail && byEmail.length > 0) {
     // Find active scheduling request for this contact
+    const schedulingKeywords = [
+      'schedule', 'meeting', 'calendar', 'time', 'available',
+      'works', 'demo', 'call', 'tuesday', 'wednesday', 'thursday',
+      'friday', 'monday', 'morning', 'afternoon', 'pm', 'am', 're:',
+    ];
+    const subjectLower = email.subject.toLowerCase();
+    const hasSchedulingKeyword = schedulingKeywords.some(kw => subjectLower.includes(kw));
+
+    console.log('[findMatch]   Subject has scheduling keyword:', hasSchedulingKeyword);
+
     for (const attendee of byEmail) {
       const request = attendee.scheduling_request as unknown as SchedulingRequest;
-      if (
-        request &&
+      if (!request) {
+        console.log('[findMatch]   - Request null for attendee record');
+        continue;
+      }
+
+      const isActiveStatus =
         request.status !== SCHEDULING_STATUS.COMPLETED &&
         request.status !== SCHEDULING_STATUS.CANCELLED &&
-        request.status !== SCHEDULING_STATUS.CONFIRMED
-      ) {
-        // Check if email subject might relate to scheduling
-        const schedulingKeywords = [
-          'schedule', 'meeting', 'calendar', 'time', 'available',
-          'works', 'demo', 'call', 'tuesday', 'wednesday', 'thursday',
-          'friday', 'monday', 'morning', 'afternoon', 'pm', 'am',
-        ];
-        const subjectLower = email.subject.toLowerCase();
-        const hasSchedulingKeyword = schedulingKeywords.some(kw => subjectLower.includes(kw));
+        request.status !== SCHEDULING_STATUS.CONFIRMED;
 
+      console.log('[findMatch]   - Request:', request.id, 'status:', request.status, 'active:', isActiveStatus);
+
+      if (isActiveStatus) {
         if (hasSchedulingKeyword || request.status === SCHEDULING_STATUS.AWAITING_RESPONSE) {
+          console.log('[findMatch]   ✓ MATCHED by attendee email! Request:', request.id);
+
+          // IMPORTANT: Capture thread ID for future matching
+          if (email.conversationId && !request.email_thread_id) {
+            console.log('[findMatch]   Updating email_thread_id for future matching...');
+            await supabase
+              .from('scheduling_requests')
+              .update({ email_thread_id: email.conversationId })
+              .eq('id', request.id);
+          }
+
           return request;
+        } else {
+          console.log('[findMatch]   - Skipped: no scheduling keyword and status is not awaiting_response');
         }
       }
     }
+    console.log('[findMatch]   ✗ No active request matched criteria');
   }
 
+  // Strategy 3: Subject line fallback for "Re:" replies
+  console.log('[findMatch] Strategy 3: Subject line fallback...');
+  const isReply = email.subject.toLowerCase().startsWith('re:');
+
+  if (isReply) {
+    console.log('[findMatch]   Email is a reply, looking for recent awaiting_response requests to this sender');
+
+    // Find recent requests awaiting response where this person is an attendee
+    const { data: recentRequests, error: recentError } = await supabase
+      .from('scheduling_requests')
+      .select(`
+        *,
+        attendees:scheduling_attendees(*)
+      `)
+      .eq('status', SCHEDULING_STATUS.AWAITING_RESPONSE)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (recentError) {
+      console.log('[findMatch]   Query error:', recentError.message);
+    }
+
+    if (recentRequests && recentRequests.length > 0) {
+      // Find one where this sender is an external attendee
+      for (const req of recentRequests) {
+        const hasMatchingAttendee = (req.attendees || []).some(
+          (a: SchedulingAttendee) => a.side === 'external' && a.email.toLowerCase() === senderEmail
+        );
+
+        if (hasMatchingAttendee) {
+          console.log('[findMatch]   ✓ MATCHED by subject fallback! Request:', req.id);
+
+          // Update thread ID for future matching
+          if (email.conversationId && !req.email_thread_id) {
+            console.log('[findMatch]   Updating email_thread_id for future matching...');
+            await supabase
+              .from('scheduling_requests')
+              .update({ email_thread_id: email.conversationId })
+              .eq('id', req.id);
+          }
+
+          return req as SchedulingRequest;
+        }
+      }
+    }
+    console.log('[findMatch]   ✗ No matching request found via subject fallback');
+  } else {
+    console.log('[findMatch]   ✗ Skipped - email is not a reply');
+  }
+
+  console.log('[findMatch] ====== NO MATCH FOUND ======');
   return null;
 }
 
@@ -146,9 +265,13 @@ export async function findMatchingSchedulingRequest(
 // TEMPORARY KILL SWITCH - Set to true to disable all scheduler auto-replies
 const SCHEDULER_AUTO_REPLY_DISABLED = false;
 
+// SAFEGUARD: Save emails as drafts instead of sending automatically
+// Set to true to require manual review before sending scheduler emails
+const SCHEDULER_DRAFT_ONLY_MODE = true;
+
 // Minimum delay in milliseconds before responding to a scheduling email
 // This prevents instant robotic-feeling responses and gives time for human review
-const RESPONSE_DELAY_MS = 3 * 60 * 1000; // 3 minutes
+const RESPONSE_DELAY_MS = 1 * 60 * 1000; // 1 minute (reduced from 3 minutes)
 
 /**
  * Process an incoming email response to a scheduling request
@@ -157,14 +280,22 @@ export async function processSchedulingResponse(
   email: IncomingEmail,
   schedulingRequest: SchedulingRequest
 ): Promise<ProcessingResult> {
+  console.log('[processResponse] ====== PROCESSING SCHEDULING RESPONSE ======');
+  console.log('[processResponse] Request ID:', schedulingRequest.id);
+  console.log('[processResponse] Request Title:', schedulingRequest.title);
+  console.log('[processResponse] Request Status:', schedulingRequest.status);
+  console.log('[processResponse] Email Subject:', email.subject);
+  console.log('[processResponse] Email From:', email.from.address);
+
   // Kill switch - don't send any automatic replies
   if (SCHEDULER_AUTO_REPLY_DISABLED) {
-    console.log('[processSchedulingResponse] DISABLED - Auto-reply is temporarily turned off');
+    console.log('[processResponse] ✗ BLOCKED: SCHEDULER_AUTO_REPLY_DISABLED is true');
     return {
       processed: false,
       error: 'Scheduler auto-reply temporarily disabled',
     };
   }
+  console.log('[processResponse] ✓ Kill switch OK (auto_reply_enabled)');
 
   const supabase = createAdminClient();
 
@@ -204,9 +335,11 @@ export async function processSchedulingResponse(
 
   // Also check time since email was received - don't respond to very recent emails
   const timeSinceEmail = now.getTime() - emailReceivedTime.getTime();
+  console.log(`[processResponse] Email age: ${Math.round(timeSinceEmail / 1000)}s, required delay: ${Math.round(RESPONSE_DELAY_MS / 1000)}s`);
+
   if (timeSinceEmail < RESPONSE_DELAY_MS) {
     const delayRemaining = RESPONSE_DELAY_MS - timeSinceEmail;
-    console.log(`[processSchedulingResponse] Email received ${Math.round(timeSinceEmail / 1000)}s ago, deferring by ${Math.round(delayRemaining / 1000)}s`);
+    console.log(`[processResponse] ✗ DEFERRED: Email too recent, will retry in ${Math.round(delayRemaining / 1000)}s`);
 
     // Schedule the processing for later
     const processAt = new Date(now.getTime() + delayRemaining);
@@ -225,24 +358,58 @@ export async function processSchedulingResponse(
       error: `Response deferred until ${processAt.toISOString()} to avoid instant reply`,
     };
   }
+  console.log('[processResponse] ✓ Response delay OK - proceeding with AI parsing');
 
   try {
     // Parse the response using AI
+    // CRITICAL: Use the request's timezone when formatting times for the AI
+    // Otherwise, server timezone will be used which causes misinterpretation
+    const userTimezone = schedulingRequest.timezone || DEFAULT_TIMEZONE;
     const proposedTimesFormatted = (schedulingRequest.proposed_times || []).map((t, i) => {
       const date = new Date(t);
-      return `Option ${i + 1}: ${date.toLocaleDateString('en-US', {
+      return `Option ${i + 1}: ${date.toLocaleString('en-US', {
         weekday: 'long',
         month: 'long',
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
+        timeZone: userTimezone,
+        timeZoneName: 'short',
       })}`;
     });
 
-    const analysis = await parseSchedulingResponse(
+    // Use the new parseSchedulingResponse with timezone awareness
+    // This returns TaggedTimestamps to prevent the "2pm becomes 6am" bug
+    const parsedResponse = await parseSchedulingResponse(
       email.body || email.bodyPreview,
-      proposedTimesFormatted
+      proposedTimesFormatted,
+      userTimezone // Pass the prospect's timezone for proper interpretation
     );
+
+    // Convert to ResponseAnalysis format with tagged timestamps
+    const analysis: ResponseAnalysis = {
+      intent: parsedResponse.intent,
+      selectedTime: parsedResponse.selectedTime?.utc, // Use UTC for database storage
+      selectedTimeTagged: parsedResponse.selectedTime, // Keep full tagged timestamp for accurate handling
+      counterProposedTimes: parsedResponse.counterProposedTimes?.map(t => t.utc),
+      counterProposedTimesTagged: parsedResponse.counterProposedTimes,
+      question: parsedResponse.question,
+      sentiment: parsedResponse.sentiment,
+      reasoning: parsedResponse.reasoning,
+      isConfused: parsedResponse.isConfused,
+      confusionReason: parsedResponse.confusionReason,
+      validationErrors: parsedResponse.validationErrors,
+    };
+
+    // Log any validation errors for debugging
+    if (analysis.validationErrors && analysis.validationErrors.length > 0) {
+      console.warn('[processSchedulingResponse] Timestamp validation errors:', analysis.validationErrors);
+    }
+
+    // Log the tagged timestamps for debugging
+    if (analysis.selectedTimeTagged) {
+      logTaggedTimestamp('Selected time from prospect', analysis.selectedTimeTagged);
+    }
 
     // Log the incoming email as an action
     await adminSchedulingService.logAction(schedulingRequest.id, {
@@ -324,27 +491,42 @@ export async function processSchedulingResponse(
       .eq('id', schedulingRequest.id);
 
     // Handle based on intent
+    console.log('[processResponse] ====== AI PARSING COMPLETE ======');
+    console.log('[processResponse] Intent:', analysis.intent);
+    console.log('[processResponse] Confidence/Sentiment:', analysis.sentiment);
+    console.log('[processResponse] Selected Time:', analysis.selectedTime || 'none');
+    console.log('[processResponse] Counter-Proposed Times:', analysis.counterProposedTimes || 'none');
+    console.log('[processResponse] AI Reasoning:', analysis.reasoning);
+    console.log('[processResponse] Routing to handler for intent:', analysis.intent);
+
     switch (analysis.intent) {
       case 'accept':
+        console.log('[processResponse] → handleTimeAccepted()');
         return await handleTimeAccepted(schedulingRequest, analysis, email);
 
       case 'counter_propose':
+        console.log('[processResponse] → handleCounterProposal()');
         return await handleCounterProposal(schedulingRequest, analysis, email);
 
       case 'decline':
+        console.log('[processResponse] → handleDecline()');
         return await handleDecline(schedulingRequest, analysis, email);
 
       case 'question':
+        console.log('[processResponse] → handleQuestion()');
         return await handleQuestion(schedulingRequest, analysis, email);
 
       case 'unclear':
+        console.log('[processResponse] → handleUnclearResponse()');
         return await handleUnclearResponse(schedulingRequest, analysis, email);
 
       default:
+        console.log('[processResponse] → Unknown intent, returning error');
         return { processed: false, error: 'Unknown intent' };
     }
   } catch (err) {
-    console.error('[ResponseProcessor] Error processing response:', err);
+    console.error('[processResponse] ====== ERROR ======');
+    console.error('[processResponse] Error processing response:', err);
     return {
       processed: false,
       schedulingRequestId: schedulingRequest.id,
@@ -377,7 +559,19 @@ async function handleTimeAccepted(
     analysis.selectedTime = selectedTime;
   }
 
-  const selectedDate = new Date(analysis.selectedTime);
+  // CRITICAL: Normalize the selected time using the user's timezone
+  // The AI might return times without timezone info (e.g., "2026-01-06T10:30:00")
+  // which would be interpreted as UTC by new Date(), causing timezone bugs
+  const userTimezone = request.timezone || DEFAULT_TIMEZONE;
+  const normalized = normalizeAITimestamp(analysis.selectedTime, userTimezone);
+  const selectedDate = normalized.utc || new Date(analysis.selectedTime);
+
+  console.log('[handleTimeAccepted] Time normalization:', {
+    original: analysis.selectedTime,
+    normalized: selectedDate.toISOString(),
+    timezone: userTimezone,
+    wasConverted: normalized.wasConverted,
+  });
 
   // Get internal attendee emails for availability check
   const internalEmails = (request.attendees || [])
@@ -501,7 +695,10 @@ async function handleCounterProposal(
 ): Promise<ProcessingResult> {
   const supabase = createAdminClient();
 
-  console.log('[handleCounterProposal] Processing counter-proposal:', analysis.counterProposedTimes);
+  console.log('[counterProposal] ====== HANDLING COUNTER-PROPOSAL ======');
+  console.log('[counterProposal] Request ID:', request.id);
+  console.log('[counterProposal] Request Title:', request.title);
+  console.log('[counterProposal] Counter-proposed times from AI:', analysis.counterProposedTimes);
 
   // Log the counter proposal
   await adminSchedulingService.logAction(request.id, {
@@ -517,14 +714,16 @@ async function handleCounterProposal(
   );
 
   if (!externalAttendee) {
-    console.error('[handleCounterProposal] No external attendee found');
+    console.log('[counterProposal] ✗ No external attendee found in request');
     return await fallbackToHumanReview(request, analysis, 'No external attendee found');
   }
+  console.log('[counterProposal] External attendee:', externalAttendee.email);
 
   // Get internal attendee emails for availability check
   const internalEmails = (request.attendees || [])
     .filter((a: SchedulingAttendee) => a.side === 'internal')
     .map((a: SchedulingAttendee) => a.email);
+  console.log('[counterProposal] Internal attendees to check:', internalEmails);
 
   // Try to parse the proposed time(s)
   const proposedTimeDescriptions = analysis.counterProposedTimes || [];
@@ -546,27 +745,36 @@ async function handleCounterProposal(
   }
 
   if (proposedTimeDescriptions.length === 0) {
-    console.log('[handleCounterProposal] Could not extract proposed times from email');
+    console.log('[counterProposal] ✗ Could not extract proposed times from email');
     return await fallbackToHumanReview(request, analysis, 'Could not parse proposed time');
   }
 
   // Parse the first proposed time using AI
   const timeDescription = proposedTimeDescriptions[0];
   const userTimezone = request.timezone || DEFAULT_TIMEZONE;
-  console.log('[handleCounterProposal] Parsing time:', timeDescription, 'in timezone:', userTimezone);
+  console.log('[counterProposal] Parsing proposed time with AI...');
+  console.log('[counterProposal]   Time description:', timeDescription);
+  console.log('[counterProposal]   Timezone:', userTimezone);
 
   const parsedTime = await parseProposedDateTime(timeDescription, email.body, userTimezone);
-  console.log('[handleCounterProposal] Parsed result:', parsedTime);
+  console.log('[counterProposal] AI Parse result:', {
+    isoTimestamp: parsedTime.isoTimestamp,
+    confidence: parsedTime.confidence,
+    reasoning: parsedTime.reasoning
+  });
 
   if (!parsedTime.isoTimestamp || parsedTime.confidence === 'low') {
-    console.log('[handleCounterProposal] Low confidence parse, falling back to human review');
+    console.log('[counterProposal] ✗ Low confidence parse, falling back to human review');
     return await fallbackToHumanReview(request, analysis, `Low confidence parsing: ${parsedTime.reasoning}`);
   }
 
   const proposedDate = new Date(parsedTime.isoTimestamp);
 
   // Check availability for all internal attendees
-  console.log('[handleCounterProposal] Checking availability for:', proposedDate.toISOString());
+  console.log('[counterProposal] Checking availability...');
+  console.log('[counterProposal]   Proposed time:', proposedDate.toISOString());
+  console.log('[counterProposal]   Duration:', request.duration_minutes || 30, 'minutes');
+  console.log('[counterProposal]   Checking calendars for:', internalEmails);
 
   const availabilityResult = await checkSlotAvailability(
     request.created_by,
@@ -576,14 +784,22 @@ async function handleCounterProposal(
     userTimezone
   );
 
+  console.log('[counterProposal] Availability result:', {
+    available: availabilityResult.available,
+    conflictingAttendees: availabilityResult.conflictingAttendees,
+    error: availabilityResult.error
+  });
+
   if (availabilityResult.error) {
-    console.error('[handleCounterProposal] Availability check error:', availabilityResult.error);
+    console.log('[counterProposal] ✗ Availability check error:', availabilityResult.error);
     return await fallbackToHumanReview(request, analysis, `Availability check failed: ${availabilityResult.error}`);
   }
 
   if (availabilityResult.available) {
     // TIME WORKS! Automatically confirm and book the meeting
-    console.log('[handleCounterProposal] Time is available! Auto-confirming...');
+    console.log('[counterProposal] ✓ Time is AVAILABLE!');
+    console.log('[counterProposal] MEETING_AUTO_CONFIRM_DISABLED =', MEETING_AUTO_CONFIRM_DISABLED);
+    console.log('[counterProposal] Calling confirmAndBookMeeting...');
 
     const bookResult = await confirmAndBookMeeting(
       request,
@@ -594,7 +810,27 @@ async function handleCounterProposal(
       email.id
     );
 
+    console.log('[counterProposal] Booking result:', {
+      success: bookResult.success,
+      isDraft: bookResult.isDraft,
+      calendarEventId: bookResult.calendarEventId,
+      error: bookResult.error
+    });
+
     if (bookResult.success) {
+      if (bookResult.isDraft) {
+        // Draft was created - time is available but needs manual confirmation
+        console.log('[counterProposal] ✓ Draft created for counter-proposal - awaiting manual confirmation');
+        return {
+          processed: true,
+          schedulingRequestId: request.id,
+          action: 'counter_proposal_draft_created',
+          newStatus: SCHEDULING_STATUS.CONFIRMING, // Draft ready for manual confirmation
+        };
+      }
+
+      // Full confirmation - email sent and calendar created
+      console.log('[counterProposal] ✓ Meeting confirmed and calendar event created!');
       await adminSchedulingService.logAction(request.id, {
         action_type: ACTION_TYPES.STATUS_CHANGED,
         message_content: `Automatically confirmed meeting for ${proposedDate.toISOString()}`,
@@ -609,12 +845,14 @@ async function handleCounterProposal(
         newStatus: SCHEDULING_STATUS.CONFIRMED,
       };
     } else {
-      console.error('[handleCounterProposal] Failed to book meeting:', bookResult.error);
+      console.log('[counterProposal] ✗ Booking failed:', bookResult.error);
       return await fallbackToHumanReview(request, analysis, `Booking failed: ${bookResult.error}`);
     }
   } else {
     // TIME DOESN'T WORK - Send alternative times
-    console.log('[handleCounterProposal] Time not available. Conflicts:', availabilityResult.conflictingAttendees);
+    console.log('[counterProposal] ✗ Time NOT available');
+    console.log('[counterProposal]   Conflicts with:', availabilityResult.conflictingAttendees);
+    console.log('[counterProposal] Sending alternative times...');
 
     // Use the parsed timestamp with timezone, not the raw description
     // This ensures correct timezone handling on UTC servers
@@ -629,7 +867,14 @@ async function handleCounterProposal(
       email.id
     );
 
+    console.log('[counterProposal] sendAlternativeTimes result:', {
+      success: alternativeResult.success,
+      isDraft: alternativeResult.isDraft,
+      error: alternativeResult.error
+    });
+
     if (alternativeResult.success) {
+      console.log('[counterProposal] ✓ Alternative times sent successfully, isDraft:', alternativeResult.isDraft);
       await adminSchedulingService.logAction(request.id, {
         action_type: ACTION_TYPES.EMAIL_SENT,
         message_content: `Sent alternative times because "${timeDescription}" has conflicts`,
@@ -868,6 +1113,9 @@ async function addCategoryToEmail(
  *
  * If replyToMessageId is provided, creates a reply to that message (preserving thread)
  * Otherwise creates a new message
+ *
+ * SAFEGUARD: When SCHEDULER_DRAFT_ONLY_MODE is true, emails are saved as drafts
+ * for manual review instead of being sent automatically.
  */
 async function sendEmailWithCategory(
   token: string,
@@ -877,7 +1125,7 @@ async function sendEmailWithCategory(
     toRecipients: Array<{ emailAddress: { address: string; name?: string } }>;
   },
   replyToMessageId?: string
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
+): Promise<{ success: boolean; messageId?: string; error?: string; isDraft?: boolean }> {
   try {
     let draftResponse: Response;
 
@@ -937,7 +1185,15 @@ async function sendEmailWithCategory(
       }
     }
 
-    // Step 3: Send the draft
+    // SAFEGUARD: If draft-only mode is enabled, skip sending and leave as draft
+    if (SCHEDULER_DRAFT_ONLY_MODE) {
+      console.log(`[sendEmailWithCategory] DRAFT ONLY MODE - Email saved as draft for manual review:`, messageId);
+      console.log(`[sendEmailWithCategory] Subject: ${message.subject}`);
+      console.log(`[sendEmailWithCategory] To: ${message.toRecipients.map(r => r.emailAddress.address).join(', ')}`);
+      return { success: true, messageId, isDraft: true };
+    }
+
+    // Step 3: Send the draft (only if not in draft-only mode)
     const sendResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}/send`, {
       method: 'POST',
       headers: {
@@ -1091,6 +1347,7 @@ CRITICAL DATE RULE: When someone says "[day] the [number]" like "Monday the 5th"
 
 /**
  * Check if a specific time slot is available for all required attendees
+ * IMPORTANT: This now includes the organizer's own calendar in the check
  */
 async function checkSlotAvailability(
   userId: string,
@@ -1107,12 +1364,32 @@ async function checkSlotAvailability(
       return { available: false, conflictingAttendees: [], error: 'No valid token' };
     }
 
+    // Get the organizer's email to include in the availability check
+    let organizerEmail: string | null = null;
+    try {
+      const meResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (meResponse.ok) {
+        const meData = await meResponse.json();
+        organizerEmail = meData.mail || meData.userPrincipalName;
+      }
+    } catch (err) {
+      console.warn('[checkSlotAvailability] Could not get organizer email:', err);
+    }
+
+    // Combine organizer email with attendee emails (avoid duplicates)
+    const allSchedulesToCheck = organizerEmail
+      ? [...new Set([organizerEmail, ...attendeeEmails])]
+      : attendeeEmails;
+
     const tz = normalizeTimezone(timezone);
     const startTime = formatForGraphAPI(proposedTime, tz);
     const endDate = addMinutes(proposedTime, durationMinutes);
     const endTime = formatForGraphAPI(endDate, tz);
 
-    console.log(`[checkSlotAvailability] Checking ${startTime} to ${endTime} (${tz}) for ${attendeeEmails.join(', ')}`);
+    console.log(`[checkSlotAvailability] Checking ${startTime} to ${endTime} (${tz}) for ${allSchedulesToCheck.join(', ')}`);
+    console.log(`[checkSlotAvailability] Organizer: ${organizerEmail || 'unknown'}, Attendees: ${attendeeEmails.join(', ')}`);
 
     const response = await fetch('https://graph.microsoft.com/v1.0/me/calendar/getSchedule', {
       method: 'POST',
@@ -1121,7 +1398,7 @@ async function checkSlotAvailability(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        schedules: attendeeEmails,
+        schedules: allSchedulesToCheck,
         startTime: { dateTime: startTime, timeZone: tz },
         endTime: { dateTime: endTime, timeZone: tz },
         availabilityViewInterval: durationMinutes,
@@ -1159,8 +1436,13 @@ async function checkSlotAvailability(
   }
 }
 
+// SAFEGUARD: Prevent automatic meeting confirmation and calendar creation
+// Set to true to require manual confirmation until timezone issues are verified fixed
+const MEETING_AUTO_CONFIRM_DISABLED = true;
+
 /**
  * Send confirmation email and create calendar event
+ * When MEETING_AUTO_CONFIRM_DISABLED is true, creates a draft email for manual review
  */
 async function confirmAndBookMeeting(
   request: SchedulingRequest,
@@ -1169,7 +1451,7 @@ async function confirmAndBookMeeting(
   prospectName: string,
   userId: string,
   replyToMessageId?: string
-): Promise<{ success: boolean; calendarEventId?: string; error?: string }> {
+): Promise<{ success: boolean; calendarEventId?: string; error?: string; isDraft?: boolean }> {
   const supabase = createAdminClient();
 
   try {
@@ -1213,6 +1495,28 @@ async function confirmAndBookMeeting(
     if (!emailResult.success) {
       console.error('[confirmAndBookMeeting] Failed to send email:', emailResult.error);
       return { success: false, error: `Email send failed: ${emailResult.error}` };
+    }
+
+    // SAFEGUARD: When auto-confirmation is disabled, save email as draft and skip calendar/status updates
+    if (MEETING_AUTO_CONFIRM_DISABLED) {
+      console.log('[confirmAndBookMeeting] SAFEGUARD ACTIVE - Auto-confirmation disabled');
+      console.log('[confirmAndBookMeeting] Draft email created for meeting at:', confirmedTime.toISOString());
+      console.log('[confirmAndBookMeeting] Time in ET:', confirmedTime.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      console.log('[confirmAndBookMeeting] Email saved as draft - requires manual review before sending and creating calendar event');
+
+      // Log action for visibility
+      await adminSchedulingService.logAction(request.id, {
+        action_type: ACTION_TYPES.STATUS_CHANGED,
+        message_content: `Counter-proposal accepted - draft confirmation email created for ${formattedTime}. Requires manual review before sending.`,
+        actor: 'ai',
+        ai_reasoning: `Time slot is available. Draft created for manual review due to MEETING_AUTO_CONFIRM_DISABLED safeguard.`,
+      });
+
+      return {
+        success: true,
+        isDraft: true,
+        error: 'Draft created for manual review. Calendar event not created - please confirm manually.',
+      };
     }
 
     console.log('[confirmAndBookMeeting] Confirmation email sent with X-FORCE category');
@@ -1303,6 +1607,109 @@ async function confirmAndBookMeeting(
       console.log('[confirmAndBookMeeting] Request status updated to CONFIRMED for:', request.id);
     }
 
+    // ============================================
+    // RESOLVE RELATED ITEMS (Consolidation Fix)
+    // ============================================
+    // When a meeting is confirmed, clean up all related Action Now items:
+    // 1. Resolve any BOOK_MEETING_APPROVAL attention flags for this scheduling request
+    // 2. Mark communications in the thread as responded
+
+    // 1. Resolve attention flags linked to this scheduling request
+    const { data: relatedFlags, error: flagsError } = await supabase
+      .from('attention_flags')
+      .select('id')
+      .eq('source_id', request.id)
+      .eq('status', 'open')
+      .in('flag_type', ['BOOK_MEETING_APPROVAL', 'NEEDS_REPLY', 'NO_NEXT_STEP_AFTER_MEETING']);
+
+    if (flagsError) {
+      console.warn('[confirmAndBookMeeting] Error finding related flags:', flagsError);
+    } else if (relatedFlags && relatedFlags.length > 0) {
+      const flagIds = relatedFlags.map(f => f.id);
+      const { error: resolveError } = await supabase
+        .from('attention_flags')
+        .update({
+          status: 'resolved',
+          resolved_at: new Date().toISOString(),
+          resolution_notes: `Auto-resolved: Meeting confirmed for ${confirmedTime.toISOString()}`,
+        })
+        .in('id', flagIds);
+
+      if (resolveError) {
+        console.warn('[confirmAndBookMeeting] Error resolving flags:', resolveError);
+      } else {
+        console.log(`[confirmAndBookMeeting] Resolved ${flagIds.length} attention flags`);
+      }
+    }
+
+    // 2. Also resolve flags by company_id if they are BOOK_MEETING_APPROVAL type
+    if (request.company_id) {
+      const { data: companyFlags, error: companyFlagsError } = await supabase
+        .from('attention_flags')
+        .select('id')
+        .eq('company_id', request.company_id)
+        .eq('status', 'open')
+        .eq('flag_type', 'BOOK_MEETING_APPROVAL');
+
+      if (!companyFlagsError && companyFlags && companyFlags.length > 0) {
+        const flagIds = companyFlags.map(f => f.id);
+        await supabase
+          .from('attention_flags')
+          .update({
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+            resolution_notes: `Auto-resolved: Meeting confirmed for ${confirmedTime.toISOString()}`,
+          })
+          .in('id', flagIds);
+        console.log(`[confirmAndBookMeeting] Resolved ${flagIds.length} company BOOK_MEETING_APPROVAL flags`);
+      }
+    }
+
+    // 3. Mark communications in the thread as responded
+    if (request.email_thread_id) {
+      const { error: commError } = await supabase
+        .from('communications')
+        .update({
+          awaiting_our_response: false,
+          responded_at: new Date().toISOString(),
+        })
+        .eq('thread_id', request.email_thread_id)
+        .eq('awaiting_our_response', true);
+
+      if (commError) {
+        console.warn('[confirmAndBookMeeting] Error marking communications as responded:', commError);
+      } else {
+        console.log('[confirmAndBookMeeting] Marked thread communications as responded');
+      }
+    }
+
+    // 4. Also mark communications by company if we have attendee emails
+    const externalEmails = (request.attendees || [])
+      .filter((a: SchedulingAttendee) => a.side === 'external')
+      .map((a: SchedulingAttendee) => a.email.toLowerCase());
+
+    if (externalEmails.length > 0 && request.company_id) {
+      // Find recent communications from these attendees that are awaiting response
+      const { data: recentComms } = await supabase
+        .from('communications')
+        .select('id')
+        .eq('company_id', request.company_id)
+        .eq('awaiting_our_response', true)
+        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()); // Last 7 days
+
+      if (recentComms && recentComms.length > 0) {
+        const commIds = recentComms.map(c => c.id);
+        await supabase
+          .from('communications')
+          .update({
+            awaiting_our_response: false,
+            responded_at: new Date().toISOString(),
+          })
+          .in('id', commIds);
+        console.log(`[confirmAndBookMeeting] Marked ${commIds.length} company communications as responded`);
+      }
+    }
+
     return { success: true, calendarEventId: calendarEvent.id };
   } catch (err) {
     console.error('[confirmAndBookMeeting] Error:', err);
@@ -1320,7 +1727,7 @@ async function sendAlternativeTimes(
   userId: string,
   proposedTimeDescription: string,
   replyToMessageId?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; isDraft?: boolean }> {
   try {
     const { getValidToken } = await import('@/lib/microsoft/auth');
     const token = await getValidToken(userId);
@@ -1418,8 +1825,8 @@ X-RAI Labs`;
       })
       .eq('id', request.id);
 
-    console.log('[sendAlternativeTimes] Alternative times email sent');
-    return { success: true };
+    console.log('[sendAlternativeTimes] Alternative times email sent, isDraft:', sendResult.isDraft);
+    return { success: true, isDraft: sendResult.isDraft };
   } catch (err) {
     console.error('[sendAlternativeTimes] Error:', err);
     return { success: false, error: String(err) };
@@ -1462,20 +1869,21 @@ function matchSelectedTime(proposedTimes: string[], emailBody: string): string |
   }
 
   // Check for day mentions
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  // Use ET timezone for consistent day name extraction
   for (let i = 0; i < proposedTimes.length; i++) {
     const time = new Date(proposedTimes[i]);
-    const dayName = days[time.getDay()];
+    const dayName = time.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' }).toLowerCase();
     if (bodyLower.includes(dayName)) {
       return proposedTimes[i];
     }
   }
 
   // Check for date patterns (e.g., "the 15th", "December 20")
+  // Use ET timezone for consistent date/month extraction
   for (let i = 0; i < proposedTimes.length; i++) {
     const time = new Date(proposedTimes[i]);
-    const day = time.getDate();
-    const monthName = time.toLocaleDateString('en-US', { month: 'long' }).toLowerCase();
+    const day = parseInt(time.toLocaleDateString('en-US', { day: 'numeric', timeZone: 'America/New_York' }));
+    const monthName = time.toLocaleDateString('en-US', { month: 'long', timeZone: 'America/New_York' }).toLowerCase();
 
     if (bodyLower.includes(`${day}th`) || bodyLower.includes(`${day}st`) ||
         bodyLower.includes(`${day}nd`) || bodyLower.includes(`${day}rd`) ||
@@ -1494,6 +1902,8 @@ function matchSelectedTime(proposedTimes: string[], emailBody: string): string |
 /**
  * Process all unprocessed scheduling-related emails
  * Called after email sync to detect and handle responses
+ *
+ * UPDATED: Now reads from communications table instead of activities
  */
 export async function processSchedulingEmails(userId: string): Promise<{
   processed: number;
@@ -1511,34 +1921,39 @@ export async function processSchedulingEmails(userId: string): Promise<{
   const supabase = createAdminClient();
 
   try {
-    // Get recent inbound emails that haven't been processed for scheduling
-    const { data: recentEmails } = await supabase
-      .from('activities')
+    // Get recent inbound emails from communications table
+    const { data: recentCommunications } = await supabase
+      .from('communications')
       .select('*')
-      .eq('type', 'email_received')
+      .eq('channel', 'email')
+      .eq('direction', 'inbound')
       .eq('user_id', userId)
       .gte('occurred_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order('occurred_at', { ascending: false })
       .limit(50);
 
-    if (!recentEmails || recentEmails.length === 0) {
+    if (!recentCommunications || recentCommunications.length === 0) {
       return result;
     }
 
-    for (const activity of recentEmails) {
+    for (const comm of recentCommunications) {
       result.processed++;
 
+      // Extract sender from their_participants (for inbound emails, sender is in their_participants)
+      const theirParticipants = (comm.their_participants as Array<{ email?: string; name?: string }>) || [];
+      const sender = theirParticipants[0] || { email: '', name: '' };
+
       const email: IncomingEmail = {
-        id: activity.external_id || activity.id,
-        subject: activity.subject || '',
-        body: activity.body || '',
-        bodyPreview: activity.body?.slice(0, 500) || '',
+        id: comm.external_id || comm.id,
+        subject: comm.subject || '',
+        body: comm.full_content || comm.content_preview || '',
+        bodyPreview: comm.content_preview || '',
         from: {
-          address: activity.metadata?.from?.address || '',
-          name: activity.metadata?.from?.name,
+          address: sender.email || '',
+          name: sender.name,
         },
-        receivedDateTime: activity.occurred_at,
-        conversationId: activity.metadata?.conversation_id,
+        receivedDateTime: comm.occurred_at,
+        conversationId: comm.thread_id,
       };
 
       // Try to find matching scheduling request

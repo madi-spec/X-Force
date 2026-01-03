@@ -7,21 +7,63 @@
 // Types
 export * from './types';
 
+// Core modules (new architecture)
+export * from './core/constants';
+export * from './core/TimeParser';
+
+// Processors (two-step analysis)
+export * from './processors/IntentDetector';
+export * from './processors/Escalation';
+
 // Events (Work Integration)
 export * from './events';
+
+// Tagged Timestamps - Bulletproof timezone handling
+export type { TaggedTimestamp, AIExtractedTime } from './taggedTimestamp';
+export {
+  createTaggedTimestamp,
+  createTaggedFromUtc,
+  createTaggedFromDate,
+  formatTaggedForDisplay,
+  formatTaggedForEmail,
+  formatTaggedForGraphAPI,
+  taggedTimestampsEqual,
+  isTaggedInFuture,
+  isTaggedInPast,
+  addMinutesToTagged,
+  getTaggedLocalHour,
+  getTaggedLocalDayOfWeek,
+  getTaggedLocalDate,
+  parseAndTagTimestamp,
+  logTaggedTimestamp,
+  isValidTimezone,
+} from './taggedTimestamp';
+
+// Timestamp Validation
+export type { ValidationResult, ValidationContext } from './timestampValidator';
+export {
+  validateProposedTime,
+  validateProposedTimes,
+  logTimestampConversion,
+  detectMistreatedBareTimestamp,
+  suggestCorrectInterpretation,
+  isSlotStillValid,
+  formatValidationError,
+} from './timestampValidator';
 
 // Services
 export { SchedulingService, schedulingService, adminSchedulingService } from './schedulingService';
 
 // Email Generation
+export type { EmailType, ParsedSchedulingResponse } from './emailGeneration';
 export {
   generateSchedulingEmail,
   generateEmailVariants,
   formatTimeSlotsForEmail,
   generateProposedTimes,
   parseSchedulingResponse,
+  parseSchedulingResponseLegacy,
   generateMeetingPrepBrief,
-  type EmailType,
 } from './emailGeneration';
 
 // Response Processing (Phase 2)
@@ -35,11 +77,20 @@ export {
 } from './responseProcessor';
 
 // Calendar Integration
+export type { TaggedAvailabilitySlot, MultiAttendeeAvailabilityResult, TaggedMultiAttendeeAvailabilityResult } from './calendarIntegration';
 export {
   createMeetingCalendarEvent,
+  createMeetingCalendarEventWithTagged,
   updateMeetingCalendarEvent,
   cancelMeetingCalendarEvent,
   getAvailableTimeSlots,
+  getRealAvailableSlots,
+  getTaggedAvailableSlots,
+  getMultiAttendeeAvailability,
+  getTaggedMultiAttendeeAvailability,
+  verifyTaggedTimestamp,
+  formatSlotsForPrompt,
+  isUSHoliday,
 } from './calendarIntegration';
 
 // Confirmation Workflow (Phase 2)
@@ -325,3 +376,31 @@ export {
   type RateLimitCheck,
   type CreateApiKeyInput,
 } from './apiKeyService';
+
+// Draft System (Robust Preview → Send Flow)
+export {
+  generateDraft,
+  getDraft,
+  updateDraft,
+  getDraftForSending,
+  markDraftSent,
+  expireDraft,
+  regenerateDraft,
+  clearDraft,
+} from './draftService';
+
+// Draft Types
+export type {
+  DraftStatus,
+  DraftProposedTime,
+  SchedulingDraft,
+  SchedulingRequestWithDraft,
+} from './types';
+
+export { DRAFT_STATUS } from './types';
+
+// Jobs (Focused Cron Architecture)
+export * from './jobs';
+
+// Monitoring (Health Checks)
+export * from './monitoring';

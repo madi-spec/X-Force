@@ -488,3 +488,52 @@ export interface SchedulerDashboardData {
     cancelled: number;
   };
 }
+
+// ============================================
+// DRAFT SYSTEM TYPES
+// ============================================
+
+export const DRAFT_STATUS = {
+  NONE: 'none',
+  PENDING_REVIEW: 'pending_review',
+  APPROVED: 'approved',
+  SENT: 'sent',
+  EXPIRED: 'expired',
+} as const;
+
+export type DraftStatus = (typeof DRAFT_STATUS)[keyof typeof DRAFT_STATUS];
+
+/**
+ * Proposed time with full timezone info (stored in draft_proposed_times)
+ * This ensures times are locked after preview and never regenerated
+ */
+export interface DraftProposedTime {
+  localDateTime: string;      // "2025-01-06T14:00:00"
+  timezone: string;           // "America/New_York"
+  utc: string;                // "2025-01-06T19:00:00.000Z"
+  display: string;            // "Monday, January 6 at 2:00 PM ET"
+}
+
+/**
+ * Draft content structure stored in database
+ */
+export interface SchedulingDraft {
+  subject: string;
+  body: string;
+  proposedTimes: DraftProposedTime[];
+  generatedAt: string;        // ISO timestamp
+  editedAt: string | null;    // ISO timestamp or null
+  status: DraftStatus;
+}
+
+/**
+ * Extended scheduling request with draft info
+ */
+export interface SchedulingRequestWithDraft extends SchedulingRequest {
+  draft_email_subject: string | null;
+  draft_email_body: string | null;
+  draft_proposed_times: DraftProposedTime[] | null;
+  draft_generated_at: string | null;
+  draft_edited_at: string | null;
+  draft_status: DraftStatus;
+}

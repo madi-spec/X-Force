@@ -18,7 +18,7 @@ import {
   generateProposedTimes,
 } from './emailGeneration';
 import { sendMeetingReminder, executeConfirmationWorkflow } from './confirmationWorkflow';
-import { sendEmail } from '@/lib/microsoft/emailSync';
+import { sendEmail } from '@/lib/microsoft/sendEmail';
 import { getAvailableTimeSlots } from './calendarIntegration';
 import {
   SchedulingRequest,
@@ -248,6 +248,16 @@ async function sendInitialProposal(
       return { error: sendResult.error };
     }
 
+    // Capture email_thread_id for response matching
+    if (sendResult.conversationId) {
+      await supabase
+        .from('scheduling_requests')
+        .update({ email_thread_id: sendResult.conversationId })
+        .eq('id', request.id);
+
+      console.log(`[AutomationProcessor] Captured email_thread_id: ${sendResult.conversationId} for request ${request.id}`);
+    }
+
     // Update request
     const proposedTimeStrings = proposedTimes.map(t => t.toISOString());
 
@@ -379,6 +389,16 @@ async function sendFollowUp(
 
     if (!sendResult.success) {
       return { error: sendResult.error };
+    }
+
+    // Capture email_thread_id for response matching (update if not already set)
+    if (sendResult.conversationId && !request.email_thread_id) {
+      await supabase
+        .from('scheduling_requests')
+        .update({ email_thread_id: sendResult.conversationId })
+        .eq('id', request.id);
+
+      console.log(`[AutomationProcessor] Captured email_thread_id on follow-up: ${sendResult.conversationId} for request ${request.id}`);
     }
 
     // Log action
@@ -590,6 +610,16 @@ export async function handleNoShowRecovery(
 
     if (!sendResult.success) {
       return { success: false, error: sendResult.error };
+    }
+
+    // Capture email_thread_id for response matching
+    if (sendResult.conversationId) {
+      await supabase
+        .from('scheduling_requests')
+        .update({ email_thread_id: sendResult.conversationId })
+        .eq('id', schedulingRequestId);
+
+      console.log(`[AutomationProcessor] Captured email_thread_id on no-show recovery: ${sendResult.conversationId} for request ${schedulingRequestId}`);
     }
 
     // Transition back to proposing for rescheduling
