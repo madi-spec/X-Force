@@ -36,6 +36,7 @@ interface NavItem {
 // Primary navigation - new IA structure with IDs for role-based hiding
 const primaryNavigation: NavItem[] = [
   { id: 'work', name: 'Work', href: '/work', icon: Inbox },
+  { id: 'scheduler', name: 'Scheduler', href: '/scheduler', icon: Calendar },
   { id: 'customers', name: 'Customers', href: '/customers', icon: Users },
   { id: 'process', name: 'Process Studio', href: '/process', icon: Workflow },
   { id: 'products', name: 'Products', href: '/products', icon: Package },
@@ -49,7 +50,6 @@ const secondaryNavigation: NavItem[] = [
   { id: 'support_cases', name: 'Support Cases', href: '/cases', icon: Ticket },
   { id: 'companies', name: 'Companies', href: '/companies', icon: Building2 },
   { id: 'pipeline', name: 'Deals', href: '/deals', icon: Zap },
-  { id: 'scheduler', name: 'Scheduler', href: '/scheduler', icon: Calendar },
   { id: 'legacy_deals', name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { id: 'onboarding_dashboard', name: 'Onboarding', href: '/onboarding', icon: ListTodo },
 ];
