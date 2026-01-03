@@ -75,6 +75,8 @@ interface IncomingEmail {
     address: string;
     name?: string;
   };
+  /** CC recipients on the email */
+  ccRecipients?: Array<{ address: string; name?: string }>;
   receivedDateTime: string;
   conversationId?: string;
 }
@@ -85,16 +87,29 @@ interface ProcessingResult {
   action?: string;
   newStatus?: SchedulingStatus;
   error?: string;
+  /** Whether this result requires human review */
+  requiresHumanReview?: boolean;
+  /** Reason for human review */
+  reviewReason?: string;
 }
 
 interface ResponseAnalysis {
-  intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'unclear';
+  intent: 'accept' | 'decline' | 'counter_propose' | 'question' | 'out_of_office' | 'add_attendees' | 'time_in_past' | 'unclear';
   selectedTime?: string;
   selectedTimeTagged?: TaggedTimestamp;
   counterProposedTimes?: string[];
   counterProposedTimesTagged?: TaggedTimestamp[];
   question?: string;
+  /** Additional attendees the prospect wants to add */
+  additionalAttendees?: Array<{ name?: string; email?: string }>;
+  /** Return date if out-of-office */
+  outOfOfficeReturnDate?: string;
+  /** Whether this requires human review */
+  requiresHumanReview?: boolean;
+  /** Reason for human review */
+  humanReviewReason?: string;
   sentiment: 'positive' | 'neutral' | 'negative';
+  confidence: 'high' | 'medium' | 'low';
   reasoning: string;
   isConfused?: boolean;
   confusionReason?: string;
@@ -123,25 +138,55 @@ function getDaySuffix(day: number): string {
 // ============================================
 
 /**
+ * Options for analyzeSchedulingResponse
+ */
+interface AnalyzeSchedulingOptions {
+  /** CC recipients from the email for attendee detection */
+  ccRecipients?: string[];
+  /** Correlation ID for logging */
+  correlationId?: string;
+}
+
+/**
+ * Response from analyzeSchedulingResponse
+ */
+export interface SchedulingAnalysisResult {
+  intent: 'accept' | 'counter_propose' | 'decline' | 'question' | 'out_of_office' | 'add_attendees' | 'time_in_past' | 'reschedule' | 'delegate' | 'confused' | 'unclear';
+  selectedTime?: string;
+  counterProposedTimes?: Array<{ description: string; isoTimestamp: string; displayText: string }>;
+  question?: string;
+  /** Additional attendees the prospect wants to add to the meeting */
+  additionalAttendees?: Array<{ name?: string; email?: string }>;
+  /** Return date if out-of-office response */
+  outOfOfficeReturnDate?: string;
+  /** Whether this response requires human review */
+  requiresHumanReview?: boolean;
+  /** Reason for human review */
+  humanReviewReason?: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+/**
  * Analyze a scheduling email response using the managed prompt from the database.
  * This replaces the fragmented detectIntent() + extractTimesFromText() approach.
  *
  * The prompt is editable at /settings/ai-prompts (key: scheduler_response_parsing)
+ *
+ * Handles:
+ * - Standard accept/decline/counter-propose intents
+ * - Out-of-office responses → flags for human review
+ * - Requests to add attendees → extracts from CC and body
+ * - Time validation → flags times <4 hours in future
  */
 async function analyzeSchedulingResponse(
   emailBody: string,
   proposedTimes: Array<{ utc: string; display: string }> | string[] | null,
   timezone: string,
-  correlationId?: string
-): Promise<{
-  intent: 'accept' | 'counter_propose' | 'decline' | 'question' | 'reschedule' | 'delegate' | 'confused' | 'unclear';
-  selectedTime?: string;
-  counterProposedTimes?: Array<{ description: string; isoTimestamp: string; displayText: string }>;
-  question?: string;
-  sentiment: 'positive' | 'neutral' | 'negative';
-  confidence: 'high' | 'medium' | 'low';
-  reasoning: string;
-}> {
+  options?: AnalyzeSchedulingOptions
+): Promise<SchedulingAnalysisResult> {
+  const correlationId = options?.correlationId;
   const today = new Date();
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
@@ -198,13 +243,21 @@ async function analyzeSchedulingResponse(
   console.log(`[analyzeSchedulingResponse] Email body length: ${emailBody.length}`);
 
   try {
+    // Get current timestamp for 4-hour validation
+    const currentTimestamp = new Date().toISOString();
+
+    // Extract CC recipients if available (passed in options)
+    const ccRecipients = options?.ccRecipients?.join(', ') || 'None';
+
     // Load the managed prompt from database
     const promptResult = await getPromptWithVariables('scheduler_response_parsing', {
       todayFormatted,
+      currentTimestamp,
       yearGuidance,
       calendarContext,
       proposedTimes: proposedTimesFormatted,
       emailBody,
+      ccRecipients,
     });
 
     if (!promptResult || !promptResult.prompt) {
@@ -215,15 +268,7 @@ async function analyzeSchedulingResponse(
     console.log(`[analyzeSchedulingResponse] Loaded prompt, calling AI...`);
 
     // Call AI with the managed prompt
-    const { data: response } = await callAIJson<{
-      intent: 'accept' | 'counter_propose' | 'decline' | 'question' | 'reschedule' | 'delegate' | 'confused' | 'unclear';
-      selectedTime?: string;
-      counterProposedTimes?: Array<{ description: string; isoTimestamp: string; displayText: string }>;
-      question?: string;
-      sentiment: 'positive' | 'neutral' | 'negative';
-      confidence: 'high' | 'medium' | 'low';
-      reasoning: string;
-    }>({
+    const { data: response } = await callAIJson<SchedulingAnalysisResult>({
       prompt: promptResult.prompt,
       schema: promptResult.schema || undefined,
       model: (promptResult.model as 'claude-sonnet-4-20250514' | 'claude-3-haiku-20240307' | 'claude-opus-4-20250514') || 'claude-sonnet-4-20250514',
@@ -235,7 +280,20 @@ async function analyzeSchedulingResponse(
       confidence: response.confidence,
       sentiment: response.sentiment,
       counterProposedCount: response.counterProposedTimes?.length || 0,
+      additionalAttendeesCount: response.additionalAttendees?.length || 0,
+      requiresHumanReview: response.requiresHumanReview || false,
     });
+
+    // Log special cases
+    if (response.requiresHumanReview) {
+      console.log(`[analyzeSchedulingResponse] ⚠️ Human review required: ${response.humanReviewReason}`);
+    }
+    if (response.additionalAttendees?.length) {
+      console.log(`[analyzeSchedulingResponse] 👥 Additional attendees detected:`, response.additionalAttendees);
+    }
+    if (response.intent === 'out_of_office') {
+      console.log(`[analyzeSchedulingResponse] 📅 Out of office - return date: ${response.outOfOfficeReturnDate || 'not specified'}`);
+    }
 
     return response;
   } catch (err) {
@@ -246,6 +304,8 @@ async function analyzeSchedulingResponse(
       sentiment: 'neutral',
       confidence: 'low',
       reasoning: `Analysis failed: ${err}`,
+      requiresHumanReview: true,
+      humanReviewReason: `AI analysis failed: ${err}`,
     };
   }
 }
@@ -549,11 +609,15 @@ export async function processSchedulingResponse(
     // Uses managed prompt from database (scheduler_response_parsing)
     // ============================================
     console.log(`[processResponse:${correlationId}] Using unified analysis with managed prompt...`);
+
+    // Extract CC recipients from email for attendee detection
+    const ccRecipients = email.ccRecipients?.map(r => r.address) || [];
+
     const unifiedAnalysis = await analyzeSchedulingResponse(
       email.body || email.bodyPreview || '',
       proposedTimesContext,
       userTimezone,
-      correlationId
+      { correlationId, ccRecipients }
     );
 
     console.log(`[processResponse:${correlationId}] Unified analysis complete:`, {
@@ -613,7 +677,12 @@ export async function processSchedulingResponse(
       selectedTime: unifiedAnalysis.selectedTime,
       counterProposedTimes: unifiedAnalysis.counterProposedTimes?.map(t => t.isoTimestamp),
       question: unifiedAnalysis.question,
+      additionalAttendees: unifiedAnalysis.additionalAttendees,
+      outOfOfficeReturnDate: unifiedAnalysis.outOfOfficeReturnDate,
+      requiresHumanReview: unifiedAnalysis.requiresHumanReview,
+      humanReviewReason: unifiedAnalysis.humanReviewReason,
       sentiment: unifiedAnalysis.sentiment,
+      confidence: unifiedAnalysis.confidence || 'medium',
       reasoning: unifiedAnalysis.reasoning,
     };
 
@@ -730,6 +799,18 @@ export async function processSchedulingResponse(
       case 'unclear':
         console.log('[processResponse] → handleUnclearResponse()');
         return await handleUnclearResponse(schedulingRequest, analysis, email);
+
+      case 'out_of_office':
+        console.log('[processResponse] → handleOutOfOffice() - flagging for human review');
+        return await handleHumanReviewRequired(schedulingRequest, analysis, email, 'out_of_office');
+
+      case 'add_attendees':
+        console.log('[processResponse] → handleAddAttendees() - flagging for human review');
+        return await handleHumanReviewRequired(schedulingRequest, analysis, email, 'add_attendees');
+
+      case 'time_in_past':
+        console.log('[processResponse] → handleTimeInPast() - flagging for human review');
+        return await handleHumanReviewRequired(schedulingRequest, analysis, email, 'time_in_past');
 
       default:
         console.log('[processResponse] → Unknown intent, returning error');
@@ -1283,6 +1364,83 @@ async function handleUnclearResponse(
   };
 }
 
+/**
+ * Handle responses that require human review
+ * - out_of_office: Prospect is away, need to wait or reschedule
+ * - add_attendees: Prospect wants to add people to the meeting
+ * - time_in_past: Prospect suggested a time that has passed or is <4 hours away
+ */
+async function handleHumanReviewRequired(
+  request: SchedulingRequest,
+  analysis: ResponseAnalysis,
+  email: IncomingEmail,
+  reviewType: 'out_of_office' | 'add_attendees' | 'time_in_past'
+): Promise<ProcessingResult> {
+  const supabase = createAdminClient();
+
+  // Determine the appropriate next action based on review type
+  let nextActionType: string;
+  let actionDescription: string;
+
+  switch (reviewType) {
+    case 'out_of_office':
+      nextActionType = 'human_review_ooo';
+      actionDescription = `Out of office response detected${
+        analysis.outOfOfficeReturnDate ? `. Returns: ${analysis.outOfOfficeReturnDate}` : ''
+      }`;
+      break;
+
+    case 'add_attendees':
+      nextActionType = 'human_review_attendees';
+      const attendeeInfo = analysis.additionalAttendees
+        ?.map(a => a.email || a.name || 'unknown')
+        .join(', ');
+      actionDescription = `Prospect wants to add attendees: ${attendeeInfo || 'see email'}`;
+      break;
+
+    case 'time_in_past':
+      nextActionType = 'human_review_past_time';
+      actionDescription = `Prospect suggested a time that is in the past or less than 4 hours away`;
+      break;
+
+    default:
+      nextActionType = 'human_review';
+      actionDescription = analysis.humanReviewReason || 'Unknown reason';
+  }
+
+  console.log(`[handleHumanReviewRequired] Type: ${reviewType}`);
+  console.log(`[handleHumanReviewRequired] Action: ${nextActionType}`);
+  console.log(`[handleHumanReviewRequired] Description: ${actionDescription}`);
+
+  // Update the scheduling request to flag for human review
+  await supabase
+    .from('scheduling_requests')
+    .update({
+      status: 'negotiating',
+      next_action_type: nextActionType,
+      next_action_at: new Date().toISOString(),
+    })
+    .eq('id', request.id);
+
+  // Log the action for audit trail
+  await supabase.from('scheduling_actions').insert({
+    scheduling_request_id: request.id,
+    action_type: 'human_review_flagged',
+    ai_reasoning: `${actionDescription}. AI reasoning: ${analysis.reasoning}`,
+    previous_status: request.status,
+    new_status: 'negotiating',
+    actor: 'system',
+  });
+
+  return {
+    processed: true,
+    schedulingRequestId: request.id,
+    action: nextActionType,
+    requiresHumanReview: true,
+    reviewReason: actionDescription,
+  };
+}
+
 // ============================================
 // EMAIL HELPER WITH X-FORCE CATEGORY
 // ============================================
@@ -1447,7 +1605,9 @@ async function sendEmailWithCategory(
 /**
  * Parse natural language time descriptions into ISO timestamps using AI
  *
- * CRITICAL: This function now properly handles timezone conversion.
+ * Uses managed prompt: scheduler_datetime_parsing (editable at /settings/ai-prompts)
+ *
+ * CRITICAL: This function properly handles timezone conversion.
  * - AI returns times in the user's local timezone
  * - We convert to UTC for storage and comparison
  * - The returned isoTimestamp is ALWAYS in UTC (ends with Z)
@@ -1461,7 +1621,41 @@ async function parseProposedDateTime(
   const dateContext = buildDateContextForAI(tz);
   const timestampInstructions = getAITimestampInstructions(tz);
 
-  const prompt = `Parse this proposed meeting time into an ISO timestamp.
+  try {
+    // Try to use managed prompt from database
+    const promptResult = await getPromptWithVariables('scheduler_datetime_parsing', {
+      todayFormatted: dateContext.todayFormatted,
+      currentYear: String(dateContext.currentYear),
+      nextYear: String(dateContext.nextYear),
+      timezoneInfo: dateContext.timezoneInfo,
+      timeDescription,
+      emailContext: emailBody.substring(0, 500),
+      yearGuidance: dateContext.yearGuidance,
+      timestampInstructions,
+      timezone: tz,
+    });
+
+    let prompt: string;
+    let model: string = 'claude-3-haiku-20240307';
+    let maxTokens: number = 500;
+
+    if (promptResult?.prompt) {
+      prompt = promptResult.prompt;
+      model = promptResult.model || model;
+      maxTokens = promptResult.maxTokens || maxTokens;
+    } else {
+      // Fallback to inline prompt if managed prompt not available
+      console.warn('[parseProposedDateTime] Managed prompt not found, using fallback');
+      prompt = `You are an expert at parsing natural language date/time expressions into precise timestamps.
+
+CRITICAL TIMEZONE RULE: The user is in ${tz}. When they say "2pm" they mean 2pm in THEIR timezone, not UTC.
+- If they say "2pm EST", return "...T14:00:00-05:00" (with -05:00 offset)
+- If they say "2pm" without timezone, assume ${tz} and include the appropriate offset
+- NEVER return a bare timestamp like "...T14:00:00" without timezone info
+
+---
+
+Parse this proposed meeting time into an ISO timestamp.
 
 TODAY'S DATE: ${dateContext.todayFormatted}
 CURRENT YEAR: ${dateContext.currentYear}
@@ -1472,54 +1666,20 @@ TIME DESCRIPTION: "${timeDescription}"
 FULL EMAIL CONTEXT:
 ${emailBody.substring(0, 500)}
 
-CRITICAL DATE PARSING RULES:
-
-RULE 1 - SPECIFIC DATE NUMBER TAKES PRIORITY:
-When someone says "[day] the [number]" (e.g., "Monday the 5th", "Tuesday the 14th"):
-- The NUMBER is the most important part - they mean the Xth day of a month
-- Find the NEAREST FUTURE date where the Xth falls on that day of week
-- Example: Today is Dec 27, 2025. "Monday the 5th" = January 5, ${dateContext.nextYear} (because Jan 5, ${dateContext.nextYear} is a Monday)
-- Do NOT interpret this as just "next Monday" - the person explicitly mentioned "the 5th"
-
-RULE 2 - YEAR DETERMINATION:
-- The meeting MUST be in the FUTURE. Never return a date in the past.
-- ${dateContext.yearGuidance}
-- If we're in late December and they mention early January dates, use ${dateContext.nextYear}.
-- ALWAYS double-check: Is the resulting date AFTER ${dateContext.todayFormatted}? If not, add a year.
-
-RULE 3 - DAY/DATE MISMATCH:
-- If they say "Monday the 5th" and the 5th isn't actually a Monday in the nearest month, prioritize the DATE NUMBER over the day name
-- People often get day names wrong but rarely get date numbers wrong
-
-RULE 4 - TIMEZONE HANDLING (CRITICAL):
-${timestampInstructions}
-
 Return a JSON object with:
 - isoTimestamp: The ISO timestamp string WITH TIMEZONE (e.g., "${dateContext.nextYear}-01-05T14:00:00-05:00" for 2pm EST), or null if unparseable
 - confidence: "high", "medium", or "low"
 - reasoning: Brief explanation including the timezone interpretation`;
+    }
 
-  try {
     const response = await callAIJson<{
       isoTimestamp: string | null;
       confidence: 'high' | 'medium' | 'low';
       reasoning: string;
     }>({
       prompt,
-      systemPrompt: `You are an expert at parsing natural language date/time expressions into precise timestamps.
-
-CRITICAL TIMEZONE RULE: The user is in ${tz}. When they say "2pm" they mean 2pm in THEIR timezone, not UTC.
-- If they say "2pm EST", return "...T14:00:00-05:00" (with -05:00 offset)
-- If they say "2pm" without timezone, assume ${tz} and include the appropriate offset
-- NEVER return a bare timestamp like "...T14:00:00" without timezone info
-
-CRITICAL DATE RULE: When someone says "[day] the [number]" like "Monday the 5th", the DATE NUMBER is the key information - find the nearest future month where the Xth day matches (or is close to) that day of week.`,
-      schema: `{
-        "isoTimestamp": "ISO 8601 timestamp string WITH timezone offset (e.g., 2026-01-05T14:00:00-05:00) or null",
-        "confidence": "high|medium|low",
-        "reasoning": "Brief explanation including timezone interpretation"
-      }`,
-      maxTokens: 500,
+      model: model as 'claude-3-haiku-20240307' | 'claude-sonnet-4-20250514',
+      maxTokens,
       temperature: 0.1,
     });
 
