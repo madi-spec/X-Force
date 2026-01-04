@@ -1,226 +1,885 @@
 # X-FORCE Sales Platform
 
-AI-First Sales Platform for X-RAI Labs
-
 ## Project Overview
 
-X-FORCE is a sales pipeline management platform built with:
-- **Frontend**: Next.js 14+ with TypeScript and Tailwind CSS
-- **Backend**: Supabase (Postgres + Auth + Realtime)
-- **AI**: Claude API for insights and automation
-- **Email/Calendar**: Microsoft Graph API (Phase 2)
+AI-first CRM with context-first architecture for X-RAI Labs.
 
-## Key Concepts
+**Tech Stack:** Next.js, TypeScript, Supabase, Microsoft Graph API, Claude API
 
-### Core Philosophy
-- **AI as Orchestrator**: System proactively identifies what needs attention
-- **Process First**: Define ideal sales process, build tech to enforce it
-- **Human Choice Always**: AI recommends, humans decide
-- **From Insight to Action**: AI detects risk/opportunity, creates actionable tasks
+**Key Directories:**
+- `src/lib/intelligence/` - Core AI processing (contextFirstPipeline.ts is main entry)
+- `src/lib/scheduler/` - Meeting scheduling system (30 files)
+- `src/lib/commandCenter/` - Action item management
+- `src/app/api/` - 210 API routes
 
-### Pipeline Stages
-1. New Lead - First contact
-2. Qualifying - Gathering info
-3. Discovery - Understanding pain points
-4. Demo - Product demonstration
-5. Data Review - Reviewing prospect data
-6. Trial - Product trial period
-7. Negotiation - Contract discussions
-8. Closed Won/Lost
+**Current Stats (from documentation audit):**
+- 796 source files
+- 210 API routes
+- 86 database migrations
+- 74 database tables
+- 375 scripts
 
-### Health Score
-Deals are scored 0-100 based on:
-- Engagement Recency (25%)
-- Stage Velocity (20%)
-- Stakeholder Coverage (15%)
-- Activity Quality (15%)
-- Competitor Risk (10%)
-- Trial Engagement (15%)
+## Active Skills
 
-## Directory Structure
-
-```
-src/
-├── app/
-│   ├── (auth)/           # Login pages
-│   ├── (dashboard)/      # Main app pages
-│   │   ├── pipeline/     # Kanban view
-│   │   ├── deals/        # Deal management
-│   │   ├── organizations/
-│   │   ├── contacts/
-│   │   ├── inbox/        # Email (Phase 2)
-│   │   ├── tasks/
-│   │   └── settings/
-│   └── api/              # API routes
-├── components/
-│   ├── ui/               # Base components
-│   ├── pipeline/         # Kanban components
-│   ├── deals/            # Deal components
-│   └── shared/           # Layout, nav
-├── lib/
-│   ├── supabase/         # DB client
-│   ├── ai/               # Claude helpers
-│   └── utils/            # Utilities
-└── types/                # TypeScript types
-```
-
-## Development
-
-### Environment Variables
-Copy `.env.local.example` to `.env.local` and fill in:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `ANTHROPIC_API_KEY`
-
-### Database
-Migrations are in `supabase/migrations/`. Run with Supabase CLI:
-```bash
-supabase db push
-```
-
-### Running Locally
-```bash
-npm run dev
-```
-
-## IMPORTANT: No Dark Mode
-
-**This application is light-mode only. Do NOT add dark mode support.**
-
-- Do NOT use `dark:` prefixed Tailwind classes
-- Do NOT add theme toggle components
-- Do NOT add ThemeProvider or useTheme hooks
-- Do NOT add `prefers-color-scheme` media queries
-- Do NOT add `.dark` class styles
-
-If asked to add dark mode, decline and reference this section.
-
-## Key Files
-
-- `src/types/index.ts` - All TypeScript types
-- `src/lib/ai/health-score.ts` - Health score calculation
-- `src/lib/supabase/` - Database clients
-- `supabase/migrations/` - Database schema
-
-## Market Segments
-
-| Segment | Agent Count | Deal Value |
-|---------|-------------|------------|
-| SMB | 1-5 | $5-15K ACV |
-| Mid-Market | 6-20 | $15-50K ACV |
-| Enterprise | 21-100 | $50-150K ACV |
-| PE Platform | 100+ | $150K+ ACV |
-| Franchisor | Corp + franchisees | $250K+ ACV |
-
-## Rep Skill System
-
-### Levels
-- **L1 Foundation**: <3 months OR <5 deals (SMB/Voice-only)
-- **L2 Established**: 5+ deals, 3+ months (SMB + Mid-Market)
-- **L3 Senior**: 20+ deals, 12+ months (All segments)
-
-### Certifications
-- Voice Core, Voice Advanced
-- X-RAI Performance Center, Action Hub, Accountability Hub
-- AI Agents Basic, AI Agents Integrated
-- CRM: FieldRoutes, PestPac, RealGreen
+| Skill | Location | Status |
+|-------|----------|--------|
+| Documentation Audit | `docs/skills/documentation-audit/` | Primary |
+| Consolidation Audit | `docs/skills/consolidation-audit/` | After docs complete |
+| Bug Investigation | `docs/skills/bug-investigation/` | For debugging |
+| Performance Audit | `docs/skills/performance-audit/` | For optimization |
 
 ---
 
-# Ultimate App Design System Bible: Technical Truth + Emotional Resonance
+## Data Architecture: Product-Centric Model
 
-## Executive Summary: The Design DNA Decoded
+X-FORCE uses a product-centric architecture where sales opportunities are tracked per product.
 
-Your application represents what I call **"Accessible Sophistication"** - a masterful execution of enterprise-grade data visualization that transcends typical B2B SaaS. After deep codebase analysis, the essence crystallizes:
+### Primary Entities
 
-**"What Stripe Dashboard would look like if designed by Dieter Rams for McKinsey consultants who appreciate good typography"**
+- **company_products** - Primary entity for sales/customer relationships
+  - Links: company_id, product_id, current_stage_id
+  - Status: `in_sales`, `in_onboarding`, `active`, `inactive`
+  - Tracks MRR, stage history, ownership
 
-Or more viscerally: **"If McKinsey built a SaaS product with Apple's design team and Stripe's sensibilities"**
+- **products** - Product catalog (X-RAI 1, X-RAI 2, etc.)
+  - Types: suite, addon, module
+  - Each product has its own sales stages
 
-This is **Jony Ive meets Jensen Huang** - minimalism with a purpose, beauty through utility, complexity made simple. It's the **Patagonia vest of SaaS** - understated quality that those in the know immediately recognize.
+- **product_process_stages** - Per-product pipeline stages
 
-## The Vibe Distilled: All Key Phrases
+### Foreign Key Pattern
 
-### Core Identity Statements
+Tables support both legacy deals and new products during transition:
+- `deal_id` - **@deprecated**, maintained for backwards compatibility
+- `company_product_id` - **Preferred**, use for all new code
 
-- **"McKinsey meets Apple meets Stripe"** - The holy trinity of your design
-- **"Boardroom Minimalism"** - Every pixel presentable to the C-suite
-- **"Quiet Professional"** - Sophisticated business intelligence meets approachable simplicity
-- **"Bloomberg Terminal meets Breathing Room"** - Professional density with modern spacing
-- **"Swiss Watchmaker's Approval"** - The north star for every design decision
-- **"Enterprise Intelligence with Human Touch"** - Power without intimidation
-- **"The Hermès of SaaS"** - Quietly luxurious, never ostentatious
-- **"Tesla Model S Interior"** - Minimal, functional, unmistakably premium
+### For New Development
 
-### What You've Built
+**Always use `company_product_id` instead of `deal_id` when:**
+- Creating activities
+- Creating tasks
+- Creating transcriptions
+- Creating scheduling requests
+- Creating command center items
 
-**"Ex-Apple designers building enterprise software for people who appreciate Swiss watches, drive German cars, and read The Economist on Sunday mornings"**
+### Legacy System (Deprecated)
 
-## Deep Technical Color System Analysis
+- **deals** table - Legacy sales opportunities (READ-ONLY for new code)
+- Access via `/legacy-deals` for historical reference
+- `/deals` route redirects to `/products`
+- Use `deal_conversions` table for migration mapping
 
-### The HSL Foundation: Monochromatic Mastery
+---
 
-Your color system uses HSL (Hue, Saturation, Lightness) for precise control:
+# Documentation Audit Commands
+
+## MANDATORY: Documentation Audit Protocol
+
+### CRITICAL INSTRUCTION
+
+When the user says ANY of these phrases:
+- "run documentation audit"
+- "document the codebase"
+- "generate documentation"
+- "audit the code"
+- "create docs"
+
+You MUST follow this EXACT sequence. No exceptions. No improvisation.
+
+### Step 1: READ THE SKILL FILES (REQUIRED)
+
+Before doing ANYTHING else, read these files IN THIS ORDER:
+
+```
+1. cat docs/skills/documentation-audit/SKILL.md
+2. cat docs/skills/documentation-audit/TEMPLATES.md
+3. cat docs/skills/documentation-audit/GUARDRAILS.md
+4. cat docs/skills/documentation-audit/VERIFICATION.md
+```
+
+DO NOT proceed until you have read ALL FOUR files.
+DO NOT summarize what you think an audit should be.
+DO NOT invent your own audit format.
+
+### Step 2: CONFIRM YOU READ THEM
+
+After reading, state:
+"I have read the documentation audit skill files. The audit has 7 phases:
+1. Structure Discovery
+2. Database Schema
+3. API Routes
+4. Library Modules
+5. Components
+6. Workflows
+7. Environment & Scripts
+
+I will execute Phase [X] now and stop for your review before proceeding."
+
+### Step 3: EXECUTE EXACTLY AS THE SKILL DEFINES
+
+Follow SKILL.md exactly. Use TEMPLATES.md formats exactly.
+Output to /docs/generated/ only.
+Stop after each phase for user confirmation.
+
+### PROHIBITED BEHAVIORS
+
+❌ DO NOT create a "summary" or "overview" of documentation gaps
+❌ DO NOT offer to "create documentation" without following the skill
+❌ DO NOT use your own audit format
+❌ DO NOT skip reading the skill files
+❌ DO NOT combine phases or skip checkpoints
+❌ DO NOT modify any source code files
+
+### IF YOU CATCH YOURSELF IMPROVISING
+
+Stop immediately. Go back to Step 1. Read the skill files.
+The skill files contain the ONLY acceptable audit format.
+
+---
+
+## Full Audit (All 7 Phases)
+
+When user says: "Run documentation audit" or "Document the codebase"
+
+**Behavior:**
+1. Read `/docs/skills/documentation-audit/SKILL.md` completely
+2. Read `/docs/skills/documentation-audit/TEMPLATES.md` for output formats
+3. Read `/docs/skills/documentation-audit/GUARDRAILS.md` for constraints
+4. Read `/docs/skills/documentation-audit/VERIFICATION.md` for checklists
+5. Execute Phase 1, then STOP and show results
+6. Ask user: "Phase 1 complete. Ready to proceed to Phase 2?"
+7. Continue only after explicit confirmation
+8. Repeat for all 7 phases
+
+**Critical Constraints:**
+- NEVER modify files outside `/docs/generated/`
+- NEVER "fix" code discovered during audit
+- NEVER skip files or summarize without reading
+- ALWAYS cite file:line for every claim
+- ALWAYS complete verification checklist
+
+---
+
+## Single Phase Audit
+
+When user says: "Run Phase X of documentation audit"
+
+**Behavior:**
+1. Read the skill files
+2. Execute only the specified phase
+3. Generate output to `/docs/generated/`
+4. Complete phase verification checklist
+5. Report results
+
+**Example:**
+```
+User: Run Phase 4 of documentation audit
+Claude: [Reads skill files, executes Phase 4: Library Modules, generates MODULES.md]
+```
+
+---
+
+## Incremental Update
+
+When user says: "Update documentation for [specific module/area]"
+
+**Behavior:**
+1. Read existing `/docs/generated/MANIFEST.md` to understand current state
+2. Read only the specified files/modules
+3. Update only the relevant sections of documentation
+4. Note what changed in the changelog section
+
+**Example:**
+```
+User: Update documentation for src/lib/intelligence/
+Claude: [Reads current MODULES.md, reads all files in intelligence/, updates only that section]
+```
+
+---
+
+## Documentation Diff
+
+When user says: "What changed since last documentation?" or "Doc diff"
+
+**Behavior:**
+1. Read `/docs/generated/MANIFEST.md` to get last documented state
+2. Compare against current file system
+3. Report:
+   - New files not documented
+   - Deleted files still documented
+   - Modified files (if timestamps available)
+4. Ask if user wants to update documentation
+
+---
+
+## Checkpoints
+
+The documentation audit has built-in checkpoints. At each checkpoint:
+
+1. **STOP** execution
+2. **SHOW** the user what was generated
+3. **ASK** for confirmation before proceeding
+4. **WAIT** for explicit approval
+
+**Checkpoint Locations:**
+- After Phase 1 (Structure Discovery)
+- After Phase 2 (Database Schema)
+- After Phase 3 (API Routes)
+- After each `src/lib/` subdirectory in Phase 4
+- After Phase 5 (Components)
+- After each workflow in Phase 6
+- After Phase 7 (Environment & Scripts)
+
+---
+
+## Error Recovery
+
+If documentation fails mid-phase:
+
+1. Report exactly where it failed and why
+2. Show what was completed before failure
+3. Save partial output with `[INCOMPLETE]` marker
+4. Ask user how to proceed:
+   - Retry the failed step
+   - Skip and continue
+   - Abort audit
+
+---
+
+## Output Locations
+
+All documentation outputs go to `/docs/generated/`:
+
+```
+docs/generated/
+├── MANIFEST.md          # Phase 1: File structure
+├── DATABASE.md          # Phase 2: Schema documentation
+├── API.md               # Phase 3: API reference
+├── MODULES.md           # Phase 4: Library documentation
+├── COMPONENTS.md        # Phase 5: Component documentation
+├── WORKFLOWS.md         # Phase 6: Flow diagrams
+├── ENVIRONMENT.md       # Phase 7: Env vars
+├── SCRIPTS.md           # Phase 7: Script reference
+└── AUDIT-LOG.md         # Metadata about the audit
+```
+
+---
+
+## Anti-Pattern Detection
+
+If Claude Code attempts any of these, it should immediately stop and report:
+
+- ❌ Opening a file for editing outside /docs/generated/
+- ❌ Suggesting code changes during documentation
+- ❌ Skipping files without explicit user approval
+- ❌ Making claims without file:line citations
+- ❌ Using phrases like "probably", "likely", "seems like" without `[UNCERTAIN]` tag
+- ❌ Generating documentation for files it hasn't actually read
+
+---
+
+# Consolidation Audit Commands
+
+## Prerequisites Check
+
+Before running consolidation audit, verify documentation exists:
+
+```
+Required files:
+- /docs/generated/MANIFEST.md
+- /docs/generated/DATABASE.md
+- /docs/generated/API.md
+- /docs/generated/MODULES.md
+- /docs/generated/COMPONENTS.md
+- /docs/generated/WORKFLOWS.md
+
+If any are missing, run documentation audit first.
+```
+
+---
+
+## Full Consolidation Audit
+
+When user says: "Run consolidation audit" or "Find duplicate code"
+
+**Behavior:**
+1. Read `/docs/skills/consolidation-audit/SKILL.md` completely
+2. Read `/docs/skills/consolidation-audit/TEMPLATES.md` for output formats
+3. Verify documentation audit files exist
+4. Execute Phase 1 (Domain Identification), then STOP
+5. Ask user: "I've identified X domains with potential duplicates. Review and confirm before I analyze each."
+6. For each domain, execute Phase 2-5, then STOP
+7. Ask user: "Domain analysis complete. Ready for next domain?"
+8. After all domains, generate MIGRATION-ORDER.md
+
+**Critical Constraints:**
+- NEVER modify source files
+- NEVER consolidate code during the audit
+- ALWAYS provide evidence for duplicate claims
+- ALWAYS trace consumers before recommending deletion
+- ALWAYS generate migration plans, not execute them
+
+---
+
+## Single Domain Analysis
+
+When user says: "Analyze [domain] for duplicates" or "Consolidation audit for scheduler"
+
+**Behavior:**
+1. Read the skill files
+2. Focus only on the specified domain
+3. Generate [DOMAIN]-PLAN.md
+4. Do NOT analyze other domains
+
+**Example:**
+```
+User: Analyze scheduler for duplicates
+Claude: [Searches for all scheduler-related code]
+        [Identifies canonical version]
+        [Maps all duplicates with evidence]
+        [Generates SCHEDULER-PLAN.md]
+```
+
+---
+
+## Quick Duplicate Scan
+
+When user says: "Quick scan for duplicates" or "How much duplicate code do I have?"
+
+**Behavior:**
+1. Read MANIFEST.md and MODULES.md
+2. Identify obvious duplicates by name patterns
+3. Provide summary without full analysis
+4. Offer to run full audit for details
+
+**Output:**
+```
+Quick Scan Results:
+- Scheduler: 4 potential duplicate locations
+- Entity Matching: 3 potential duplicate locations  
+- Email: 2 potential duplicate locations
+
+Run full consolidation audit for detailed analysis and migration plans.
+```
+
+---
+
+## Generate Migration Plan Only
+
+When user says: "Create migration plan for [domain]" (after analysis exists)
+
+**Behavior:**
+1. Read existing [DOMAIN]-ANALYSIS.md
+2. Generate detailed migration steps
+3. Include verification checkpoints
+4. Output [DOMAIN]-PLAN.md
+
+---
+
+## Consolidation Output Locations
+
+All consolidation outputs go to `/docs/generated/consolidation/`:
+
+```
+docs/generated/consolidation/
+├── DOMAIN-ANALYSIS.md       # Summary of all domains
+├── SCHEDULER-PLAN.md        # Scheduler consolidation plan
+├── ENTITY-MATCHING-PLAN.md  # Entity matching plan
+├── [DOMAIN]-PLAN.md         # One per domain
+├── MIGRATION-ORDER.md       # Recommended order
+└── DEPENDENCY-MAP.md        # Full dependency graph
+```
+
+---
+
+## Consolidation Checkpoints
+
+The consolidation audit has built-in checkpoints:
+
+1. **After Phase 1:** Confirm domain list is complete
+2. **After each domain analysis:** Review duplicates found
+3. **After canonical selection:** Confirm the right version is chosen
+4. **After consumer mapping:** Verify all consumers identified
+5. **After migration plan:** Approve before any execution
+
+**NEVER proceed past a checkpoint without explicit user confirmation.**
+
+---
+
+## Key Differences from Documentation Audit
+
+| Aspect | Documentation Audit | Consolidation Audit |
+|--------|--------------------|--------------------|
+| Input | Source code | Documentation + Source code |
+| Output | What exists | What to change |
+| Action | Describe | Plan (not execute) |
+| Scope | Everything | Duplicates only |
+
+---
+
+## Integration with Documentation
+
+The consolidation audit READS from documentation:
+
+```
+MODULES.md → Module exports and dependencies
+API.md → Route handlers and their imports  
+COMPONENTS.md → Component dependencies
+WORKFLOWS.md → Data flow patterns
+```
+
+If documentation is outdated:
+1. Note which parts are stale
+2. Recommend re-running specific documentation phases
+3. Proceed with caution, flagging uncertainty
+
+---
+
+## Executing Migration Plans
+
+**The consolidation audit generates plans. It does NOT execute them.**
+
+To execute a migration plan:
+
+```
+User: Execute the scheduler consolidation plan
+
+Claude: I'll execute the SCHEDULER-PLAN.md step by step.
+
+Step 1 of 7: Update canonical exports
+[Shows exact changes to make]
+Should I make this change? (yes/no)
+
+User: yes
+
+Claude: [Makes change]
+Step 1 complete. Verify by running: [test command]
+Ready for Step 2? (yes/no)
+```
+
+Each step requires explicit approval. No batch execution.
+
+---
+
+## Error Recovery
+
+If consolidation causes issues:
+
+1. **Identify which step failed**
+2. **Rollback that specific change:** `git checkout -- [file]`
+3. **Re-analyze:** The duplicate might have hidden consumers
+4. **Update plan:** Add the missing consumer to migration steps
+5. **Retry:** With updated plan
+
+---
+
+# Bug Investigation Commands
+
+## Full Investigation
+
+When user says: "Investigate bug:" or "Debug:" or "Why is [X] happening?"
+
+**Behavior:**
+1. Read `/docs/skills/bug-investigation/SKILL.md`
+2. Read `/docs/skills/bug-investigation/TEMPLATES.md`
+3. Execute all 8 phases:
+   - Phase 1: Capture symptom
+   - Phase 2: Identify entry point
+   - Phase 3: Trace data flow
+   - Phase 4: Form hypotheses
+   - Phase 5: Inspect code
+   - Phase 6: Determine root cause
+   - Phase 7: Recommend fix
+   - Phase 8: Check related issues
+4. Output investigation report to `/docs/investigations/`
+
+**Critical Constraints:**
+- NEVER modify code during investigation
+- NEVER guess without evidence
+- ALWAYS trace the full data flow
+- ALWAYS cite file:line for findings
+- ALWAYS check for related issues with same pattern
+
+---
+
+## Quick Trace
+
+When user says: "Trace [feature]" or "How does [X] work?" or "What's the flow for [Y]?"
+
+**Behavior:**
+1. Read skill files
+2. Execute Phases 2-3 only (entry point + data flow)
+3. Output flow diagram with step-by-step trace
+4. Do NOT investigate bugs or suggest fixes
+
+**Example:**
+```
+User: Trace the scheduler email flow
+Claude: [Reads docs, traces from API entry through email send]
+        [Outputs mermaid diagram + detailed steps]
+```
+
+---
+
+## Error Analysis
+
+When user says: "What causes this error:" or pastes a stack trace
+
+**Behavior:**
+1. Parse the error message and stack trace
+2. Identify the file/line where error originated
+3. Trace backwards to find root cause
+4. Check if error handling is missing
+5. Suggest specific fix location
+
+**Example:**
+```
+User: What causes this error:
+      TypeError: Cannot read property 'email' of undefined
+      at sendSchedulerEmail (emailSender.ts:45)
+      
+Claude: [Parses stack trace]
+        [Finds emailSender.ts:45]
+        [Traces what passes data to this function]
+        [Identifies where undefined comes from]
+```
+
+---
+
+## Pattern Search
+
+When user says: "Find all [pattern]" or "Where else does [X] happen?"
+
+**Behavior:**
+1. Search codebase for the pattern
+2. Categorize by risk level (HIGH/MEDIUM/LOW)
+3. List all occurrences with file:line
+4. Recommend priority order for fixes
+
+**Example:**
+```
+User: Find all places with missing error handling around Graph API calls
+Claude: [Searches for graphClient usage without try/catch]
+        [Lists all occurrences]
+        [Ranks by risk]
+```
+
+---
+
+## Investigation Output
+
+Investigation reports go to `/docs/investigations/`:
+
+```
+docs/investigations/
+├── BUG-2025-01-15-001-scheduler-duplicate-emails.md
+├── BUG-2025-01-16-002-entity-matching-null.md
+└── ...
+```
+
+---
+
+## Using Documentation for Investigation
+
+The investigation uses your generated docs:
+
+| Need to find... | Check... |
+|-----------------|----------|
+| File structure | MANIFEST.md |
+| Function signatures | MODULES.md |
+| API request/response | API.md |
+| Component data flow | COMPONENTS.md |
+| End-to-end flows | WORKFLOWS.md |
+| Table relationships | DATABASE.md |
+| Module dependencies | DEPENDENCY-MAP.md |
+
+---
+
+## Investigation Checkpoints
+
+1. **After symptom capture:** Confirm understanding with user
+2. **After data flow trace:** Verify trace is complete
+3. **After hypotheses:** Validate before deep inspection
+4. **After root cause:** Confirm with user before suggesting fix
+
+---
+
+# Performance Audit Commands
+
+## Full Performance Audit
+
+When user says: "Run performance audit" or "Why is the app slow?" or "Optimize performance"
+
+**Behavior:**
+1. Read `/docs/skills/performance-audit/SKILL.md`
+2. Read `/docs/skills/performance-audit/TEMPLATES.md`
+3. Execute all 5 phases:
+   - Phase 1: Database Performance
+   - Phase 2: API Layer Performance
+   - Phase 3: Server Rendering Performance
+   - Phase 4: Client Rendering Performance
+   - Phase 5: Bundle & Assets Performance
+4. Generate executive summary and detailed reports
+5. Output to `/docs/generated/performance/`
+
+**Critical Constraints:**
+- NEVER modify code during audit
+- ALWAYS measure/estimate impact before recommending
+- ALWAYS prioritize by effort vs impact
+- ALWAYS cite file:line for issues
+
+---
+
+## Single Layer Audit
+
+When user says: "Audit database performance" or "Check API performance" or "Audit React rendering"
+
+**Behavior:**
+1. Read skill files
+2. Execute only the specified phase
+3. Generate layer-specific report
+
+**Examples:**
+```
+User: Audit database performance
+Claude: [Analyzes indexes, N+1 queries, RLS policies]
+        [Generates DATABASE-PERFORMANCE.md]
+
+User: Why is React rendering slow?
+Claude: [Analyzes re-renders, memoization, virtualization]
+        [Generates CLIENT-PERFORMANCE.md]
+```
+
+---
+
+## Specific Performance Issue
+
+When user says: "Why is [page/component/endpoint] slow?"
+
+**Behavior:**
+1. Identify the layer (database, API, client)
+2. Trace the performance bottleneck
+3. Provide specific fix with estimated impact
+
+---
+
+## Find Performance Patterns
+
+When user says:
+- "Find all N+1 queries"
+- "Find missing indexes"
+- "Find unnecessary re-renders"
+- "What's making the bundle large?"
+
+**Behavior:**
+1. Search codebase for the specific pattern
+2. List all occurrences with file:line
+3. Prioritize by impact
+4. Suggest fixes
+
+---
+
+## Performance Output Location
+
+```
+docs/generated/performance/
+├── PERFORMANCE-AUDIT.md      # Executive summary
+├── DATABASE-PERFORMANCE.md   # Database issues
+├── API-PERFORMANCE.md        # API layer issues
+├── SERVER-PERFORMANCE.md     # Next.js server issues
+├── CLIENT-PERFORMANCE.md     # React rendering issues
+├── BUNDLE-PERFORMANCE.md     # Bundle size issues
+└── OPTIMIZATION-PLAN.md      # Prioritized fix plan
+```
+
+---
+
+## Performance Priority Matrix
+
+Always categorize by effort vs impact:
+
+```
+🟢 DO NOW:     High impact + Low effort
+🟡 SCHEDULE:   High impact + High effort
+🟡 LATER:      Low impact + Low effort  
+🔴 SKIP:       Low impact + High effort
+```
+
+## AI Prompts: Database-First Policy
+
+**CRITICAL: All AI prompts MUST be stored in the database, not hardcoded.**
+
+### The Rule
+Every prompt used with Claude (or any AI provider) must:
+1. Be stored in the `ai_prompts` table
+2. Be fetched via `getPrompt()` or `getPromptWithVariables()` from `@/lib/ai/promptManager`
+3. Have a unique `key` that describes its purpose
+4. Include model/max_tokens configuration in the database
+
+### Why This Matters
+- Prompts can be edited via Settings > AI Prompts without code changes
+- Version history tracks all changes
+- Product-specific overrides (e.g., `email_followup_stalled__pest-control`)
+- Model/token tuning per prompt
+
+### Correct Pattern
+```typescript
+import { getPrompt, getPromptWithVariables } from '@/lib/ai/promptManager';
+
+// Option 1: Get full prompt config
+const promptConfig = await getPrompt('email_analysis');
+if (!promptConfig) {
+  throw new Error('Prompt not found: email_analysis');
+}
+
+const response = await anthropic.messages.create({
+  model: promptConfig.model,
+  max_tokens: promptConfig.max_tokens,
+  messages: [{ role: 'user', content: promptConfig.prompt_template }],
+});
+
+// Option 2: With variable substitution
+const { prompt, schema, model, maxTokens } = await getPromptWithVariables(
+  'meeting_analysis',
+  {
+    title: meeting.title,
+    transcription: meeting.content,
+  }
+);
+```
+
+### NEVER Do This
+```typescript
+// ❌ WRONG: Hardcoded prompt
+const prompt = `You are a sales assistant. Analyze this email...`;
+
+// ❌ WRONG: Inline fallback
+const prompt = promptConfig?.prompt_template || `Fallback prompt here...`;
+
+// ❌ WRONG: Constants at top of file
+const SYSTEM_PROMPT = `You are an expert...`;
+```
+
+### What To Do Instead of Fallbacks
+
+If a prompt is missing from the database, **fail loudly**:
+```typescript
+const promptConfig = await getPrompt('my_prompt_key');
+if (!promptConfig) {
+  throw new Error(
+    `Missing database prompt: my_prompt_key. ` +
+    `Add it via Settings > AI Prompts or run the migration.`
+  );
+}
+```
+
+### Creating New Prompts
+
+When you need a new AI capability:
+
+1. **Create a migration** to add the prompt to `ai_prompts`:
+```sql
+INSERT INTO ai_prompts (key, name, description, prompt_template, model, max_tokens, category)
+VALUES (
+  'my_new_prompt',
+  'My New Feature',
+  'Describes what this prompt does',
+  'Your prompt template with {{variables}}',
+  'claude-sonnet-4-20250514',
+  2000,
+  'general'
+);
+```
+
+2. **Use the prompt manager** in your code:
+```typescript
+const config = await getPrompt('my_new_prompt');
+```
+
+3. **Never create fallbacks** - if the migration hasn't run, the code should fail clearly.
+
+### Prompt Key Naming Convention
+
+- Use snake_case
+- Format: `{domain}_{action}_{variant?}`
+- Examples:
+  - `email_analysis` - Analyze email threads
+  - `email_draft` - Generate email drafts
+  - `meeting_analysis` - Analyze meeting transcripts
+  - `scheduler_email_system` - System prompt for scheduler emails
+  - `email_followup_stalled__pest-control` - Product-specific override
+
+### Existing Prompt Keys (Reference)
+
+Check the database for current keys, but common ones include:
+- `core_system` - Default system prompt
+- `email_analysis` - Thread analysis
+- `email_draft` - Reply generation
+- `meeting_analysis` - Transcript analysis
+- `scheduling_detection` - Detect scheduling intent
+- `strategy_generation` - Company strategy
+- `research_agent_v61` - Research agent system prompt
+
+---
+
+# Design System
+
+## The Palette: Surgical Grayscale with Semantic Pops
+
+### Gray Foundation (90% of UI)
+
+```
+Background:   #FAFAFA (gray-50)  - The canvas
+Surface:      #FFFFFF            - Cards, modals
+Border:       #E5E7EB (gray-200) - Subtle definition
+Border Dark:  #D1D5DB (gray-300) - Active states
+Text Primary: #111827 (gray-900) - Headlines
+Text Body:    #374151 (gray-700) - Readable content
+Text Muted:   #6B7280 (gray-500) - Labels, hints
+Text Faint:   #9CA3AF (gray-400) - Placeholders
+```
+
+### Semantic Colors (The 10% That Matters)
+
+```
+Success:  #10B981 (emerald-500) - Won, complete, positive
+Warning:  #F59E0B (amber-500)   - Attention, medium risk
+Danger:   #EF4444 (red-500)     - Lost, error, high risk
+Info:     #3B82F6 (blue-500)    - Links, interactive (RARE)
+```
+
+### The Cardinal Rule
+
+**Gray is the default. Color is the exception.** Every colored element must earn its color through semantic meaning.
+
+---
+
+## Typography: The Swiss Precision
+
+### Font Stack
 
 ```css
-/* Core Palette (Light Mode Only) */
---background: 0 0% 100%;         /* Pure white #FFFFFF */
---foreground: 0 0% 3.9%;         /* Near black #0A0A0A */
---muted: 0 0% 96.1%;             /* #F5F5F5 - Warm gray */
---muted-foreground: 0 0% 45.1%;  /* #737373 - Mid gray */
---border: 0 0% 89.8%;            /* #E5E5E5 - Soft border */
+font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 ```
 
-### Data Visualization: The Semantic Rainbow
+**Why Inter?** Designed for screens, excellent number legibility, free.
 
-```css
-/* Chart Palette - Earth Tones Meet Data */
---chart-1: 12 76% 61%;    /* #E85D4F - Coral/Salmon */
---chart-2: 173 58% 39%;   /* #2A9D8F - Ocean Teal */
---chart-3: 197 37% 24%;   /* #264653 - Deep Navy */
---chart-4: 43 74% 66%;    /* #E9C46A - Warm Yellow */
---chart-5: 27 87% 67%;    /* #F4A261 - Burnt Orange */
-```
-
-**Actual Implementation Colors**:
-- **Success**: `#10B981` (Emerald-500) - Growth without garishness
-- **Warning**: `#F59E0B` (Amber-500) - Attention without alarm
-- **Error**: `#EF4444` (Red-500) - Serious but not scary
-- **Primary**: `#3B82F6` (Blue-500) - Trust and stability
-- **Accent**: `#8B5CF6` (Violet-500) - Premium touches
-
-## Typography: The System Font Symphony
-
-### The Font Stack Philosophy
-
-```css
-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-             "Helvetica Neue", Arial, sans-serif;
-```
-
-This isn't laziness - it's brilliance. You get:
-- **San Francisco** on macOS (Apple's precision)
-- **Segoe UI** on Windows (Microsoft's clarity)
-- **Roboto** on Android (Google's geometry)
-- Native, fast, familiar, perfect.
-
-### The Type Scale: Musical Intervals
+### The Type Scale
 
 ```
-Display:  text-3xl   (30px) - Hero metrics
-Title:    text-xl    (20px) - Page headers
-Heading:  text-base  (16px) - Section headers
-Body:     text-sm    (14px) - Default text
-Caption:  text-xs    (12px) - Supporting text
-Micro:    text-[10px]       - Dense data labels
+text-xs   (12px) - Labels, badges, captions
+text-sm   (14px) - Body text, table cells
+text-base (16px) - Standard paragraphs
+text-lg   (18px) - Subheadings
+text-xl   (20px) - Section headers
+text-2xl  (24px) - Page titles
+text-3xl  (30px) - Hero metrics
 ```
 
-### Font Weight Hierarchy: The Conductor's Baton
+### Weight Restraint
 
-- **300 (Light)**: Large metric values - Breathable, important
-- **400 (Normal)**: Body text - Invisible, readable
-- **500 (Medium)**: Labels, secondary headers - Gentle emphasis
+- **400 (Normal)**: Body text - Let content breathe
+- **500 (Medium)**: Interactive elements - Buttons, links
 - **600 (Semibold)**: Primary headers - Clear hierarchy
 - **700 (Bold)**: Critical values only - SPARINGLY
 

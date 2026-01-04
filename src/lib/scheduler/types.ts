@@ -234,6 +234,7 @@ export interface PreferredTimes {
 export interface SchedulingRequest {
   id: string;
   created_by: string;
+  /** @deprecated Use company_product_id instead. */
   deal_id: string | null;
   company_product_id: string | null;
   company_id: string | null;

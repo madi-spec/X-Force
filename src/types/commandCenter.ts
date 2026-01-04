@@ -210,7 +210,9 @@ export interface CommandCenterItem {
   // Source linking
   task_id?: string | null;
   conversation_id?: string | null;
+  /** @deprecated Use company_product_id instead. Maintained for backwards compatibility. */
   deal_id?: string | null;
+  /** Reference to the company_product for this item. Preferred over deal_id. */
   company_product_id?: string | null;
   company_id?: string | null;
   contact_id?: string | null;
@@ -577,6 +579,7 @@ export interface CreateItemRequest {
   action_type: ActionType;
   title: string;
   description?: string;
+  /** @deprecated Use company_product_id instead. */
   deal_id?: string;
   company_product_id?: string;
   company_id?: string;
@@ -920,8 +923,10 @@ export interface MeetingWithPrep {
   // Context
   company_id?: string;
   company_name?: string;
+  /** @deprecated Use company_product_id instead. */
   deal_id?: string;
   company_product_id?: string;
+  /** @deprecated Use product_name instead. */
   deal_name?: string;
   deal_value?: number;
   deal_stage?: string;
@@ -989,6 +994,7 @@ export interface NewCommandCenterItem {
   action_type?: ActionType;
   contact_id?: string;
   company_id?: string;
+  /** @deprecated Use company_product_id instead. */
   deal_id?: string;
   company_product_id?: string;
   conversation_id?: string;
