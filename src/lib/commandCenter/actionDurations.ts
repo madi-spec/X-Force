@@ -51,6 +51,13 @@ export const ACTION_DURATIONS: Record<ActionType, ActionDuration> = {
   // Unified (from Daily Driver)
   close_deal: { min: 15, typical: 30, max: 60 },         // Ready to close
   review_flag: { min: 5, typical: 15, max: 30 },         // General flag review
+
+  // Onboarding-specific actions
+  implementation_blocker: { min: 15, typical: 30, max: 60 },
+  training_gap: { min: 30, typical: 45, max: 90 },
+  go_live_risk: { min: 10, typical: 20, max: 45 },
+  customer_action_needed: { min: 5, typical: 10, max: 20 },
+  adoption_concern: { min: 10, typical: 20, max: 45 },
 };
 
 /**
