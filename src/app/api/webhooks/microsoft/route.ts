@@ -281,20 +281,9 @@ export async function POST(request: NextRequest) {
                   .limit(1)
                   .maybeSingle();
 
-                if (recentAIResponse) {
-                  const waitUntil = new Date(new Date(recentAIResponse.created_at).getTime() + RATE_LIMIT_WINDOW_MS);
-                  console.log(`[MS Webhook]   ✗ SKIP: Rate limited - AI responded at: ${recentAIResponse.created_at}`);
-                  console.log(`[MS Webhook]   Wait until: ${waitUntil.toISOString()}`);
-                  continue;
-                }
-                console.log(`[MS Webhook]   ✓ Rate limit check passed - no recent AI response`);
-
                 // ============================================
-                // All safeguards passed - acquire lock and process
+                // Record email_received action (always, before rate limit check)
                 // ============================================
-                console.log(`[MS Webhook]   ✓ All safeguards passed - processing email`);
-
-                // Use INSERT as atomic lock - first webhook to insert wins
                 const { error: lockError } = await supabase
                   .from('scheduling_actions')
                   .insert({
@@ -310,8 +299,33 @@ export async function POST(request: NextRequest) {
                   console.log(`[MS Webhook]   Lock failed (concurrent processing): ${lockError.message}`);
                   continue;
                 }
+                console.log(`[MS Webhook]   ✓ Email recorded as email_received`);
 
-                console.log(`[MS Webhook]   Lock acquired, calling processSchedulingResponse...`);
+                // ============================================
+                // SAFEGUARD 3: Rate Limiting
+                // Only one AI response per request per 5-minute window
+                // If rate limited, defer processing instead of skipping entirely
+                // ============================================
+                if (recentAIResponse) {
+                  const waitUntil = new Date(new Date(recentAIResponse.created_at).getTime() + RATE_LIMIT_WINDOW_MS);
+                  console.log(`[MS Webhook]   ⏳ Rate limited - deferring processing until: ${waitUntil.toISOString()}`);
+
+                  // Schedule deferred processing
+                  await supabase
+                    .from('scheduling_requests')
+                    .update({
+                      next_action_type: 'process_response',
+                      next_action_at: waitUntil.toISOString(),
+                    })
+                    .eq('id', matchingRequest.id);
+
+                  console.log(`[MS Webhook]   ✓ Deferred processing scheduled`);
+                  schedulingMatched++;
+                  continue;
+                }
+                console.log(`[MS Webhook]   ✓ Rate limit check passed - processing immediately`);
+
+                console.log(`[MS Webhook]   Calling processSchedulingResponse...`);
 
                 const result = await processSchedulingResponse(email, matchingRequest);
                 console.log(`[MS Webhook]   Processing result:`, {

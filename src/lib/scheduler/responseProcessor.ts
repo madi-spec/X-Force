@@ -957,6 +957,14 @@ async function handleTimeAccepted(
     );
 
     if (alternativeResult.success) {
+      // Log the email_sent action with the alternative times
+      await adminSchedulingService.logAction(request.id, {
+        action_type: ACTION_TYPES.EMAIL_SENT,
+        message_content: `Sent alternative times because ${selectedDate.toISOString()} is no longer available`,
+        actor: 'ai',
+        ai_reasoning: `Previously accepted time became unavailable (conflicts: ${availabilityResult.conflictingAttendees.join(', ')}). Sent alternative times.`,
+        times_proposed: alternativeResult.proposedTimes, // Store the alternative times so AI can match later
+      });
       return {
         processed: true,
         schedulingRequestId: request.id,
@@ -1198,11 +1206,13 @@ async function handleCounterProposal(
 
     if (alternativeResult.success) {
       console.log('[counterProposal] ✓ Alternative times sent successfully, isDraft:', alternativeResult.isDraft);
+      console.log('[counterProposal] Alternative times offered:', alternativeResult.proposedTimes);
       await adminSchedulingService.logAction(request.id, {
         action_type: ACTION_TYPES.EMAIL_SENT,
         message_content: `Sent alternative times because "${firstTimestamp}" has conflicts`,
         actor: 'ai',
         ai_reasoning: `Counter-proposal conflicts with: ${availabilityResult.conflictingAttendees.join(', ')}. Sent alternative times automatically.`,
+        times_proposed: alternativeResult.proposedTimes, // Store the alternative times so AI can match later
       });
 
       return {
@@ -2181,7 +2191,7 @@ async function sendAlternativeTimes(
   userId: string,
   proposedTimeDescription: string,
   replyToMessageId?: string
-): Promise<{ success: boolean; error?: string; isDraft?: boolean }> {
+): Promise<{ success: boolean; error?: string; isDraft?: boolean; proposedTimes?: string[] }> {
   try {
     const { getValidToken } = await import('@/lib/microsoft/auth');
     const { getAlternativesAroundTime } = await import('./calendarIntegration');
@@ -2325,7 +2335,8 @@ Brent`;
 
     console.log('[sendAlternativeTimes] Alternative times email created, isDraft:', sendResult.isDraft);
     console.log('[sendAlternativeTimes] Alternatives focused around:', formattedProposedTime);
-    return { success: true, isDraft: sendResult.isDraft };
+    console.log('[sendAlternativeTimes] Proposed times:', formattedSlots);
+    return { success: true, isDraft: sendResult.isDraft, proposedTimes: formattedSlots };
   } catch (err) {
     console.error('[sendAlternativeTimes] Error:', err);
     return { success: false, error: String(err) };
