@@ -1905,7 +1905,7 @@ async function checkSlotAvailability(
 
 // SAFEGUARD: Prevent automatic meeting confirmation and calendar creation
 // Set to true to require manual confirmation until timezone issues are verified fixed
-const MEETING_AUTO_CONFIRM_DISABLED = true;
+const MEETING_AUTO_CONFIRM_DISABLED = false;
 
 /**
  * Send confirmation email and create calendar event
