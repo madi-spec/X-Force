@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = createAdminClient();
+
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const userId = dbUser.id;
+
   const { searchParams } = new URL(request.url);
 
   const channel = searchParams.get('channel');
@@ -30,6 +52,7 @@ export async function GET(request: NextRequest) {
       company:companies!company_id(id, name),
       contact:contacts!contact_id(id, name, email)
     `)
+    .eq('user_id', userId) // Filter to current user's communications only
     .order('occurred_at', { ascending: false });
 
   // Filter out excluded communications
@@ -154,6 +177,7 @@ export async function GET(request: NextRequest) {
   const { data: awaitingResponse } = await supabase
     .from('communications')
     .select('id')
+    .eq('user_id', userId) // Filter to current user's communications only
     .eq('awaiting_our_response', true)
     .is('responded_at', null);
 

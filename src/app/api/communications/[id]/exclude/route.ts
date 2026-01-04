@@ -27,15 +27,31 @@ export async function POST(
 
     const adminClient = createAdminClient();
 
-    // Exclude the communication
-    const { error } = await adminClient
+    // Get internal user ID from auth_id
+    const { data: dbUser } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('auth_id', user.id)
+      .single();
+
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Exclude the communication (only if owned by current user)
+    const { error, count } = await adminClient
       .from('communications')
       .update({
         excluded_at: new Date().toISOString(),
         excluded_by: user.id,
         exclusion_reason: reason,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', dbUser.id); // Ownership verification
+
+    if (count === 0) {
+      return NextResponse.json({ error: 'Communication not found or not owned by you' }, { status: 404 });
+    }
 
     if (error) {
       console.error('[Exclude] Error:', error);
@@ -65,15 +81,31 @@ export async function DELETE(
 
     const adminClient = createAdminClient();
 
-    // Restore the communication
-    const { error } = await adminClient
+    // Get internal user ID from auth_id
+    const { data: dbUser } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('auth_id', user.id)
+      .single();
+
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Restore the communication (only if owned by current user)
+    const { error, count } = await adminClient
       .from('communications')
       .update({
         excluded_at: null,
         excluded_by: null,
         exclusion_reason: null,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', dbUser.id); // Ownership verification
+
+    if (count === 0) {
+      return NextResponse.json({ error: 'Communication not found or not owned by you' }, { status: 404 });
+    }
 
     if (error) {
       console.error('[Exclude] Error:', error);

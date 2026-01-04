@@ -11,29 +11,44 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { CommunicationWithRelations } from '@/types/communicationHub';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
-  const { searchParams } = new URL(request.url);
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-  const userId = searchParams.get('user_id');
+  const supabase = createAdminClient();
 
-  // Get all communications awaiting our response
-  let query = supabase
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const userId = dbUser.id;
+
+  // Get all communications awaiting our response for current user
+  const query = supabase
     .from('communications')
     .select(`
       *,
       company:companies!company_id(id, name, domain),
       contact:contacts!contact_id(id, name, email)
     `)
+    .eq('user_id', userId) // Filter to current user's communications only
     .eq('awaiting_our_response', true)
     .is('responded_at', null)
     .order('response_due_by', { ascending: true, nullsFirst: false });
-
-  if (userId) {
-    query = query.eq('user_id', userId);
-  }
 
   const { data, error } = await query;
 

@@ -1,14 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { firstOrNull } from '@/lib/supabase/normalize';
 
-// GET - List products for a company
+// GET - List products for a company (owned by current user)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const supabase = createAdminClient();
   const { id } = await params;
+
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
 
   const { data: companyProducts, error } = await supabase
     .from('company_products')
@@ -20,6 +39,7 @@ export async function GET(
       owner:users!company_products_owner_user_id_fkey(id, name, email)
     `)
     .eq('company_id', id)
+    .eq('owner_user_id', dbUser.id) // Filter to current user's products only
     .order('created_at');
 
   if (error) {
@@ -35,9 +55,29 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const supabase = createAdminClient();
   const { id: companyId } = await params;
   const body = await request.json();
+
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const userId = dbUser.id;
 
   const { product_id, status = 'in_sales' } = body;
 
@@ -111,12 +151,13 @@ export async function POST(
     }, { status: 400 });
   }
 
-  // Check if company_product already exists
+  // Check if company_product already exists for current user
   const { data: existing } = await supabase
     .from('company_products')
     .select('id, status, current_stage_id')
     .eq('company_id', companyId)
     .eq('product_id', product_id)
+    .eq('owner_user_id', userId) // Filter to current user's products only
     .single();
 
   let companyProduct;
@@ -182,6 +223,7 @@ export async function POST(
       .insert({
         company_id: companyId,
         product_id,
+        owner_user_id: userId, // Set current user as owner
         status,
         current_stage_id: status === 'in_sales' ? firstStage?.id : null,
         stage_entered_at: status === 'in_sales' ? nowIso : null,
@@ -239,9 +281,29 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const supabase = createAdminClient();
   const { id: companyId } = await params;
   const body = await request.json();
+
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const userId = dbUser.id;
 
   const {
     company_product_id,
@@ -259,16 +321,17 @@ export async function PUT(
     return NextResponse.json({ error: 'company_product_id required' }, { status: 400 });
   }
 
-  // Fetch existing record
+  // Fetch existing record (only if owned by current user)
   const { data: existing, error: fetchError } = await supabase
     .from('company_products')
     .select('*, product:products(id, name)')
     .eq('id', company_product_id)
     .eq('company_id', companyId)
+    .eq('owner_user_id', userId) // Ownership verification
     .single();
 
   if (fetchError || !existing) {
-    return NextResponse.json({ error: 'Company product not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Company product not found or not owned by you' }, { status: 404 });
   }
 
   const now = new Date().toISOString();

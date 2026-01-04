@@ -59,7 +59,23 @@ export async function POST(
 
     const supabase = createAdminClient();
 
-    // 1. Load communication with context
+    // Get internal user ID from auth_id
+    const { data: dbUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_id', authUser.id)
+      .single();
+
+    if (!dbUser) {
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    const userId = dbUser.id;
+
+    // 1. Load communication with context (only if owned by current user)
     const { data: comm, error: commError } = await supabase
       .from('communications')
       .select(`
@@ -75,11 +91,12 @@ export async function POST(
         contact:contacts(id, name, email, title)
       `)
       .eq('id', communicationId)
+      .eq('user_id', userId) // Ownership verification
       .single();
 
     if (commError || !comm) {
       return NextResponse.json(
-        { success: false, error: 'Communication not found' },
+        { success: false, error: 'Communication not found or not owned by you' },
         { status: 404 }
       );
     }

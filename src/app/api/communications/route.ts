@@ -9,10 +9,32 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import { extractEmailsFromBody } from '@/lib/communicationHub/matching/matchEmailToCompany';
 
 export async function GET(request: NextRequest) {
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = createAdminClient();
+
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const userId = dbUser.id;
+
   const { searchParams } = new URL(request.url);
 
   // Filters
@@ -39,6 +61,7 @@ export async function GET(request: NextRequest) {
       deal:deals!deal_id(id, name, stage, estimated_value),
       current_analysis:communication_analysis!current_analysis_id(*)
     `, { count: 'exact' })
+    .eq('user_id', userId) // Filter to current user's communications only
     .order('occurred_at', { ascending: false });
 
   // Filter out excluded communications

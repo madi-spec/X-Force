@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
+  // Verify authentication
+  const supabaseClient = await createClient();
+  const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+  if (!authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const supabase = createAdminClient();
   const { searchParams } = new URL(request.url);
+
+  // Get internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const userId = dbUser.id;
 
   const includeModules = searchParams.get('include_modules') === 'true';
   const includeStats = searchParams.get('include_stats') === 'true';
@@ -50,13 +71,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Get stats if requested
+  // Get stats if requested (filtered to current user's company_products)
   if (includeStats) {
     for (const product of products || []) {
       const { data: stats } = await supabase
         .from('company_products')
         .select('status, mrr')
-        .eq('product_id', product.id);
+        .eq('product_id', product.id)
+        .eq('owner_user_id', userId);
 
       const statusCounts = {
         active_count: 0,
@@ -88,12 +110,13 @@ export async function GET(request: NextRequest) {
       const stages = salesProcess?.stages || [];
       product.stages = stages.sort((a: { stage_order: number }, b: { stage_order: number }) => a.stage_order - b.stage_order);
 
-      // Pipeline by stage
+      // Pipeline by stage (filtered to current user)
       if (stages.length > 0) {
         const { data: pipelineStats } = await supabase
           .from('company_products')
           .select('current_stage_id')
           .eq('product_id', product.id)
+          .eq('owner_user_id', userId)
           .eq('status', 'in_sales');
 
         product.pipeline_by_stage = stages
