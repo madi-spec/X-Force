@@ -35,8 +35,11 @@ export default async function SettingsPage() {
   // Get all users for team management
   const { data: allUsers } = await supabase
     .from('users')
-    .select('id, name, email, role, team')
+    .select('id, name, email, role, team, level')
     .order('name');
+
+  // Check if current user is admin
+  const isAdmin = profile?.role === 'admin';
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -52,6 +55,7 @@ export default async function SettingsPage() {
         userCertifications={userCertifications || []}
         allCertifications={allCertifications || []}
         allUsers={allUsers || []}
+        isAdmin={isAdmin}
       />
     </div>
   );

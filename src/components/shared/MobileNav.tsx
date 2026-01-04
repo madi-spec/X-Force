@@ -21,26 +21,35 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  FolderOpen,
+  ListTodo,
+  FileText,
 } from 'lucide-react';
 
-// Primary navigation - new IA structure
-const primaryNavigation = [
-  { name: 'Work', href: '/work', icon: Inbox },
+// Work section - daily tasks
+const workNavigation = [
+  { name: 'Daily Driver', href: '/work', icon: Inbox },
+  { name: 'Scheduler', href: '/scheduler', icon: Calendar },
+];
+
+// Manage section - admin/management tools
+const manageNavigation = [
   { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Process Studio', href: '/process', icon: Workflow },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Process Studio', href: '/process', icon: Workflow },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
 ];
 
-// Secondary navigation - other tools
-// NOTE: Command Center and Daily Driver removed - functionality consolidated into Work Queue
+// More Tools - secondary navigation
 const secondaryNavigation = [
   { name: 'Communications', href: '/communications', icon: MessageSquare },
+  { name: 'Transcripts', href: '/transcripts', icon: FileText },
+  { name: 'Collateral', href: '/collateral', icon: FolderOpen },
   { name: 'Support Cases', href: '/cases', icon: Ticket },
   { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Deals', href: '/deals', icon: Zap },
-  { name: 'Scheduler', href: '/scheduler', icon: Calendar },
   { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
+  { name: 'Onboarding', href: '/onboarding', icon: ListTodo },
 ];
 
 export function MobileNav() {
@@ -110,30 +119,66 @@ export function MobileNav() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 overflow-y-auto">
-          {/* Primary Navigation */}
-          <div className="space-y-1">
-            {primaryNavigation.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                  )}
-                >
-                  <item.icon className="h-5 w-5 shrink-0" />
-                  {item.name}
-                </Link>
-              );
-            })}
+          {/* Work Section */}
+          <div className="mb-4">
+            <div className="px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                Work
+              </span>
+            </div>
+            <div className="space-y-1">
+              {workNavigation.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Secondary Navigation - Collapsible */}
-          <div className="mt-6">
+          {/* Manage Section */}
+          <div className="mb-4">
+            <div className="px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                Manage
+              </span>
+            </div>
+            <div className="space-y-1">
+              {manageNavigation.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* More Tools - Collapsible */}
+          <div>
             <button
               onClick={() => setShowSecondary(!showSecondary)}
               className={cn(

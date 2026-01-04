@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, Database, Sparkles, Bell, User, Award, Shield, Upload, Link2, FileText, ClipboardCheck, Loader2, Check, LayoutGrid, Target, HeartHandshake, Rocket, Ticket } from 'lucide-react';
+import { Users, Database, Sparkles, Bell, User, Award, Shield, Upload, Link2, ClipboardCheck, Loader2, Check, LayoutGrid, Target, HeartHandshake, Rocket, Ticket, Brain, Mic } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { cn, formatDate } from '@/lib/utils';
@@ -20,6 +20,7 @@ interface UserProfile {
   title?: string;
   phone?: string;
   default_lens?: LensType;
+  default_process_type?: 'sales' | 'onboarding' | 'engagement' | 'support';
 }
 
 interface Certification {
@@ -42,6 +43,7 @@ interface TeamUser {
   email: string;
   role: string;
   team: string;
+  level?: string;
 }
 
 interface SettingsTabsProps {
@@ -49,6 +51,7 @@ interface SettingsTabsProps {
   userCertifications: UserCertification[];
   allCertifications: Certification[];
   allUsers: TeamUser[];
+  isAdmin?: boolean;
 }
 
 const tabs = [
@@ -64,7 +67,7 @@ const levelLabels: Record<string, { name: string; color: string }> = {
   l3_senior: { name: 'L3 Senior', color: 'bg-purple-100 text-purple-700' },
 };
 
-export function SettingsTabs({ profile, userCertifications, allCertifications, allUsers }: SettingsTabsProps) {
+export function SettingsTabs({ profile, userCertifications, allCertifications, allUsers, isAdmin = false }: SettingsTabsProps) {
   const [activeTab, setActiveTab] = useState('people');
   const supabase = createClient();
 
@@ -79,12 +82,26 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
   const [savingLens, setSavingLens] = useState(false);
   const [savedLens, setSavedLens] = useState(false);
 
+  // Default process type for AI features
+  const [defaultProcessType, setDefaultProcessType] = useState<'sales' | 'onboarding' | 'engagement' | 'support'>(
+    profile?.default_process_type || 'sales'
+  );
+  const [savingProcessType, setSavingProcessType] = useState(false);
+  const [savedProcessType, setSavedProcessType] = useState(false);
+
   // Update default lens when profile changes
   useEffect(() => {
     if (profile?.default_lens) {
       setDefaultLens(profile.default_lens);
     }
   }, [profile?.default_lens]);
+
+  // Update default process type when profile changes
+  useEffect(() => {
+    if (profile?.default_process_type) {
+      setDefaultProcessType(profile.default_process_type);
+    }
+  }, [profile?.default_process_type]);
 
   const handleSaveProfile = async () => {
     if (!profile?.id) return;
@@ -136,6 +153,37 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
       setSavingLens(false);
     }
   };
+
+  const handleSaveProcessType = async (processType: 'sales' | 'onboarding' | 'engagement' | 'support') => {
+    if (!profile?.id) return;
+
+    setSavingProcessType(true);
+    setSavedProcessType(false);
+    setDefaultProcessType(processType);
+
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ default_process_type: processType })
+        .eq('id', profile.id);
+
+      if (error) throw error;
+
+      setSavedProcessType(true);
+      setTimeout(() => setSavedProcessType(false), 2000);
+    } catch (err) {
+      console.error('Failed to save default process type:', err);
+    } finally {
+      setSavingProcessType(false);
+    }
+  };
+
+  const processTypeOptions: { id: 'sales' | 'onboarding' | 'engagement' | 'support'; label: string; description: string }[] = [
+    { id: 'sales', label: 'Sales', description: 'Focus on buying signals and deal progression' },
+    { id: 'onboarding', label: 'Onboarding', description: 'Focus on blockers, training, and go-live' },
+    { id: 'engagement', label: 'Customer Success', description: 'Focus on health, adoption, and expansion' },
+    { id: 'support', label: 'Support', description: 'Focus on issue resolution and SLAs' },
+  ];
 
   const lensOptions: { id: LensType; label: string; description: string; icon: typeof LayoutGrid }[] = [
     { id: 'focus', label: 'Focus', description: 'See all work across all areas', icon: LayoutGrid },
@@ -271,6 +319,57 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
                       )}
                     </div>
                   </div>
+
+                  {/* AI Settings - Process Type */}
+                  <div className="pt-6 border-t border-gray-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Brain className="h-4 w-4 text-gray-500" />
+                      <h3 className="text-sm font-medium text-gray-900">AI Settings</h3>
+                      {savedProcessType && (
+                        <span className="text-sm text-green-600 flex items-center gap-1">
+                          <Check className="h-4 w-4" />
+                          Saved
+                        </span>
+                      )}
+                      {savingProcessType && (
+                        <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-4">
+                      Set your default process context for AI-powered features like transcript analysis and meeting prep.
+                    </p>
+                    <div className="max-w-md">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Default Process Type
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {processTypeOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            onClick={() => handleSaveProcessType(option.id)}
+                            disabled={savingProcessType}
+                            className={cn(
+                              'flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all',
+                              defaultProcessType === option.id
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                            )}
+                          >
+                            <span className={cn(
+                              'text-sm font-medium',
+                              defaultProcessType === option.id ? 'text-blue-700' : 'text-gray-900'
+                            )}>
+                              {option.label}
+                            </span>
+                            <span className="text-xs text-gray-500">{option.description}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">
+                        This determines what the AI looks for in your meetings (e.g., buying signals vs implementation blockers).
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <p className="text-gray-500">Profile not found</p>
@@ -332,7 +431,7 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
             </div>
 
             {/* Team Members Section */}
-            <TeamManagement users={allUsers || []} currentUserId={profile?.id || ''} />
+            <TeamManagement users={allUsers || []} currentUserId={profile?.id || ''} isAdmin={isAdmin} />
 
             {/* Certifications Section */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -471,14 +570,30 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
 
               <div className="space-y-4">
                 <Link
-                  href="/settings/integrations"
+                  href="/settings/integrations/microsoft"
                   className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
                 >
-                  <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-700">Microsoft 365</p>
-                    <p className="text-sm text-gray-500">Connect to sync emails and calendar events</p>
+                  <div className="flex items-center gap-3">
+                    <Link2 className="h-5 w-5 text-blue-500" />
+                    <div>
+                      <p className="font-medium text-gray-900 group-hover:text-blue-700">Microsoft 365</p>
+                      <p className="text-sm text-gray-500">Connect to sync emails and calendar events</p>
+                    </div>
                   </div>
                   <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
+                </Link>
+                <Link
+                  href="/settings/integrations/fireflies"
+                  className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <Mic className="h-5 w-5 text-purple-500" />
+                    <div>
+                      <p className="font-medium text-gray-900 group-hover:text-purple-700">Fireflies.ai</p>
+                      <p className="text-sm text-gray-500">Import meeting transcripts automatically</p>
+                    </div>
+                  </div>
+                  <span className="text-gray-400 group-hover:text-purple-600">&rarr;</span>
                 </Link>
               </div>
             </div>
@@ -501,21 +616,6 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
                 <div>
                   <p className="font-medium text-gray-900 group-hover:text-blue-700">AI Prompts</p>
                   <p className="text-sm text-gray-500">Edit and customize the prompts used by AI features</p>
-                </div>
-                <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
-              </Link>
-              <Link
-                href="/settings/transcripts"
-                className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-gray-400 group-hover:text-blue-600" />
-                  <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-700">Transcripts Log</p>
-                    <p className="text-sm text-gray-500">
-                      View all synced meeting transcripts and their analysis status
-                    </p>
-                  </div>
                 </div>
                 <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
               </Link>

@@ -21,6 +21,8 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
+  FolderOpen,
+  FileText,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { LensSwitcher } from '@/components/lens';
@@ -33,20 +35,25 @@ interface NavItem {
   icon: typeof Inbox;
 }
 
-// Primary navigation - new IA structure with IDs for role-based hiding
-const primaryNavigation: NavItem[] = [
-  { id: 'work', name: 'Work', href: '/work', icon: Inbox },
+// Work section - daily tasks
+const workNavigation: NavItem[] = [
+  { id: 'work', name: 'Daily Driver', href: '/work', icon: Inbox },
   { id: 'scheduler', name: 'Scheduler', href: '/scheduler', icon: Calendar },
+];
+
+// Manage section - admin/management tools
+const manageNavigation: NavItem[] = [
   { id: 'customers', name: 'Customers', href: '/customers', icon: Users },
-  { id: 'process', name: 'Process Studio', href: '/process', icon: Workflow },
   { id: 'products', name: 'Products', href: '/products', icon: Package },
+  { id: 'process', name: 'Process Studio', href: '/process', icon: Workflow },
   { id: 'reports', name: 'Reports', href: '/reports', icon: BarChart3 },
 ];
 
-// Secondary navigation - other tools with IDs for role-based hiding
-// NOTE: Command Center and Daily Driver removed - functionality consolidated into Work Queue
+// More Tools - secondary navigation, collapsible
 const secondaryNavigation: NavItem[] = [
   { id: 'communications', name: 'Communications', href: '/communications', icon: MessageSquare },
+  { id: 'transcripts', name: 'Transcripts', href: '/transcripts', icon: FileText },
+  { id: 'collateral', name: 'Collateral', href: '/collateral', icon: FolderOpen },
   { id: 'support_cases', name: 'Support Cases', href: '/cases', icon: Ticket },
   { id: 'companies', name: 'Companies', href: '/companies', icon: Building2 },
   { id: 'pipeline', name: 'Deals', href: '/deals', icon: Zap },
@@ -69,8 +76,13 @@ export function Sidebar({ userRole = 'admin' }: SidebarProps) {
   const [showSecondary, setShowSecondary] = useState(false);
 
   // Filter navigation items based on user role
-  const filteredPrimaryNav = useMemo(
-    () => primaryNavigation.filter(item => !isNavItemHidden(userRole, item.id)),
+  const filteredWorkNav = useMemo(
+    () => workNavigation.filter(item => !isNavItemHidden(userRole, item.id)),
+    [userRole]
+  );
+
+  const filteredManageNav = useMemo(
+    () => manageNavigation.filter(item => !isNavItemHidden(userRole, item.id)),
     [userRole]
   );
 
@@ -107,52 +119,18 @@ export function Sidebar({ userRole = 'admin' }: SidebarProps) {
         <LensSwitcher variant="sidebar" />
       </div>
 
-      {/* Primary Navigation */}
+      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto border-t border-gray-800">
-        <div className="space-y-1">
-          {filteredPrimaryNav.map((item) => {
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-gray-800 text-white'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                )}
-              >
-                <item.icon className="h-5 w-5 shrink-0" />
-                {item.name}
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* Secondary Navigation - Collapsible (only show if there are items) */}
-        {filteredSecondaryNav.length > 0 && (
-        <div className="mt-6">
-          <button
-            onClick={() => setShowSecondary(!showSecondary)}
-            className={cn(
-              'w-full flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider transition-colors rounded-lg',
-              isSecondaryActive
-                ? 'text-gray-300'
-                : 'text-gray-500 hover:text-gray-400'
-            )}
-          >
-            <span>More Tools</span>
-            {showSecondary ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-          </button>
-
-          {(showSecondary || isSecondaryActive) && filteredSecondaryNav.length > 0 && (
-            <div className="mt-1 space-y-1">
-              {filteredSecondaryNav.map((item) => {
+        {/* Work Section */}
+        {filteredWorkNav.length > 0 && (
+          <div className="mb-4">
+            <div className="px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                Work
+              </span>
+            </div>
+            <div className="space-y-1">
+              {filteredWorkNav.map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                   <Link
@@ -162,17 +140,92 @@ export function Sidebar({ userRole = 'admin' }: SidebarProps) {
                       'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       isActive
                         ? 'bg-gray-800 text-white'
-                        : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     )}
                   >
-                    <item.icon className="h-4 w-4 shrink-0" />
+                    <item.icon className="h-5 w-5 shrink-0" />
                     {item.name}
                   </Link>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Manage Section */}
+        {filteredManageNav.length > 0 && (
+          <div className="mb-4">
+            <div className="px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                Manage
+              </span>
+            </div>
+            <div className="space-y-1">
+              {filteredManageNav.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* More Tools - Collapsible */}
+        {filteredSecondaryNav.length > 0 && (
+          <div>
+            <button
+              onClick={() => setShowSecondary(!showSecondary)}
+              className={cn(
+                'w-full flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider transition-colors rounded-lg',
+                isSecondaryActive
+                  ? 'text-gray-300'
+                  : 'text-gray-500 hover:text-gray-400'
+              )}
+            >
+              <span>More Tools</span>
+              {showSecondary ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </button>
+
+            {(showSecondary || isSecondaryActive) && (
+              <div className="mt-1 space-y-1">
+                {filteredSecondaryNav.map((item) => {
+                  const isActive = pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-gray-800 text-white'
+                          : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
+                      )}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </nav>
 
