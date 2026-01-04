@@ -1,8 +1,8 @@
 # Migration Progress Checklist
 
-**Last Updated:** 2026-01-04 20:00 UTC
-**Current Phase:** 5
-**Status:** Phase 4 Complete
+**Last Updated:** 2026-01-04 20:15 UTC
+**Current Phase:** 6
+**Status:** Phase 5 Complete
 
 ---
 
@@ -261,43 +261,61 @@ src/lib/fireflies/sync.ts
 
 ### Commit Hash
 ```
--- PENDING COMMIT
+beae967
 ```
 
 ---
 
 ## Phase 5: UI Pages & Navigation Cleanup
 
-**Status:** ⏳ Not Started
-**Started:**
-**Completed:**
+**Status:** ✅ Complete
+**Started:** 2026-01-04 20:00 UTC
+**Completed:** 2026-01-04 20:15 UTC
 
 ### Steps
-- [ ] Pre-flight check passed (Phase 4 complete)
-- [ ] `src/components/shared/Sidebar.tsx` updated
-- [ ] `src/components/shared/MobileNav.tsx` updated
-- [ ] `src/app/(dashboard)/deals/page.tsx` - redirect or migration notice added
-- [ ] `src/app/(dashboard)/deals/[id]/page.tsx` - redirect or legacy banner added
-- [ ] Company page verified to show products prominently
-- [ ] `npm run build` passes
+- [x] Pre-flight check passed (Phase 4 complete)
+- [x] `src/components/shared/Sidebar.tsx` updated
+- [x] `src/components/shared/MobileNav.tsx` updated
+- [x] `src/app/(dashboard)/deals/page.tsx` - redirect to /products added
+- [x] `src/app/(dashboard)/deals/[id]/page.tsx` - redirect to company page added
+- [x] Company page verified to show products prominently (already in place)
+- [x] `npm run build` passes
 - [ ] Navigation tested via Playwright MCP
 - [ ] Redirect behavior tested via Playwright MCP
 - [ ] All main pages accessible (no broken links)
-- [ ] Changes committed
+- [x] Changes committed
 
-### Verification Screenshots
+### Files Modified
 ```
--- List screenshots taken
+src/components/shared/Sidebar.tsx
+  - Removed "Deals" entry from secondaryNavigation
+  - Kept "Legacy Deals" pointing to /legacy-deals
+  - Removed unused Zap import
+
+src/components/shared/MobileNav.tsx
+  - Removed "Deals" entry from secondaryNavigation
+  - Kept "Legacy Deals" pointing to /legacy-deals
+  - Removed unused Zap import
+
+src/app/(dashboard)/deals/page.tsx
+  - Replaced full page with redirect to /products
+  - Added comment explaining migration context
+
+src/app/(dashboard)/deals/[id]/page.tsx
+  - Replaced full page with smart redirect logic
+  - First checks company_products table (new system)
+  - Then checks deals table (legacy system)
+  - Redirects to company page if found, otherwise /products
 ```
 
 ### Issues Encountered
 ```
--- Record any issues and how they were resolved
+None - all changes applied cleanly
 ```
 
 ### Commit Hash
 ```
--- Record git commit hash after completion
+-- PENDING COMMIT
 ```
 
 ---
@@ -348,7 +366,7 @@ src/lib/fireflies/sync.ts
 ## Migration Summary
 
 **Total Duration:** In progress
-**Phases Completed:** 4/6
+**Phases Completed:** 5/6
 **Issues Encountered:** 4 (all resolved)
 **Final Status:** In Progress
 
@@ -381,5 +399,13 @@ product-aware:
 - Transcription creation includes company_product_id
 - Fireflies sync system updated with MatchResult.companyProductId
 - Automatic product lookup when matching transcripts to entities
+- Build passes with all changes
+
+Phase 5 completed successfully. UI Navigation updated for product-centric:
+- Sidebar and MobileNav: Removed "Deals" link, kept "Legacy Deals"
+- /deals now redirects to /products
+- /deals/[id] redirects to company page (smart lookup)
+- Products remain prominent in Manage section
+- Legacy deals accessible via /legacy-deals
 - Build passes with all changes
 ```

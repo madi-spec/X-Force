@@ -12,7 +12,6 @@ import {
   Inbox,
   Calendar,
   Settings,
-  Zap,
   Ticket,
   Package,
   Workflow,
@@ -47,7 +46,6 @@ const secondaryNavigation = [
   { name: 'Collateral', href: '/collateral', icon: FolderOpen },
   { name: 'Support Cases', href: '/cases', icon: Ticket },
   { name: 'Companies', href: '/companies', icon: Building2 },
-  { name: 'Deals', href: '/deals', icon: Zap },
   { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { name: 'Onboarding', href: '/onboarding', icon: ListTodo },
 ];

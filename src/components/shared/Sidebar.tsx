@@ -9,7 +9,6 @@ import {
   Calendar,
   Settings,
   LogOut,
-  Zap,
   MessageSquare,
   Package,
   ListTodo,
@@ -56,7 +55,6 @@ const secondaryNavigation: NavItem[] = [
   { id: 'collateral', name: 'Collateral', href: '/collateral', icon: FolderOpen },
   { id: 'support_cases', name: 'Support Cases', href: '/cases', icon: Ticket },
   { id: 'companies', name: 'Companies', href: '/companies', icon: Building2 },
-  { id: 'pipeline', name: 'Deals', href: '/deals', icon: Zap },
   { id: 'legacy_deals', name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
   { id: 'onboarding_dashboard', name: 'Onboarding', href: '/onboarding', icon: ListTodo },
 ];
