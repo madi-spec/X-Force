@@ -78,7 +78,13 @@ export type TierTrigger =
   | 'needs_ai_classification'
   | 'new_introduction'
   | 'introduction'
-  | 'other';
+  | 'other'
+  // Onboarding-specific tier triggers
+  | 'onboarding_blocker'
+  | 'training_gap'
+  | 'go_live_risk'
+  | 'adoption_risk'
+  | 'stakeholder_issue';
 
 export type TierSlaStatus = 'on_track' | 'warning' | 'breached';
 
@@ -162,7 +168,13 @@ export type ActionType =
   | 'research_account'
   | 'internal_sync'
   | 'task_simple'
-  | 'task_complex';
+  | 'task_complex'
+  // Onboarding-specific action types
+  | 'implementation_blocker'   // Critical issue blocking implementation
+  | 'training_gap'             // Training need identified
+  | 'go_live_risk'             // Risk to go-live timeline
+  | 'customer_action_needed'   // Customer needs to take action
+  | 'adoption_concern';        // Concern about product adoption
 
 export type ItemStatus = 'pending' | 'in_progress' | 'completed' | 'snoozed' | 'dismissed';
 
@@ -739,6 +751,47 @@ export const ACTION_TYPE_CONFIGS: Record<ActionType, ActionTypeConfig> = {
     color: 'bg-gray-100 text-gray-700',
     defaultDuration: 30,
     primaryCTA: 'Start',
+  },
+  // Onboarding-specific action configs
+  implementation_blocker: {
+    type: 'implementation_blocker',
+    label: 'Blocker',
+    icon: 'AlertTriangle',
+    color: 'bg-red-100 text-red-700',
+    defaultDuration: 30,
+    primaryCTA: 'Resolve Blocker',
+  },
+  training_gap: {
+    type: 'training_gap',
+    label: 'Training',
+    icon: 'GraduationCap',
+    color: 'bg-amber-100 text-amber-700',
+    defaultDuration: 45,
+    primaryCTA: 'Schedule Training',
+  },
+  go_live_risk: {
+    type: 'go_live_risk',
+    label: 'Go-Live Risk',
+    icon: 'AlertCircle',
+    color: 'bg-orange-100 text-orange-700',
+    defaultDuration: 20,
+    primaryCTA: 'Review Risk',
+  },
+  customer_action_needed: {
+    type: 'customer_action_needed',
+    label: 'Customer Action',
+    icon: 'UserCheck',
+    color: 'bg-blue-100 text-blue-700',
+    defaultDuration: 10,
+    primaryCTA: 'Follow Up',
+  },
+  adoption_concern: {
+    type: 'adoption_concern',
+    label: 'Adoption',
+    icon: 'TrendingDown',
+    color: 'bg-yellow-100 text-yellow-700',
+    defaultDuration: 20,
+    primaryCTA: 'Address Concern',
   },
 };
 
