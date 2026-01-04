@@ -12,6 +12,73 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getPromptWithVariables } from '@/lib/ai/promptManager';
 
 // ============================================
+// GENERIC EMAIL DOMAINS - Should NOT auto-match to companies
+// ============================================
+
+const GENERIC_EMAIL_DOMAINS = new Set([
+  // Major free email providers
+  'gmail.com',
+  'yahoo.com',
+  'hotmail.com',
+  'outlook.com',
+  'aol.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'live.com',
+  'msn.com',
+  'protonmail.com',
+  'proton.me',
+  'zoho.com',
+  'mail.com',
+  'ymail.com',
+  'gmx.com',
+  'gmx.net',
+  'inbox.com',
+  'fastmail.com',
+  'tutanota.com',
+  'hey.com',
+  // Regional/country-specific
+  'yahoo.co.uk',
+  'yahoo.ca',
+  'hotmail.co.uk',
+  'outlook.co.uk',
+  'btinternet.com',
+  'sky.com',
+  'virginmedia.com',
+  'comcast.net',
+  'verizon.net',
+  'att.net',
+  'sbcglobal.net',
+  'cox.net',
+  'charter.net',
+  'earthlink.net',
+  'bellsouth.net',
+  'rogers.com',
+  'shaw.ca',
+  // Other common free/ISP domains
+  'rocketmail.com',
+  'rediffmail.com',
+  'yandex.com',
+  'qq.com',
+  '163.com',
+  '126.com',
+  'sina.com',
+  'naver.com',
+  'daum.net',
+]);
+
+/**
+ * Check if an email domain is a generic/personal email provider
+ * These should NOT be auto-assigned to companies
+ */
+export function isGenericEmailDomain(email: string): boolean {
+  if (!email) return false;
+  const domain = email.split('@')[1]?.toLowerCase();
+  return domain ? GENERIC_EMAIL_DOMAINS.has(domain) : false;
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -183,9 +250,8 @@ export function extractRawIdentifiers(communication: CommunicationInput): RawIde
     const domainMatch = fromEmail.match(/@([^@]+)$/);
     if (domainMatch) {
       const extractedDomain = domainMatch[1].toLowerCase();
-      // Skip common email providers
-      const commonDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'me.com'];
-      if (!commonDomains.includes(extractedDomain)) {
+      // Skip generic email providers - they shouldn't be used for company matching
+      if (!GENERIC_EMAIL_DOMAINS.has(extractedDomain)) {
         domain = extractedDomain;
       }
     }
@@ -760,8 +826,15 @@ export async function intelligentEntityMatch(
   let contact: EntityMatchResult['contact'] = null;
   let wasCreated = { company: false, contact: false };
 
+  // Check if this is from a generic email domain (gmail, yahoo, etc.)
+  // For generic domains, we require much higher confidence or an exact contact match
+  const fromGenericDomain = isGenericEmailDomain(rawIdentifiers.from_email);
+  const requiredConfidence = fromGenericDomain
+    ? CONFIDENCE_THRESHOLDS.AUTO_MATCH  // 0.85 - require very high confidence for generic domains
+    : CONFIDENCE_THRESHOLDS.LIKELY_MATCH; // 0.70 - normal threshold
+
   // Handle company matching/creation
-  if (aiResult.company_match.confidence >= CONFIDENCE_THRESHOLDS.LIKELY_MATCH && aiResult.company_match.company_id) {
+  if (aiResult.company_match.confidence >= requiredConfidence && aiResult.company_match.company_id) {
     // Use matched company - first check candidates, then lookup from DB if needed
     const matched = candidateCompanies.find(c => c.id === aiResult.company_match.company_id);
     if (matched) {
@@ -788,11 +861,13 @@ export async function intelligentEntityMatch(
         console.log(`[EntityMatcher] Looked up company from DB: ${dbCompany.name}`);
       }
     }
+  } else if (fromGenericDomain && aiResult.company_match.company_id) {
+    console.log(`[EntityMatcher] Skipping company match for generic domain email (confidence ${aiResult.company_match.confidence} < ${requiredConfidence}): ${rawIdentifiers.from_email}`);
   }
 
   // FALLBACK: If no company match, try AI body extraction
-  // This catches cases like "On The Fly" mentioned in email body but not in patterns
-  if (!company && candidateCompanies.length === 0) {
+  // Skip this for generic email domains - they should remain unassigned
+  if (!company && candidateCompanies.length === 0 && !fromGenericDomain) {
     console.log('[EntityMatcher] No candidates found, trying AI body extraction...');
     // Use body text, or fall back to transcript text, or extract text from subject
     // Note: body_preview is a good fallback when body_text is null but body_html exists
@@ -820,28 +895,37 @@ export async function intelligentEntityMatch(
     }
   }
 
-  if (!company && aiResult.create_company.should_create && aiResult.create_company.suggested_name) {
-    // Create new company
-    const { data: newCompany, error } = await supabase
-      .from('companies')
-      .insert({
-        name: aiResult.create_company.suggested_name,
-        domain: aiResult.create_company.suggested_domain,
-        website: aiResult.create_company.suggested_domain ? `https://${aiResult.create_company.suggested_domain}` : null,
-        industry: aiResult.create_company.suggested_industry || 'pest_control',
-        status: 'prospect',
-        source: 'ai_extracted',
-        user_id: userId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .select('id, name, domain')
-      .single();
+  // Check if this is from a generic email domain - if so, don't auto-create companies
+  const isFromGenericDomain = isGenericEmailDomain(rawIdentifiers.from_email);
 
-    if (!error && newCompany) {
-      company = newCompany;
-      wasCreated.company = true;
-      console.log(`[EntityMatcher] Created company: ${newCompany.name}`);
+  if (!company && aiResult.create_company.should_create && aiResult.create_company.suggested_name) {
+    // Don't auto-create companies for generic email domains (gmail, yahoo, etc.)
+    // These should remain unassigned until a user manually assigns them
+    if (isFromGenericDomain) {
+      console.log(`[EntityMatcher] Skipping company creation - generic email domain: ${rawIdentifiers.from_email}`);
+    } else {
+      // Create new company
+      const { data: newCompany, error } = await supabase
+        .from('companies')
+        .insert({
+          name: aiResult.create_company.suggested_name,
+          domain: aiResult.create_company.suggested_domain,
+          website: aiResult.create_company.suggested_domain ? `https://${aiResult.create_company.suggested_domain}` : null,
+          industry: aiResult.create_company.suggested_industry || 'pest_control',
+          status: 'prospect',
+          source: 'ai_extracted',
+          user_id: userId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select('id, name, domain')
+        .single();
+
+      if (!error && newCompany) {
+        company = newCompany;
+        wasCreated.company = true;
+        console.log(`[EntityMatcher] Created company: ${newCompany.name}`);
+      }
     }
   }
 
