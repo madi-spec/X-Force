@@ -14,13 +14,24 @@ import type {
 } from '../types';
 
 // ============================================
-// SUPABASE CLIENT
+// SUPABASE CLIENT (Lazy Initialization)
 // ============================================
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+
+    _supabase = createClient(supabaseUrl, supabaseServiceKey);
+  }
+  return _supabase;
+}
 
 // ============================================
 // COMPANY ENRICHMENT SERVICE
@@ -36,7 +47,7 @@ export async function enrichCompanyFromIntelligence(
 ): Promise<CompanyEnrichmentResult> {
   try {
     // Get current company data
-    const { data: company, error: fetchError } = await supabase
+    const { data: company, error: fetchError } = await getSupabase()
       .from('companies')
       .select('*')
       .eq('id', companyId)
@@ -133,7 +144,7 @@ export async function enrichCompanyFromIntelligence(
 
     // Apply updates if any
     if (fieldsUpdated.length > 0) {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await getSupabase()
         .from('companies')
         .update(updates)
         .eq('id', companyId);
@@ -175,7 +186,7 @@ export async function enrichCompanyFromIntelligence(
  * Extract domain from company contacts' emails
  */
 export async function extractDomainFromContacts(companyId: string): Promise<string | null> {
-  const { data: contacts } = await supabase
+  const { data: contacts } = await getSupabase()
     .from('contacts')
     .select('email')
     .eq('company_id', companyId)
@@ -205,7 +216,7 @@ export async function extractDomainFromContacts(companyId: string): Promise<stri
  */
 export async function autoDetectCompanyDomain(companyId: string): Promise<string | null> {
   // Check if company already has a domain
-  const { data: company } = await supabase
+  const { data: company } = await getSupabase()
     .from('companies')
     .select('domain')
     .eq('id', companyId)
@@ -220,7 +231,7 @@ export async function autoDetectCompanyDomain(companyId: string): Promise<string
 
   if (detectedDomain) {
     // Update company
-    await supabase
+    await getSupabase()
       .from('companies')
       .update({
         domain: detectedDomain,
@@ -314,7 +325,7 @@ async function logEnrichment(
   newValues: Record<string, unknown>
 ): Promise<void> {
   try {
-    await supabase.from('enrichment_log').insert({
+    await getSupabase().from('enrichment_log').insert({
       entity_type: entityType,
       entity_id: entityId,
       source,

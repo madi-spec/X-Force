@@ -12,13 +12,24 @@ import type {
 } from '../types';
 
 // ============================================
-// SUPABASE CLIENT
+// SUPABASE CLIENT (Lazy Initialization)
 // ============================================
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+
+    _supabase = createClient(supabaseUrl, supabaseServiceKey);
+  }
+  return _supabase;
+}
 
 // ============================================
 // CONTACT ENRICHMENT SERVICE
@@ -34,7 +45,7 @@ export async function enrichExistingContacts(
 ): Promise<ContactEnrichmentResult> {
   try {
     // Get existing contacts for this company
-    const { data: existingContacts, error: fetchError } = await supabase
+    const { data: existingContacts, error: fetchError } = await getSupabase()
       .from('contacts')
       .select('id, email, first_name, last_name, phone, linkedin_url, title, seniority, department')
       .eq('company_id', companyId);
@@ -106,7 +117,7 @@ export async function enrichContact(
 ): Promise<SingleContactEnrichmentResult> {
   try {
     // Get current contact data
-    const { data: contact, error: fetchError } = await supabase
+    const { data: contact, error: fetchError } = await getSupabase()
       .from('contacts')
       .select('*')
       .eq('id', contactId)
@@ -167,7 +178,7 @@ export async function enrichContact(
       updates.enriched_at = new Date().toISOString();
       updates.enrichment_source = 'apollo';
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await getSupabase()
         .from('contacts')
         .update(updates)
         .eq('id', contactId);
@@ -313,7 +324,7 @@ async function createContactFromApollo(
   apolloPerson: EnhancedApolloPerson
 ): Promise<boolean> {
   try {
-    const { error } = await supabase.from('contacts').insert({
+    const { error } = await getSupabase().from('contacts').insert({
       company_id: companyId,
       first_name: apolloPerson.firstName,
       last_name: apolloPerson.lastName,
@@ -433,7 +444,7 @@ async function logContactEnrichment(
   newValues: Record<string, unknown>
 ): Promise<void> {
   try {
-    await supabase.from('enrichment_log').insert({
+    await getSupabase().from('enrichment_log').insert({
       entity_type: 'contact',
       entity_id: contactId,
       source,
