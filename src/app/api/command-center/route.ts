@@ -559,6 +559,7 @@ export async function GET(request: NextRequest) {
           extracted_signals
         )
       `)
+      .eq('user_id', userId)
       .eq('awaiting_our_response', true)
       .is('responded_at', null)
       .order('response_due_by', { ascending: true, nullsFirst: false });
@@ -582,6 +583,7 @@ export async function GET(request: NextRequest) {
         company:companies(id, name),
         company_product:company_products(
           id,
+          owner_user_id,
           close_confidence,
           close_ready,
           mrr,
@@ -597,7 +599,13 @@ export async function GET(request: NextRequest) {
       .or(`snoozed_until.is.null,snoozed_until.lt.${nowIso}`)
       .order('created_at', { ascending: true });
 
-    const needsHumanItems = (needsHumanRaw || []).map(row =>
+    // Filter to only show flags for company_products owned by this user
+    const needsHumanFiltered = (needsHumanRaw || []).filter(row => {
+      const cp = row.company_product as Record<string, unknown> | null;
+      if (!cp) return false; // No company_product = skip
+      return cp.owner_user_id === userId;
+    });
+    const needsHumanItems = needsHumanFiltered.map(row =>
       transformAttentionFlag(row as Record<string, unknown>)
     );
 
@@ -611,6 +619,7 @@ export async function GET(request: NextRequest) {
         company:companies(id, name),
         company_product:company_products(
           id,
+          owner_user_id,
           close_confidence,
           close_ready,
           mrr,
@@ -626,7 +635,13 @@ export async function GET(request: NextRequest) {
       .or(`snoozed_until.is.null,snoozed_until.lt.${nowIso}`)
       .order('created_at', { ascending: true });
 
-    const stalledItems = (stalledRaw || []).map(row =>
+    // Filter to only show flags for company_products owned by this user
+    const stalledFiltered = (stalledRaw || []).filter(row => {
+      const cp = row.company_product as Record<string, unknown> | null;
+      if (!cp) return false; // No company_product = skip
+      return cp.owner_user_id === userId;
+    });
+    const stalledItems = stalledFiltered.map(row =>
       transformAttentionFlag(row as Record<string, unknown>)
     );
 
@@ -653,6 +668,7 @@ export async function GET(request: NextRequest) {
         current_stage:product_process_stages(id, name, stage_order),
         owner:users(id, name)
       `)
+      .eq('owner_user_id', userId)
       .eq('status', 'in_sales')
       .or('close_ready.eq.true,close_confidence.gte.75')
       .order('close_confidence', { ascending: false, nullsFirst: false });

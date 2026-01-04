@@ -359,6 +359,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    const userId = dbUser.id;
     const now = new Date();
     const nowIso = now.toISOString();
 
@@ -408,6 +409,7 @@ export async function GET(request: NextRequest) {
           extracted_signals
         )
       `)
+      .eq('user_id', userId) // Filter to current user's communications only
       .eq('awaiting_our_response', true)
       .is('responded_at', null)
       .is('excluded_at', null)  // Filter out ignored/excluded communications
@@ -497,6 +499,7 @@ export async function GET(request: NextRequest) {
         company:companies(id, name),
         company_product:company_products(
           id,
+          owner_user_id,
           close_confidence,
           close_ready,
           mrr,
@@ -523,8 +526,15 @@ export async function GET(request: NextRequest) {
       throw needsHumanError;
     }
 
+    // Filter to only show flags for company_products owned by this user
+    const needsHumanFiltered = (needsHumanRaw || []).filter(row => {
+      const cp = row.company_product as Record<string, unknown> | null;
+      if (!cp) return false;
+      return cp.owner_user_id === userId;
+    });
+
     // Transform and sort by severity desc then created_at asc
-    const needsHuman: DailyDriverItem[] = (needsHumanRaw || [])
+    const needsHuman: DailyDriverItem[] = needsHumanFiltered
       .map((row) => transformToItem(row, 'attention_flag'))
       .sort((a, b) => {
         const severityDiff =
@@ -543,6 +553,7 @@ export async function GET(request: NextRequest) {
         company:companies(id, name),
         company_product:company_products(
           id,
+          owner_user_id,
           close_confidence,
           close_ready,
           mrr,
@@ -569,7 +580,14 @@ export async function GET(request: NextRequest) {
       throw stalledError;
     }
 
-    const stalled: DailyDriverItem[] = (stalledRaw || [])
+    // Filter to only show flags for company_products owned by this user
+    const stalledFiltered = (stalledRaw || []).filter(row => {
+      const cp = row.company_product as Record<string, unknown> | null;
+      if (!cp) return false;
+      return cp.owner_user_id === userId;
+    });
+
+    const stalled: DailyDriverItem[] = stalledFiltered
       .map((row) => transformToItem(row, 'attention_flag'))
       .sort((a, b) => {
         const severityDiff =
@@ -596,7 +614,7 @@ export async function GET(request: NextRequest) {
         .filter(Boolean)
     );
 
-    // Get company products that are ready to close
+    // Get company products that are ready to close (owned by current user)
     const { data: readyToCloseRaw, error: readyToCloseError } = await supabase
       .from('company_products')
       .select(`
@@ -606,6 +624,7 @@ export async function GET(request: NextRequest) {
         current_stage:product_process_stages(id, name, stage_order),
         owner:users(id, name)
       `)
+      .eq('owner_user_id', userId) // Filter to current user's deals only
       .eq('status', 'in_sales')
       .or('close_ready.eq.true,close_confidence.gte.75')
       .order('close_confidence', { ascending: false, nullsFirst: false })

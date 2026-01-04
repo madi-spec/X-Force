@@ -132,6 +132,34 @@ export async function fetchQueueItems(
 
   const { limit = 20, offset = 0 } = options;
 
+  // Get current user's ID to filter items
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+  if (!authUser) {
+    console.warn('[QueueService] No authenticated user, returning empty results');
+    return {
+      queue: config,
+      items: [],
+      stats: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
+      hasMore: false,
+    };
+  }
+
+  // Get the internal user ID from auth_id
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    console.warn('[QueueService] User not found in users table');
+    return {
+      queue: config,
+      items: [],
+      stats: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
+      hasMore: false,
+    };
+  }
 
   // Build query based on queue type
   // Note: We don't select queue_id, days_stale, last_activity_at, metadata from DB
@@ -156,6 +184,7 @@ export async function fetchQueueItems(
       due_at,
       company:companies(id, name, domain)
     `)
+    .eq('user_id', dbUser.id) // Filter to current user's items only
     .eq('status', 'pending');
 
   // Apply queue-specific filters
@@ -325,10 +354,27 @@ export async function getQueueCounts(
 ): Promise<Record<QueueId, number>> {
   const counts: Record<string, number> = {};
 
-  // Get counts by action_type groupings
+  // Get current user's ID to filter items
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+  if (!authUser) {
+    return {} as Record<QueueId, number>;
+  }
+
+  const { data: dbUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUser.id)
+    .single();
+
+  if (!dbUser) {
+    return {} as Record<QueueId, number>;
+  }
+
+  // Get counts by action_type groupings (filtered to current user)
   const { data } = await supabase
     .from('command_center_items')
     .select('action_type')
+    .eq('user_id', dbUser.id)
     .eq('status', 'pending');
 
   if (data) {
@@ -346,10 +392,11 @@ export async function getQueueCounts(
     counts['at_risk'] = actionTypeCounts['escalate'] || 0;
   }
 
-  // Get action_now count (high momentum items)
+  // Get action_now count (high momentum items, filtered to current user)
   const { count: actionNowCount } = await supabase
     .from('command_center_items')
     .select('*', { count: 'exact', head: true })
+    .eq('user_id', dbUser.id)
     .eq('status', 'pending')
     .gte('momentum_score', 90);
 
