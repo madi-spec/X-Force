@@ -8,6 +8,14 @@ interface AIPrepPanelProps {
 }
 
 export function AIPrepPanel({ aiPrep }: AIPrepPanelProps) {
+  // Check if there's any content to display
+  const hasContent =
+    aiPrep.quick_context ||
+    aiPrep.objective ||
+    aiPrep.talking_points.length > 0 ||
+    aiPrep.landmines.length > 0 ||
+    (aiPrep.questions_to_ask && aiPrep.questions_to_ask.length > 0);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
       {/* Header */}
@@ -17,6 +25,19 @@ export function AIPrepPanel({ aiPrep }: AIPrepPanelProps) {
           AI Meeting Prep
         </h2>
       </div>
+
+      {/* Empty State */}
+      {!hasContent && (
+        <div className="text-center py-8">
+          <Sparkles className="h-8 w-8 text-gray-300 mx-auto mb-3" />
+          <p className="text-sm text-gray-500">
+            No AI prep available yet
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Prep is generated based on meeting context and history
+          </p>
+        </div>
+      )}
 
       {/* Quick Context */}
       {aiPrep.quick_context && (

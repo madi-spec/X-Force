@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, AlertCircle, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import type { EnhancedMeetingPrep } from '@/lib/meetingPrep/buildEnhancedPrep';
 import { MeetingHeader } from './MeetingHeader';
@@ -11,6 +11,7 @@ import { CollateralPanel } from './CollateralPanel';
 import { SoftwareLinksPanel } from './SoftwareLinksPanel';
 import { PastContextPanel } from './PastContextPanel';
 import { NotesPanel } from './NotesPanel';
+import { MeetingPrepSkeleton } from './skeletons';
 
 interface MeetingPrepPageProps {
   meetingId: string;
@@ -60,20 +61,9 @@ export function MeetingPrepPage({ meetingId }: MeetingPrepPageProps) {
     }
   };
 
-  // Loading state
+  // Loading state - use skeleton
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-center py-24">
-            <div className="text-center">
-              <Loader2 className="h-8 w-8 text-gray-400 animate-spin mx-auto mb-4" />
-              <p className="text-sm text-gray-500">Preparing your meeting...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <MeetingPrepSkeleton />;
   }
 
   // Error state
@@ -104,7 +94,7 @@ export function MeetingPrepPage({ meetingId }: MeetingPrepPageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Back Navigation */}
         <Link
           href="/calendar"

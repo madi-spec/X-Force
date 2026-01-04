@@ -63,8 +63,8 @@ export function MeetingHeader({
   });
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <div className="flex items-start justify-between">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="flex-1">
           {/* Meeting Type Badge */}
           <span
@@ -107,7 +107,7 @@ export function MeetingHeader({
             href={joinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition-colors"
+            className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition-colors"
           >
             <ExternalLink className="h-4 w-4" />
             Join Meeting

@@ -597,6 +597,30 @@ export function SettingsTabs({ profile, userCertifications, allCertifications, a
                 </Link>
               </div>
             </div>
+
+            {/* Software Links Section */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <Link2 className="h-5 w-5 text-gray-500" />
+                <h2 className="text-base font-medium text-gray-900">Meeting Prep</h2>
+              </div>
+
+              <div className="space-y-4">
+                <Link
+                  href="/settings/software-links"
+                  className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <Link2 className="h-5 w-5 text-gray-500" />
+                    <div>
+                      <p className="font-medium text-gray-900 group-hover:text-gray-700">Software Links</p>
+                      <p className="text-sm text-gray-500">Configure quick access links for meeting prep pages</p>
+                    </div>
+                  </div>
+                  <span className="text-gray-400 group-hover:text-gray-600">&rarr;</span>
+                </Link>
+              </div>
+            </div>
           </>
         )}
 
