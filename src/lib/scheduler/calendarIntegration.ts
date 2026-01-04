@@ -2027,16 +2027,37 @@ export async function getAlternativesAroundTime(
             timeZone: timezone,
           });
 
-          // Check if this time was previously declined
+          // Check if this time was previously proposed/declined
+          // We need to match the specific time slot, not just the day
           const isExcluded = excludeTimes.some(excluded => {
-            const excludedLower = excluded.toLowerCase();
-            const formattedLower = formatted.toLowerCase();
-            // Check if the formatted time matches the excluded time
-            return formattedLower.includes(excludedLower) ||
-                   excludedLower.includes(formatted.split(' at ')[0].toLowerCase());
+            // Normalize both strings for comparison
+            const normalizeTime = (str: string) => {
+              return str
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .replace(/,/g, '')
+                .replace(/th|st|nd|rd/g, '') // Remove ordinals
+                .replace(/\s(est|edt|et|pst|pdt|pt|cst|cdt|ct|mst|mdt|mt)\b/gi, '') // Remove timezone abbrevs
+                .trim();
+            };
+
+            const excludedNorm = normalizeTime(excluded);
+            const formattedNorm = normalizeTime(formatted);
+
+            // Extract just the day and time parts for comparison
+            // "monday january 5 at 9:30 am" -> match on day + time
+            const getTimeKey = (str: string) => {
+              const match = str.match(/(\w+)\s+(\w+)\s+(\d+)\s+at\s+(\d+):?(\d*)\s*(am|pm)/i);
+              if (match) {
+                return `${match[1]} ${match[2]} ${match[3]} ${match[4]}:${match[5] || '00'} ${match[6]}`.toLowerCase();
+              }
+              return str;
+            };
+
+            return getTimeKey(excludedNorm) === getTimeKey(formattedNorm);
           });
           if (isExcluded) {
-            console.log('[getAlternativesAroundTime] Excluding previously declined:', formatted);
+            console.log('[getAlternativesAroundTime] Excluding previously proposed:', formatted);
             continue;
           }
 
