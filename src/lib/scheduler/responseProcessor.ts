@@ -61,6 +61,7 @@ import {
   validateProposedTime,
   logTimestampConversion,
 } from './timestampValidator';
+import { prepareEmailForAI } from '@/lib/email/contentCleaner';
 
 // ============================================
 // TYPES
@@ -613,8 +614,13 @@ export async function processSchedulingResponse(
     // Extract CC recipients from email for attendee detection
     const ccRecipients = email.ccRecipients?.map(r => r.address) || [];
 
+    // Preprocess email body: strip HTML and boilerplate (CAUTION warnings, disclaimers)
+    // This ensures the AI sees the actual message content, not buried under warnings
+    const cleanedEmailBody = prepareEmailForAI(email.body || email.bodyPreview);
+    console.log(`[processResponse:${correlationId}] Cleaned email body length: ${cleanedEmailBody.length} (original: ${(email.body || email.bodyPreview || '').length})`);
+
     const unifiedAnalysis = await analyzeSchedulingResponse(
-      email.body || email.bodyPreview || '',
+      cleanedEmailBody,
       proposedTimesContext,
       userTimezone,
       { correlationId, ccRecipients }
