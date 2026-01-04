@@ -13,26 +13,12 @@ import type {
   CompanyEnrichmentResult,
 } from '../types';
 
-// Type for company data from database
-interface CompanyRecord {
-  id: string;
-  domain: string | null;
-  address: string | null;
-  phone: string | null;
-  employee_count: number | null;
-  revenue_estimate: string | null;
-  founded_year: number | null;
-  technologies: string[] | null;
-  enriched_at: string | null;
-  enrichment_source: string | null;
-  [key: string]: unknown;
-}
-
 // ============================================
 // SUPABASE CLIENT (Lazy Initialization)
 // ============================================
 
-let _supabase: ReturnType<typeof createClient> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _supabase: any = null;
 
 function getSupabase() {
   if (!_supabase) {
@@ -62,13 +48,11 @@ export async function enrichCompanyFromIntelligence(
 ): Promise<CompanyEnrichmentResult> {
   try {
     // Get current company data
-    const { data, error: fetchError } = await getSupabase()
+    const { data: company, error: fetchError } = await getSupabase()
       .from('companies')
       .select('*')
       .eq('id', companyId)
       .single();
-
-    const company = data as CompanyRecord | null;
 
     if (fetchError || !company) {
       return {
