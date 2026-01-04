@@ -65,6 +65,7 @@ export default async function MeetingAnalysisPage({
   const typedTranscription: MeetingTranscription = {
     id: transcription.id,
     deal_id: transcription.deal_id,
+    company_product_id: transcription.company_product_id,
     company_id: transcription.company_id,
     contact_id: transcription.contact_id,
     activity_id: transcription.activity_id,

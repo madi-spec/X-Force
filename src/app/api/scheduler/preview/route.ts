@@ -195,6 +195,7 @@ export async function POST(request: NextRequest) {
       id: 'preview',
       created_by: sender?.id || user.id,
       deal_id: null,
+      company_product_id: null,
       company_id: companyId,
       source_communication_id: null,
       meeting_type: (meetingType || 'discovery') as MeetingType,

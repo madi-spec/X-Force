@@ -22,6 +22,7 @@ interface MeetingTranscription {
   company_id: string | null;
   contact_id: string | null;
   deal_id: string | null;
+  company_product_id: string | null;
   user_id: string | null;
 }
 

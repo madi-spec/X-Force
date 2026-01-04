@@ -235,6 +235,7 @@ export interface SchedulingRequest {
   id: string;
   created_by: string;
   deal_id: string | null;
+  company_product_id: string | null;
   company_id: string | null;
   source_communication_id: string | null;
 
@@ -381,6 +382,7 @@ export interface MeetingPrepBrief {
   id: string;
   scheduling_request_id: string;
   deal_id: string | null;
+  company_product_id: string | null;
   company_id: string | null;
   meeting_time: string;
 
@@ -434,6 +436,7 @@ export interface CreateSchedulingRequestInput {
   timezone?: string;
 
   deal_id?: string;
+  company_product_id?: string;
   company_id?: string;
   source_communication_id?: string;
 
@@ -462,6 +465,7 @@ export interface UpdateSchedulingRequestInput {
   // Editable fields
   company_id?: string | null;
   deal_id?: string | null;
+  company_product_id?: string | null;
   title?: string | null;
   context?: string | null;
   meeting_type?: MeetingType;

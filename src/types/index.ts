@@ -380,6 +380,7 @@ export interface DealCollaborator {
 export interface Activity {
   id: string;
   deal_id: string | null;
+  company_product_id: string | null;
   contact_id: string | null;
   company_id: string;
   user_id: string;
@@ -449,6 +450,7 @@ export interface RepCertification {
 export interface Task {
   id: string;
   deal_id: string | null;
+  company_product_id: string | null;
   company_id: string | null;
   assigned_to: string;
   created_by: string | null;
@@ -781,6 +783,7 @@ export type TranscriptionSource = 'manual' | 'fireflies' | 'zoom' | 'teams';
 export interface MeetingTranscription {
   id: string;
   deal_id: string | null;
+  company_product_id: string | null;
   company_id: string | null;
   contact_id: string | null;
   activity_id: string | null;

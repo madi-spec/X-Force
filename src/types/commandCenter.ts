@@ -211,6 +211,7 @@ export interface CommandCenterItem {
   task_id?: string | null;
   conversation_id?: string | null;
   deal_id?: string | null;
+  company_product_id?: string | null;
   company_id?: string | null;
   contact_id?: string | null;
   signal_id?: string | null;
@@ -571,6 +572,7 @@ export interface CreateItemRequest {
   title: string;
   description?: string;
   deal_id?: string;
+  company_product_id?: string;
   company_id?: string;
   contact_id?: string;
   due_at?: string;
@@ -913,6 +915,7 @@ export interface MeetingWithPrep {
   company_id?: string;
   company_name?: string;
   deal_id?: string;
+  company_product_id?: string;
   deal_name?: string;
   deal_value?: number;
   deal_stage?: string;
@@ -981,6 +984,7 @@ export interface NewCommandCenterItem {
   contact_id?: string;
   company_id?: string;
   deal_id?: string;
+  company_product_id?: string;
   conversation_id?: string;
   meeting_id?: string;
 }
