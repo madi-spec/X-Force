@@ -189,11 +189,11 @@ export async function syncMeetingPrep(userId: string): Promise<SyncResult> {
       .select(`
         id, subject, occurred_at, metadata,
         deals:deal_id (id, name, stage, estimated_value),
-        companies:organization_id (id, name),
+        companies:company_id (id, name),
         contacts:contact_id (id, name)
       `)
       .eq('user_id', userId)
-      .eq('type', 'meeting_held')
+      .eq('type', 'meeting')
       .gte('occurred_at', now.toISOString())
       .lte('occurred_at', tomorrow.toISOString());
 
@@ -202,10 +202,11 @@ export async function syncMeetingPrep(userId: string): Promise<SyncResult> {
     }
 
     for (const meeting of meetings) {
-      const metadata = meeting.metadata as { meeting_id?: string; is_external?: boolean } | null;
+      const metadata = meeting.metadata as { meeting_id?: string; has_contact?: boolean; microsoft_id?: string } | null;
 
-      // Skip internal meetings
-      if (metadata && !metadata.is_external) {
+      // Skip internal meetings (no external contacts)
+      // Calendar sync sets has_contact=true when attendees match known contacts
+      if (metadata && metadata.has_contact === false) {
         result.skipped++;
         continue;
       }
@@ -215,7 +216,7 @@ export async function syncMeetingPrep(userId: string): Promise<SyncResult> {
         .from('command_center_items')
         .select('id')
         .eq('user_id', userId)
-        .eq('meeting_id', metadata?.meeting_id || meeting.id)
+        .eq('meeting_id', metadata?.microsoft_id || meeting.id)
         .eq('action_type', 'meeting_prep')
         .eq('status', 'pending')
         .single();
@@ -247,7 +248,7 @@ export async function syncMeetingPrep(userId: string): Promise<SyncResult> {
 
       const item: Partial<CommandCenterItem> = {
         user_id: userId,
-        meeting_id: metadata?.meeting_id || meeting.id,
+        meeting_id: metadata?.microsoft_id || meeting.id,
         deal_id: resolvedDealId,
         company_id: company?.id,
         contact_id: contact?.id,
@@ -263,7 +264,7 @@ export async function syncMeetingPrep(userId: string): Promise<SyncResult> {
         due_at: prepTime.toISOString(),
         why_now: `Meeting in ${formatMinutesUntil(meetingTime)}`,
         source: 'calendar_sync',
-        source_id: metadata?.meeting_id || meeting.id,
+        source_id: metadata?.microsoft_id || meeting.id,
         primary_action_label: 'Review Brief',
       };
 
@@ -320,11 +321,11 @@ export async function syncMeetingFollowUps(userId: string): Promise<SyncResult> 
       .select(`
         id, subject, occurred_at, metadata,
         deals:deal_id (id, name, stage, estimated_value),
-        companies:organization_id (id, name),
+        companies:company_id (id, name),
         contacts:contact_id (id, name)
       `)
       .eq('user_id', userId)
-      .eq('type', 'meeting_held')
+      .eq('type', 'meeting')
       .gte('occurred_at', yesterday.toISOString())
       .lte('occurred_at', now.toISOString());
 
@@ -333,10 +334,11 @@ export async function syncMeetingFollowUps(userId: string): Promise<SyncResult> 
     }
 
     for (const meeting of meetings) {
-      const metadata = meeting.metadata as { meeting_id?: string; is_external?: boolean } | null;
+      const metadata = meeting.metadata as { meeting_id?: string; has_contact?: boolean; microsoft_id?: string } | null;
 
-      // Skip internal meetings
-      if (metadata && !metadata.is_external) {
+      // Skip internal meetings (no external contacts)
+      // Calendar sync sets has_contact=true when attendees match known contacts
+      if (metadata && metadata.has_contact === false) {
         result.skipped++;
         continue;
       }
@@ -346,7 +348,7 @@ export async function syncMeetingFollowUps(userId: string): Promise<SyncResult> 
         .from('command_center_items')
         .select('id')
         .eq('user_id', userId)
-        .eq('meeting_id', metadata?.meeting_id || meeting.id)
+        .eq('meeting_id', metadata?.microsoft_id || meeting.id)
         .eq('action_type', 'meeting_follow_up')
         .single();
 
@@ -390,7 +392,7 @@ export async function syncMeetingFollowUps(userId: string): Promise<SyncResult> 
 
       const item: Partial<CommandCenterItem> = {
         user_id: userId,
-        meeting_id: metadata?.meeting_id || meeting.id,
+        meeting_id: metadata?.microsoft_id || meeting.id,
         deal_id: resolvedDealId,
         company_id: company?.id,
         contact_id: contact?.id,
@@ -405,7 +407,7 @@ export async function syncMeetingFollowUps(userId: string): Promise<SyncResult> 
         estimated_minutes: getTypicalDuration('meeting_follow_up'),
         why_now: `Meeting was ${formatTimeAgo(meetingTime)} - send follow-up while context is fresh`,
         source: 'calendar_sync',
-        source_id: metadata?.meeting_id || meeting.id,
+        source_id: metadata?.microsoft_id || meeting.id,
         primary_action_label: 'Send Follow-up',
       };
 
