@@ -25,6 +25,7 @@ export interface SchedulingRequestedEvent extends LifecycleEvent<'SchedulingRequ
     contact_name?: string;
     contact_email?: string;
     deal_id?: string;
+    company_product_id?: string;
     meeting_type: MeetingType;
     duration_minutes: number;
     context?: string;
@@ -272,6 +273,8 @@ export interface SchedulerPrefillContext {
   contactName?: string;
   contactEmail?: string;
   dealId?: string;
+  companyProductId?: string;
+  productName?: string;
   suggestedMeetingType: MeetingType;
   suggestedDuration: number;
   context: string;
@@ -384,6 +387,10 @@ export function extractSchedulerContext(
   // Extract deal ID if present
   const dealId = workItem.metadata?.deal_id as string | undefined;
 
+  // Extract company product ID if present
+  const companyProductId = workItem.metadata?.company_product_id as string | undefined;
+  const productName = workItem.metadata?.product_name as string | undefined;
+
   return {
     companyId: workItem.company_id,
     companyName: workItem.company_name,
@@ -391,6 +398,8 @@ export function extractSchedulerContext(
     contactName,
     contactEmail,
     dealId,
+    companyProductId,
+    productName,
     suggestedMeetingType,
     suggestedDuration,
     context: contextParts.join('\n'),

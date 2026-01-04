@@ -521,6 +521,10 @@ export interface SchedulingRequestSummary {
   attempt_count: number;
   no_show_count: number;
   created_at: string;
+  // Product-centric fields
+  company_product_id?: string | null;
+  product_name?: string | null;
+  product_status?: string | null;
 }
 
 export interface SchedulerDashboardData {

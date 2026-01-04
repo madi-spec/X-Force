@@ -34,9 +34,20 @@ interface QuickBookModalProps {
   onSuccess?: () => void;
   dealId?: string;
   companyId?: string;
+  companyProductId?: string;
   contactId?: string;
   contactName?: string;
   contactEmail?: string;
+}
+
+interface CompanyProduct {
+  id: string;
+  status: string;
+  product: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
 }
 
 interface Contact {
@@ -103,6 +114,7 @@ export function QuickBookModal({
   onSuccess,
   dealId: initialDealId,
   companyId: initialCompanyId,
+  companyProductId: initialCompanyProductId,
   contactId,
   contactName,
   contactEmail,
@@ -119,8 +131,10 @@ export function QuickBookModal({
   // Associations
   const [dealId, setDealId] = useState(initialDealId || '');
   const [companyId, setCompanyId] = useState(initialCompanyId || '');
+  const [companyProductId, setCompanyProductId] = useState(initialCompanyProductId || '');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  const [companyProducts, setCompanyProducts] = useState<CompanyProduct[]>([]);
 
   // Search state
   const [contactSearch, setContactSearch] = useState('');
@@ -313,6 +327,38 @@ export function QuickBookModal({
     loadData();
   }, [isOpen, initialCompanyId]);
 
+  // Fetch company products when company changes
+  useEffect(() => {
+    async function fetchCompanyProducts() {
+      if (!companyId) {
+        setCompanyProducts([]);
+        setCompanyProductId('');
+        return;
+      }
+
+      const { data } = await supabase
+        .from('company_products')
+        .select(`
+          id,
+          status,
+          product:products(id, name, slug)
+        `)
+        .eq('company_id', companyId)
+        .in('status', ['in_sales', 'in_onboarding', 'active'])
+        .order('updated_at', { ascending: false });
+
+      // Transform Supabase array join result to single object
+      const transformed = (data || []).map(cp => ({
+        id: cp.id,
+        status: cp.status,
+        product: Array.isArray(cp.product) ? cp.product[0] || null : cp.product,
+      }));
+      setCompanyProducts(transformed);
+    }
+
+    fetchCompanyProducts();
+  }, [companyId]);
+
   // Select contact and auto-populate company
   const selectContact = (contact: Contact) => {
     const exists = externalAttendees.some(a => a.contact_id === contact.id || a.email === contact.email);
@@ -459,6 +505,7 @@ export function QuickBookModal({
           meeting_location: location || undefined,
           scheduled_time: selectedSlot.start,
           deal_id: dealId || undefined,
+          company_product_id: companyProductId || undefined,
           company_id: companyId || undefined,
           internal_attendees: internalAttendees.map(a => a.user_id),
           external_attendees: externalAttendees.map(a => ({
@@ -745,6 +792,27 @@ export function QuickBookModal({
                   )}
                 </div>
               </div>
+
+              {/* Product Selection - shows when company has products */}
+              {companyProducts.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product (Optional)
+                  </label>
+                  <select
+                    value={companyProductId}
+                    onChange={(e) => setCompanyProductId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 text-sm"
+                  >
+                    <option value="">No specific product</option>
+                    {companyProducts.map((cp) => (
+                      <option key={cp.id} value={cp.id}>
+                        {cp.product?.name || 'Unknown'} ({cp.status.replace('_', ' ')})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Meeting Type, Duration, Platform in a grid */}
               <div className="grid grid-cols-3 gap-3">
