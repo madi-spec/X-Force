@@ -714,8 +714,25 @@ export function generateWhyNow(params: {
   deal_stage?: string | null;
   stale_days?: number;
   signal_type?: string;
+  product_name?: string | null;
+  product_status?: string | null;
+  product_mrr?: number | null;
 }): string {
-  const { action_type, due_at, deal_value, deal_stage, stale_days, signal_type } = params;
+  const { action_type, due_at, deal_value, deal_stage, stale_days, signal_type, product_name, product_status, product_mrr } = params;
+
+  // Product-based messages (check these first)
+  if (product_name && product_status) {
+    const mrr = product_mrr ? ` ($${product_mrr.toLocaleString()}/mo)` : '';
+
+    switch (product_status) {
+      case 'in_sales':
+        return `${product_name}${mrr} opportunity - advance the sale`;
+      case 'in_onboarding':
+        return `${product_name} onboarding in progress - ensure customer success`;
+      case 'active':
+        return `${product_name} customer${mrr} - maintain and grow relationship`;
+    }
+  }
 
   // If there's a due date, mention urgency
   if (due_at) {
@@ -816,6 +833,67 @@ export async function findDealForCompany(
   return deals[0];
 }
 
+/**
+ * Find the primary company_product for a company
+ * Returns the highest-priority active product (in_sales > in_onboarding > active)
+ */
+export async function findCompanyProductForCompany(
+  companyId: string
+): Promise<{
+  id: string;
+  product_id: string;
+  product_name: string;
+  status: string;
+  mrr: number | null;
+  stage_name: string | null;
+} | null> {
+  const supabase = createAdminClient();
+
+  // Priority order: in_sales first (active sales), then onboarding, then active customers
+  const { data: products, error } = await supabase
+    .from('company_products')
+    .select(`
+      id,
+      product_id,
+      status,
+      mrr,
+      current_stage:product_sales_stages(id, name),
+      product:products(id, name)
+    `)
+    .eq('company_id', companyId)
+    .in('status', ['in_sales', 'in_onboarding', 'active'])
+    .order('status', { ascending: true })
+    .limit(5);
+
+  if (error) {
+    console.error('[findCompanyProductForCompany] Error:', error);
+    return null;
+  }
+
+  if (!products || products.length === 0) {
+    return null;
+  }
+
+  // Priority: in_sales > in_onboarding > active
+  const priorityOrder = ['in_sales', 'in_onboarding', 'active'];
+  const sorted = products.sort((a, b) => {
+    return priorityOrder.indexOf(a.status) - priorityOrder.indexOf(b.status);
+  });
+
+  const cp = sorted[0];
+  const product = getRelation(cp.product as { id: string; name: string } | { id: string; name: string }[] | null);
+  const stage = getRelation(cp.current_stage as { id: string; name: string } | { id: string; name: string }[] | null);
+
+  return {
+    id: cp.id,
+    product_id: cp.product_id,
+    product_name: product?.name || 'Unknown Product',
+    status: cp.status,
+    mrr: cp.mrr,
+    stage_name: stage?.name || null,
+  };
+}
+
 // ============================================
 // ITEM MANAGEMENT
 // ============================================
@@ -828,7 +906,19 @@ export async function createCommandCenterItem(
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const supabase = createAdminClient();
 
-  // Calculate score if not provided
+  // If company_id provided but no company_product_id, try to find one
+  if (item.company_id && !item.company_product_id) {
+    const productData = await findCompanyProductForCompany(item.company_id);
+    if (productData) {
+      item.company_product_id = productData.id;
+      item.product_name = productData.product_name;
+      item.product_status = productData.status;
+      item.product_mrr = productData.mrr;
+      item.product_stage = productData.stage_name;
+    }
+  }
+
+  // Calculate score if not provided (include product_mrr for value scoring)
   if (!item.momentum_score) {
     const score = calculateMomentumScore({
       action_type: item.action_type || 'task_simple',
@@ -837,6 +927,7 @@ export async function createCommandCenterItem(
       deal_probability: item.deal_probability || null,
       deal_id: item.deal_id || null,
       company_id: item.company_id || null,
+      product_mrr: item.product_mrr || null,
     });
 
     item.momentum_score = score.score;

@@ -171,6 +171,8 @@ function transformCommunication(row: Record<string, unknown>): UnifiedItem {
   const company = firstOrNull(row.company as Record<string, unknown> | Record<string, unknown>[] | null);
   const contact = firstOrNull(row.contact as Record<string, unknown> | Record<string, unknown>[] | null);
   const analysis = firstOrNull(row.analysis as Record<string, unknown> | Record<string, unknown>[] | null);
+  const companyProduct = firstOrNull(row.company_product as Record<string, unknown> | Record<string, unknown>[] | null);
+  const product = companyProduct ? firstOrNull(companyProduct.product as Record<string, unknown> | Record<string, unknown>[] | null) : null;
 
   const responseDueBy = row.response_due_by as string | null;
   const attentionLevel = determineAttentionLevel('communication', null, null, false, responseDueBy);
@@ -251,6 +253,11 @@ function transformCommunication(row: Record<string, unknown>): UnifiedItem {
       name: (contact.name as string) || null,
       email: (contact.email as string) || null,
     } : undefined,
+    // Product info
+    company_product_id: (companyProduct?.id as string) || null,
+    product_name: (product?.name as string) || null,
+    product_status: (companyProduct?.status as string) || null,
+    product_mrr: (companyProduct?.mrr as number) || null,
   } as UnifiedItem;
 }
 
@@ -327,6 +334,8 @@ function transformAttentionFlag(row: Record<string, unknown>): UnifiedItem {
     // Product info
     company_product_id: companyProduct?.id as string || null,
     product_name: (product?.name as string) || null,
+    product_status: (companyProduct?.status as string) || null,
+    product_mrr: (companyProduct?.mrr as number) || null,
   } as UnifiedItem;
 }
 
@@ -395,6 +404,8 @@ function transformCompanyProduct(row: Record<string, unknown>): UnifiedItem {
     // Product info
     company_product_id: row.id as string,
     product_name: (product?.name as string) || null,
+    product_status: (row.status as string) || 'in_sales',
+    product_mrr: (row.mrr as number) || null,
   } as UnifiedItem;
 }
 
@@ -549,8 +560,10 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at,
         current_analysis_id,
+        company_product_id,
         company:companies(id, name),
         contact:contacts(id, name, email),
+        company_product:company_products(id, status, mrr, product:products(id, name, slug)),
         analysis:communication_analysis!communications_current_analysis_id_fkey(
           summary,
           communication_type,

@@ -178,25 +178,31 @@ export function getTimePressure(dueAt: string | null | undefined): {
 // ============================================
 
 /**
- * Calculate value score based on deal value and probability
+ * Calculate value score based on deal value, product MRR, and probability
  *
  * Uses weighted value (deal_value * probability) compared to average deal size
  * Average deal size for X-RAI is ~$30K ACV
+ *
+ * If deal_value is not available, uses product_mrr * 12 (annualized MRR)
  */
 export function getValueScore(
   dealValue: number | null | undefined,
   probability: number | null | undefined,
-  avgDealSize: number = 30000
+  avgDealSize: number = 30000,
+  productMrr?: number | null
 ): {
   value: number;
   explanation: string;
 } {
-  if (!dealValue || dealValue <= 0) {
+  // Use deal_value if available, otherwise use annualized product MRR
+  const effectiveValue = (dealValue && dealValue > 0) ? dealValue : (productMrr ? productMrr * 12 : 0);
+
+  if (!effectiveValue || effectiveValue <= 0) {
     return { value: 0, explanation: '' };
   }
 
   const prob = probability ?? 0.5;
-  const weightedValue = dealValue * prob;
+  const weightedValue = effectiveValue * prob;
 
   // Scale: 0-20 points based on multiple of average deal size
   // $30K @ 50% = $15K weighted = ~8 pts (average)
@@ -206,9 +212,10 @@ export function getValueScore(
   const value = Math.min(20, Math.round(ratio * 10));
 
   const formattedValue = formatCurrency(weightedValue);
+  const source = (dealValue && dealValue > 0) ? 'deal' : 'MRR';
   return {
     value,
-    explanation: `${formattedValue} weighted value → +${value}`,
+    explanation: `${formattedValue} weighted value (${source}) → +${value}`,
   };
 }
 
@@ -471,13 +478,13 @@ export interface ScoringContext {
  * where O is NEGATIVE for orphan items
  */
 export function calculateMomentumScore(
-  item: Pick<CommandCenterItem, 'action_type' | 'due_at' | 'deal_value' | 'deal_probability' | 'deal_id' | 'company_id'>,
+  item: Pick<CommandCenterItem, 'action_type' | 'due_at' | 'deal_value' | 'deal_probability' | 'deal_id' | 'company_id'> & { product_mrr?: number | null },
   context?: ScoringContext
 ): MomentumScore {
   // Calculate each component
   const base = getBasePriority(item.action_type, context);
   const time = getTimePressure(item.due_at);
-  const value = getValueScore(item.deal_value, item.deal_probability, context?.avg_deal_size);
+  const value = getValueScore(item.deal_value, item.deal_probability, context?.avg_deal_size, item.product_mrr);
   const engagement = getEngagementScore(context?.engagement_signals);
   const risk = getRiskScore(context?.risk_signals);
   const orphan = getOrphanPenalty(item.deal_id, item.company_id, item.deal_value);

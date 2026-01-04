@@ -217,6 +217,12 @@ export interface CommandCenterItem {
   signal_id?: string | null;
   meeting_id?: string | null;
 
+  // Product-centric fields
+  product_name?: string | null;
+  product_status?: string | null;
+  product_mrr?: number | null;
+  product_stage?: string | null;
+
   // Action details
   action_type: ActionType;
   title: string;

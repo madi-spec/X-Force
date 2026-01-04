@@ -498,6 +498,14 @@ export function ActionCard({
             <div className="flex items-start justify-between gap-2">
               <h3 className="font-medium text-gray-900">{item.title}</h3>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Product Badge */}
+                {item.product_name && (
+                  <ProductBadge
+                    name={item.product_name}
+                    status={item.product_status}
+                    mrr={item.product_mrr}
+                  />
+                )}
                 {/* Tier Badge */}
                 {item.tier && (
                   <TierBadge tier={item.tier as PriorityTier} trigger={item.tier_trigger} />
@@ -1181,6 +1189,9 @@ export function ActionCardCompact({ item, onClick, className }: ActionCardCompac
         )}
       </div>
       <div className="flex items-center gap-2 text-xs flex-shrink-0">
+        {item.product_name && (
+          <ProductBadge name={item.product_name} status={item.product_status} compact />
+        )}
         {item.tier && (
           <TierBadge tier={item.tier as PriorityTier} compact />
         )}
@@ -1380,5 +1391,66 @@ function WorkflowStepsChecklist({
         })}
       </div>
     </div>
+  );
+}
+
+// ============================================
+// PRODUCT BADGE COMPONENT
+// ============================================
+
+interface ProductBadgeProps {
+  name: string;
+  status?: string | null;
+  mrr?: number | null;
+  compact?: boolean;
+}
+
+function ProductBadge({ name, status, mrr, compact = false }: ProductBadgeProps) {
+  // Status-based styling
+  const statusStyles: Record<string, { bg: string; text: string; border: string }> = {
+    in_sales: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+    in_onboarding: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
+    active: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
+    churned: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' },
+    paused: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+  };
+
+  const style = statusStyles[status || 'in_sales'] || statusStyles.in_sales;
+
+  const formatMrr = (value: number): string => {
+    if (value >= 1000) return `$${(value / 1000).toFixed(1)}k`;
+    return `$${value}`;
+  };
+
+  if (compact) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+          style.bg,
+          style.text
+        )}
+        title={`${name}${mrr ? ` (${formatMrr(mrr)}/mo)` : ''}`}
+      >
+        {name.length > 12 ? name.slice(0, 10) + '…' : name}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border',
+        style.bg,
+        style.text,
+        style.border
+      )}
+      title={`${name} - ${status?.replace(/_/g, ' ') || 'In Sales'}${mrr ? ` - ${formatMrr(mrr)}/mo` : ''}`}
+    >
+      <span className="truncate max-w-[80px]">{name}</span>
+      {mrr && mrr > 0 && (
+        <span className="text-[10px] opacity-75">{formatMrr(mrr)}</span>
+      )}
+    </span>
   );
 }

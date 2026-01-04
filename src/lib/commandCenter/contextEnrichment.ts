@@ -47,6 +47,16 @@ interface ContextData {
     industry?: string;
     website?: string;
   };
+  companyProduct?: {
+    id: string;
+    status: string;
+    mrr: number | null;
+    stage?: { id: string; name: string } | null;
+    product?: { id: string; name: string; slug: string } | null;
+    activatedAt?: string | null;
+    salesStartedAt?: string | null;
+    lastStageMoveAt?: string | null;
+  };
   contact?: {
     id: string;
     name: string;
@@ -147,6 +157,45 @@ export async function gatherContext(item: CommandCenterItem): Promise<ContextDat
 
     if (company) {
       context.company = company;
+    }
+  }
+
+  // Fetch company product if available
+  if (item.company_product_id) {
+    const { data: companyProduct } = await supabase
+      .from('company_products')
+      .select(`
+        id,
+        status,
+        mrr,
+        current_stage:product_sales_stages(id, name),
+        product:products(id, name, slug),
+        activated_at,
+        sales_started_at,
+        last_stage_moved_at
+      `)
+      .eq('id', item.company_product_id)
+      .single();
+
+    if (companyProduct) {
+      // Handle Supabase join array result
+      const product = Array.isArray(companyProduct.product)
+        ? companyProduct.product[0]
+        : companyProduct.product;
+      const stage = Array.isArray(companyProduct.current_stage)
+        ? companyProduct.current_stage[0]
+        : companyProduct.current_stage;
+
+      context.companyProduct = {
+        id: companyProduct.id,
+        status: companyProduct.status,
+        mrr: companyProduct.mrr,
+        stage: stage ? { id: stage.id, name: stage.name } : null,
+        product: product ? { id: product.id, name: product.name, slug: product.slug } : null,
+        activatedAt: companyProduct.activated_at,
+        salesStartedAt: companyProduct.sales_started_at,
+        lastStageMoveAt: companyProduct.last_stage_moved_at,
+      };
     }
   }
 
