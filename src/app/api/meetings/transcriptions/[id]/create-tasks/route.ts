@@ -44,7 +44,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Fetch the transcription with analysis
     const { data: transcription, error: fetchError } = await supabase
       .from('meeting_transcriptions')
-      .select('id, deal_id, company_id, analysis, title')
+      .select('id, deal_id, company_product_id, company_id, analysis, title')
       .eq('id', id)
       .single();
 
@@ -83,6 +83,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Create tasks for each selected action item
     const tasksToCreate = selectedItems.map((item: MeetingActionItem) => ({
       deal_id: transcription.deal_id,
+      company_product_id: transcription.company_product_id,
       company_id: transcription.company_id,
       assigned_to: profile.id,
       created_by: profile.id,

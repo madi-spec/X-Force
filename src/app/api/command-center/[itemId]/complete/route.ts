@@ -59,7 +59,7 @@ export async function POST(
         updated_at: new Date().toISOString(),
       })
       .eq('id', itemId)
-      .select('id, status, company_name, company_id, title')
+      .select('id, status, company_name, company_id, company_product_id, title')
       .single();
 
     if (error) {
@@ -77,6 +77,7 @@ export async function POST(
       try {
         await supabase.from('activities').insert({
           company_id: updatedItem.company_id,
+          company_product_id: updatedItem.company_product_id || null,
           user_id: dbUser.id,
           type: 'work_item_resolved',
           title: `Work item resolved: ${updatedItem.title || 'Untitled'}`,

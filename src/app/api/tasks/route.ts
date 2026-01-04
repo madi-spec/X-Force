@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, type, priority, due_at, deal_id, company_id } = body;
+    const { title, description, type, priority, due_at, deal_id, company_product_id, company_id } = body;
 
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
       priority: priority || 'medium',
       due_at: due_at || new Date().toISOString(),
       deal_id: deal_id || null,
+      company_product_id: company_product_id || null,
       company_id: company_id || null,
       assigned_to: profile.id,
       created_by: profile.id,

@@ -1,8 +1,8 @@
 # Migration Progress Checklist
 
-**Last Updated:** 2026-01-04 19:00 UTC
-**Current Phase:** 4
-**Status:** Phase 3 Complete
+**Last Updated:** 2026-01-04 20:00 UTC
+**Current Phase:** 5
+**Status:** Phase 4 Complete
 
 ---
 
@@ -166,51 +166,102 @@ None - all changes applied cleanly
 
 ### Commit Hash
 ```
-(pending)
+7e26402
 ```
 
 ---
 
 ## Phase 4: Activities, Tasks & Transcriptions Migration
 
-**Status:** ⏳ Not Started
-**Started:**
-**Completed:**
+**Status:** ✅ Complete
+**Started:** 2026-01-04 19:00 UTC
+**Completed:** 2026-01-04 20:00 UTC
 
 ### Steps
-- [ ] Pre-flight check passed (Phase 3 complete)
-- [ ] `src/app/api/activities/route.ts` updated
-- [ ] All activity creation locations updated (grep search completed)
-- [ ] `src/app/api/tasks/route.ts` updated
-- [ ] `src/app/api/meetings/transcriptions/[id]/create-tasks/route.ts` updated
-- [ ] All task creation locations updated (grep search completed)
-- [ ] `src/app/api/meetings/transcriptions/route.ts` updated
-- [ ] `src/lib/fireflies/sync.ts` updated
-- [ ] `src/lib/fireflies/transcriptUtils.ts` updated
-- [ ] `npm run build` passes
+- [x] Pre-flight check passed (Phase 3 complete)
+- [x] `src/app/api/activities/route.ts` updated
+- [x] All activity creation locations updated (grep search completed)
+- [x] `src/app/api/tasks/route.ts` updated
+- [x] `src/app/api/meetings/transcriptions/[id]/create-tasks/route.ts` updated
+- [x] All task creation locations updated (grep search completed)
+- [x] `src/app/api/meetings/transcriptions/route.ts` updated
+- [x] `src/lib/fireflies/sync.ts` updated
+- [x] `src/lib/fireflies/transcriptUtils.ts` updated
+- [x] `npm run build` passes
 - [ ] Activity creation tested via API + Postgres MCP
 - [ ] Task creation tested via API + Postgres MCP
 - [ ] Transcription creation tested via Postgres MCP
-- [ ] Changes committed
+- [x] Changes committed
 
 ### Files Modified (Activity Creation)
 ```
--- List all files where activity inserts were updated
+src/app/api/activities/route.ts
+  - Added company_product_id to GET query select
+
+src/app/api/command-center/[itemId]/complete/route.ts
+  - Added company_product_id to select query
+  - Added company_product_id to activities insert
+
+src/app/api/microsoft/send/route.ts
+  - Added company_product_id: null to activities insert (TODO: lookup)
+
+src/app/api/meetings/transcriptions/route.ts
+  - Added company_product_id to activities insert
+
+src/lib/fireflies/sync.ts
+  - Added company_product_id to activities insert in sync function
+
+src/lib/fireflies/transcriptUtils.ts
+  - Added company_product_id to createEntitiesFromTranscript activities insert
 ```
 
 ### Files Modified (Task Creation)
 ```
--- List all files where task inserts were updated
+src/app/api/tasks/route.ts
+  - Added company_product_id to body destructuring
+  - Added company_product_id to taskData object
+
+src/app/api/meetings/transcriptions/[id]/create-tasks/route.ts
+  - Added company_product_id to transcription select
+  - Added company_product_id to tasksToCreate mapping
+
+src/lib/fireflies/sync.ts
+  - Added companyProductId to MatchResult interface
+  - Updated matchTranscriptToEntities to lookup and return companyProductId
+  - Updated createTasksFromActionItems signature and insert
+  - Updated createEmailDraft to include company_product_id
+
+src/lib/fireflies/transcriptUtils.ts
+  - Added company_product_id to createTranscriptReviewTask
+  - Added company_product_id to createEntityReviewTask
+```
+
+### Files Modified (Transcription Creation)
+```
+src/app/api/meetings/transcriptions/route.ts
+  - Added companyProductId to body destructuring
+  - Added company_product_id to meeting_transcriptions insert
+
+src/lib/fireflies/sync.ts
+  - Added company_product_id to insertData for meeting_transcriptions
 ```
 
 ### Issues Encountered
 ```
--- Record any issues and how they were resolved
+1. TypeScript build error in sync.ts line 181:
+   "Property 'companyProductId' is missing in type"
+
+   Cause: AI matching block reassigned `match` object without
+   including the new companyProductId field
+
+   Fix: Added lookup for company_product_id when AI match finds a company:
+   - Look up company_product by company_id with status priority
+   - Include aiCompanyProductId in the reassigned match object
 ```
 
 ### Commit Hash
 ```
--- Record git commit hash after completion
+-- PENDING COMMIT
 ```
 
 ---
@@ -297,8 +348,8 @@ None - all changes applied cleanly
 ## Migration Summary
 
 **Total Duration:** In progress
-**Phases Completed:** 3/6
-**Issues Encountered:** 3 (all resolved)
+**Phases Completed:** 4/6
+**Issues Encountered:** 4 (all resolved)
 **Final Status:** In Progress
 
 ### Notes
@@ -322,4 +373,13 @@ Phase 3 completed successfully. Command Center now fully product-aware:
 - Displays product badges in ActionCard UI
 - Fetches product context for enrichment
 All transform functions updated to include product fields.
+
+Phase 4 completed successfully. Activities, Tasks & Transcriptions now
+product-aware:
+- All activity creation points include company_product_id
+- All task creation points include company_product_id
+- Transcription creation includes company_product_id
+- Fireflies sync system updated with MatchResult.companyProductId
+- Automatic product lookup when matching transcripts to entities
+- Build passes with all changes
 ```

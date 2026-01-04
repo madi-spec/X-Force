@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       metadata,
       contact_id,
       company_id,
+      company_product_id,
       deal_id,
       contact:contacts(id, name, email)
     `);

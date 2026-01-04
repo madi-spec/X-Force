@@ -102,6 +102,7 @@ export async function POST(request: Request) {
         description: content.substring(0, 500), // Truncate for description
         contact_id: contact.id,
         company_id: contact.company_id,
+        company_product_id: null, // TODO: Look up from company_products if needed
         deal_id: dealId || null,
         created_by: profile.id,
         completed_at: new Date().toISOString(),

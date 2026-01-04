@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
       durationMinutes,
       attendees,
       dealId,
+      companyProductId,
       companyId,
       contactId,
       transcriptionText,
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: profile.id,
         deal_id: dealId || null,
+        company_product_id: companyProductId || null,
         company_id: companyId || null,
         contact_id: contactId || null,
         title,
@@ -118,6 +120,7 @@ export async function POST(request: NextRequest) {
       const { error: activityError } = await supabase.from('activities').insert({
         user_id: profile.id,
         deal_id: dealId || null,
+        company_product_id: companyProductId || null,
         company_id: companyId,
         type: 'meeting',
         subject: title,

@@ -49,6 +49,7 @@ export interface FirefliesConnection {
 
 interface MatchResult {
   dealId: string | null;
+  companyProductId: string | null;
   companyId: string | null;
   contactIds: string[];
   confidence: number;
@@ -177,8 +178,21 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
                 extractedPersonNames: participants.map(p => p.name),
               };
 
+              // Look up company_product for AI-matched company
+              let aiCompanyProductId: string | null = null;
+              const { data: aiCp } = await supabase
+                .from('company_products')
+                .select('id')
+                .eq('company_id', entityMatch.company.id)
+                .in('status', ['in_sales', 'in_onboarding', 'active'])
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .single();
+              aiCompanyProductId = aiCp?.id || null;
+
               match = {
                 dealId: match.dealId, // Keep deal from basic matching
+                companyProductId: aiCompanyProductId,
                 companyId: entityMatch.company.id,
                 contactIds: entityMatch.contact ? [entityMatch.contact.id] : match.contactIds,
                 confidence: entityMatch.confidence,
@@ -221,6 +235,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
         const insertData = {
           user_id: userId,
           deal_id: match.dealId,
+          company_product_id: match.companyProductId,
           company_id: match.companyId,
           title: transcript.title || 'Untitled Meeting',
           meeting_date: meetingDate.toISOString().split('T')[0],
@@ -274,6 +289,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
           try {
             await supabase.from('activities').insert({
               deal_id: match.dealId,
+              company_product_id: match.companyProductId,
               company_id: match.companyId,
               user_id: userId,
               type: 'meeting',
@@ -512,6 +528,7 @@ export async function syncFirefliesTranscripts(userId: string): Promise<SyncResu
                 supabase,
                 analysis.actionItems.filter((a: { owner: string }) => a.owner === 'us'),
                 match.dealId,
+                match.companyProductId,
                 userId
               );
             }
@@ -591,6 +608,7 @@ async function matchTranscriptToEntities(
 ): Promise<MatchResult> {
   const contactIds: string[] = [];
   let dealId: string | null = null;
+  let companyProductId: string | null = null;
   let companyId: string | null = null;
   let confidence = 0;
   let matchMethod: 'email' | 'name' | 'ai' | 'none' = 'none';
@@ -629,6 +647,18 @@ async function matchTranscriptToEntities(
           dealId = deals[0].id;
           confidence = 0.9;
         }
+
+        // Look up company_product
+        const { data: cp } = await supabase
+          .from('company_products')
+          .select('id')
+          .eq('company_id', companyId)
+          .in('status', ['in_sales', 'in_onboarding', 'active'])
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        companyProductId = cp?.id || null;
       }
     }
   }
@@ -665,6 +695,18 @@ async function matchTranscriptToEntities(
               dealId = deals[0].id;
               confidence = 0.7;
             }
+
+            // Look up company_product
+            const { data: cp } = await supabase
+              .from('company_products')
+              .select('id')
+              .eq('company_id', companyId)
+              .in('status', ['in_sales', 'in_onboarding', 'active'])
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .single();
+
+            companyProductId = cp?.id || null;
           }
           break; // Take first name match
         }
@@ -672,7 +714,7 @@ async function matchTranscriptToEntities(
     }
   }
 
-  return { dealId, companyId, contactIds, confidence, matchMethod };
+  return { dealId, companyProductId, companyId, contactIds, confidence, matchMethod };
 }
 
 /**
@@ -686,6 +728,7 @@ async function createTasksFromActionItems(
     dueDate?: string | null;
   }>,
   dealId: string | null,
+  companyProductId: string | null,
   userId: string
 ): Promise<void> {
   for (const item of actionItems) {
@@ -713,6 +756,7 @@ async function createTasksFromActionItems(
 
     await supabase.from('tasks').insert({
       deal_id: dealId,
+      company_product_id: companyProductId,
       assigned_to: userId,
       type: taskType,
       title: item.task,
@@ -751,6 +795,7 @@ async function createEmailDraft(
 
   await supabase.from('ai_email_drafts').insert({
     deal_id: match.dealId,
+    company_product_id: match.companyProductId,
     company_id: match.companyId,
     contact_id: match.contactIds[0],
     user_id: userId,

@@ -108,6 +108,7 @@ export async function createTranscriptReviewTask(
     .from('tasks')
     .insert({
       deal_id: matchResult.dealId || null,
+      company_product_id: null, // Will be populated after assignment
       company_id: matchResult.companyId || null,
       assigned_to: userId,
       created_by: null, // System created
@@ -345,6 +346,7 @@ export async function createEntitiesFromTranscript(
       // 4. Create initial activity noting the transcript
       await supabase.from('activities').insert({
         deal_id: deal.id,
+        company_product_id: null, // Deal-based, will be populated as deals are converted
         company_id: company.id,
         user_id: userId,
         type: 'meeting_held',
@@ -497,6 +499,7 @@ export async function createEntityReviewTask(
     .from('tasks')
     .insert({
       assigned_to: userId,
+      company_product_id: null, // Will be populated after assignment
       type: 'review',
       title: `Assign transcript: ${extractedData.company.name} - ${transcriptionTitle}`,
       description: descriptionParts.filter(Boolean).join('\n'),
