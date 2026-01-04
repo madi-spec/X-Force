@@ -1259,6 +1259,34 @@ async function fallbackToHumanReview(
     })
     .eq('id', request.id);
 
+  // Create command center item so this surfaces in the work queue
+  const { error: ccError } = await supabase
+    .from('command_center_items')
+    .insert({
+      user_id: request.created_by,
+      action_type: 'scheduling_review',
+      title: `📅 Review scheduling: ${request.title || 'Meeting request'}`,
+      description: `${reason}\n\nProspect suggested: ${analysis.counterProposedTimes?.join(', ') || 'Unknown times'}`,
+      base_priority: 80,
+      tier: 1, // High priority - needs attention
+      status: 'pending',
+      score_factors: {
+        scheduling_request_id: request.id,
+        reason,
+        counter_proposed_times: analysis.counterProposedTimes,
+      },
+      source: 'scheduler',
+      source_id: request.id,
+      due_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
+      why_now: reason,
+    });
+
+  if (ccError) {
+    console.error('[fallbackToHumanReview] Failed to create command center item:', ccError);
+  } else {
+    console.log('[fallbackToHumanReview] Created command center item for review');
+  }
+
   return {
     processed: true,
     schedulingRequestId: request.id,

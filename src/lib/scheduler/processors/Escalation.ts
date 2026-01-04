@@ -89,16 +89,20 @@ export async function escalateToHumanReview(
     const workItemTitle = buildWorkItemTitle(request, escalation);
     const workItemDescription = buildWorkItemDescription(request, escalation);
 
+    // Convert priority string to integer score
+    const priorityScore = escalation.priority === 'high' ? 80 : escalation.priority === 'low' ? 20 : 50;
+
     const { data: workItem, error: insertError } = await supabase
       .from('command_center_items')
       .insert({
         user_id: request.created_by,
-        type: 'scheduling_review',
+        action_type: 'scheduling_review',
         title: workItemTitle,
         description: workItemDescription,
-        priority: escalation.priority || 'high',
+        base_priority: priorityScore,
+        tier: escalation.priority === 'high' ? 1 : escalation.priority === 'low' ? 3 : 2,
         status: 'pending',
-        context: {
+        score_factors: {
           scheduling_request_id: request.id,
           escalation_code: escalation.code,
           escalation_reason: escalation.reason,
@@ -106,9 +110,10 @@ export async function escalateToHumanReview(
           suggested_action: escalation.suggestedAction,
           correlation_id: correlationId,
         },
-        source_type: 'scheduler',
+        source: 'scheduler',
         source_id: request.id,
         due_at: getDueDate(escalation.priority),
+        why_now: escalation.suggestedAction || 'Scheduling request needs human review',
       })
       .select('id')
       .single();
