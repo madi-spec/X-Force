@@ -12,7 +12,7 @@ import { getValidToken } from '@/lib/microsoft/auth';
  * GET /api/cron/scheduler
  *
  * Unified cron job to process ALL scheduler actions.
- * Should be called every minute by an external cron service.
+ * Called every minute by Vercel cron to handle deferred scheduling tasks.
  *
  * This endpoint handles:
  * - process_response: Process incoming email responses
