@@ -51,7 +51,7 @@ interface CreateMeetingEventResult {
 
 // SAFEGUARD: Prevent automatic calendar event creation
 // Set to true to require manual calendar creation until timezone issues are verified fixed
-const CALENDAR_AUTO_CREATE_DISABLED = true;
+const CALENDAR_AUTO_CREATE_DISABLED = false;
 
 /**
  * Creates a calendar event when a meeting is confirmed
