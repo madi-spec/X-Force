@@ -39,14 +39,27 @@ export async function GET() {
   try {
     // Verify authentication
     const supabaseClient = await createClient();
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) {
+    const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+    if (!authUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const supabase = createAdminClient();
 
-    // Get communications without company_id
+    // Get internal user ID from auth_id
+    const { data: dbUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_id', authUser.id)
+      .single();
+
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const userId = dbUser.id;
+
+    // Get communications without company_id (filtered to current user)
     const { data, error } = await supabase
       .from('communications')
       .select(`
@@ -57,6 +70,7 @@ export async function GET() {
         channel,
         their_participants
       `)
+      .eq('user_id', userId)  // Filter to current user's communications only
       .is('company_id', null)
       .is('excluded_at', null)
       .order('occurred_at', { ascending: false })
