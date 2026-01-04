@@ -365,6 +365,60 @@ export async function getPromptWithFallback(
 }
 
 /**
+ * Get prompt with process-type suffix, falling back to base prompt if not found
+ * Returns the processed prompt with variables substituted and tracks which key was used.
+ *
+ * Example: getPromptWithProcessFallback('transcript_analysis', 'onboarding', variables)
+ * - First tries: 'transcript_analysis__onboarding'
+ * - Falls back to: 'transcript_analysis'
+ *
+ * @param baseKey - Base prompt key (e.g., 'transcript_analysis')
+ * @param suffix - Process type suffix (e.g., 'onboarding')
+ * @param variables - Variables to substitute in the prompt
+ */
+export async function getPromptWithProcessFallback(
+  baseKey: string,
+  suffix: string | null,
+  variables: Record<string, string> = {}
+): Promise<{
+  prompt: string;
+  schema: string | null;
+  model: string;
+  maxTokens: number;
+  provider: Provider;
+  usedKey: string;
+  fallback?: {
+    provider: Provider;
+    model: string;
+  };
+} | null> {
+  // Try process-specific prompt first
+  if (suffix) {
+    const specificKey = `${baseKey}__${suffix}`;
+    const specificPrompt = await getPromptWithVariables(specificKey, variables);
+    if (specificPrompt) {
+      return {
+        ...specificPrompt,
+        usedKey: specificKey,
+      };
+    }
+    console.log(`[PromptManager] No prompt found for "${specificKey}", falling back to "${baseKey}"`);
+  }
+
+  // Fall back to base prompt
+  const basePrompt = await getPromptWithVariables(baseKey, variables);
+  if (basePrompt) {
+    return {
+      ...basePrompt,
+      usedKey: baseKey,
+    };
+  }
+
+  console.error(`[PromptManager] No prompt found for base key "${baseKey}"`);
+  return null;
+}
+
+/**
  * Email draft output structure
  */
 export interface EmailDraftOutput {

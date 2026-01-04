@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import type { MeetingAnalysis } from '@/types';
-import { getPromptWithVariables } from './promptManager';
+import { getPromptWithProcessFallback } from './promptManager';
 import { SALES_PLAYBOOK } from '@/lib/intelligence/salesPlaybook';
+import { getProcessTypeForContext, type ProcessType } from '@/lib/process/getProcessContext';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -14,6 +15,8 @@ interface AnalysisContext {
   attendees?: string[];
   dealId?: string;
   companyId?: string;
+  userId?: string;
+  processTypeOverride?: ProcessType;
 }
 
 interface DealContext {
@@ -193,16 +196,34 @@ async function buildAnalysisPrompt(
 `;
   }
 
-  // Try to get the prompt from the database
-  const dbPromptResult = await getPromptWithVariables('meeting_analysis', {
-    title: context.title,
-    meetingDate: context.meetingDate,
-    attendees: context.attendees?.join(', ') || 'Not specified',
-    contextSection,
-    transcription,
-  });
+  // Detect process type for this context
+  let processType: ProcessType = 'sales';
+  if (context.userId) {
+    processType = context.processTypeOverride || await getProcessTypeForContext({
+      userId: context.userId,
+      companyId: context.companyId,
+      meetingMetadata: context.processTypeOverride ? { process_type: context.processTypeOverride } : null,
+    });
+  }
+
+  console.log(`[MeetingAnalysis] Using process type: ${processType}`);
+
+  // Try to get the process-specific prompt from the database
+  // Uses 'transcript_analysis' base key with process type suffix (e.g., 'transcript_analysis__onboarding')
+  const dbPromptResult = await getPromptWithProcessFallback(
+    'transcript_analysis',
+    processType,
+    {
+      title: context.title,
+      meetingDate: context.meetingDate,
+      attendees: context.attendees?.join(', ') || 'Not specified',
+      contextSection,
+      transcription,
+    }
+  );
 
   if (dbPromptResult) {
+    console.log(`[MeetingAnalysis] Using prompt: ${dbPromptResult.usedKey}`);
     return dbPromptResult.prompt;
   }
 

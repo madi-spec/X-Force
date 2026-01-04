@@ -15,8 +15,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendEmail } from '@/lib/microsoft/emailSync';
-import { getPromptWithVariables } from '@/lib/ai/promptManager';
+import { getPromptWithProcessFallback } from '@/lib/ai/promptManager';
 import { callAIJson } from '@/lib/ai/core/aiClient';
+import { getProcessTypeForContext, type ProcessType } from '@/lib/process/getProcessContext';
 import {
   AutopilotWorkflowResult,
   TranscriptAutopilotItem,
@@ -288,6 +289,7 @@ async function processTranscript(
 
 /**
  * Generate a meeting follow-up email using AI.
+ * Uses process-aware prompts (e.g., email_followup__onboarding for onboarding context)
  */
 async function generateMeetingFollowup(
   transcript: TranscriptAutopilotItem,
@@ -297,10 +299,17 @@ async function generateMeetingFollowup(
   try {
     const analysis = transcript.analysis as Record<string, unknown>;
 
+    // Detect process type for this transcript
+    const processType = await getProcessTypeForContext({
+      userId: transcript.user_id,
+      companyId: transcript.company_id,
+    });
+
+    console.log(`[TranscriptAutopilot] Using process type: ${processType} for transcript ${transcript.id}`);
+
     // Extract key info from analysis
     const actionItems = (analysis?.actionItems as unknown[]) || [];
     const ourCommitments = (analysis?.ourCommitments as unknown[]) || [];
-    const nextSteps = (analysis?.nextSteps as unknown[]) || [];
     const summary = (analysis?.summary as string) || '';
 
     // Format action items for the prompt
@@ -318,18 +327,26 @@ async function generateMeetingFollowup(
       })
       .join('\n');
 
-    // Try to use the AI prompts system
-    const promptData = await getPromptWithVariables('email_followup_stalled', {
+    // Build context summary for the prompt
+    const contextSummary = [
+      `Meeting: ${transcript.title || 'Recent meeting'}`,
+      `Date: ${new Date(transcript.meeting_date).toLocaleDateString()}`,
+      summary ? `Summary: ${summary.slice(0, 300)}` : '',
+      actionItemsText ? `Action Items:\n${actionItemsText}` : '',
+      commitmentsText ? `Our Commitments:\n${commitmentsText}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    // Try to use the process-aware AI prompts system
+    // Uses 'email_followup' base key with process type suffix (e.g., 'email_followup__onboarding')
+    const promptData = await getPromptWithProcessFallback('email_followup', processType, {
       contactName,
       companyName,
-      meetingTitle: transcript.title || 'Our meeting',
-      meetingDate: new Date(transcript.meeting_date).toLocaleDateString(),
-      summary: summary.slice(0, 500),
-      actionItems: actionItemsText || 'None specified',
-      ourCommitments: commitmentsText || 'None specified',
+      contextSummary,
     });
 
     if (promptData) {
+      console.log(`[TranscriptAutopilot] Using prompt: ${promptData.usedKey}`);
+
       const { data: response } = await callAIJson<{ subject: string; body: string }>({
         prompt: promptData.prompt,
         schema: promptData.schema || undefined,
@@ -342,9 +359,25 @@ async function generateMeetingFollowup(
       }
     }
 
-    // Fallback: Generate a simple follow-up
+    // Fallback: Generate a process-aware simple follow-up
     const meetingDate = new Date(transcript.meeting_date).toLocaleDateString();
     const meetingTitle = transcript.title || 'our meeting';
+
+    if (processType === 'onboarding') {
+      return {
+        subject: `Implementation Follow-up: ${meetingTitle}`,
+        body: `Hi ${contactName},
+
+Thank you for the productive implementation session on ${meetingDate}. I wanted to follow up and ensure we're on track.
+
+${summary ? `Summary:\n${summary.slice(0, 300)}\n` : ''}
+${actionItemsText ? `Next Steps:\n${actionItemsText}\n` : ''}
+${commitmentsText ? `We're committed to:\n${commitmentsText}\n` : ''}
+Please let me know if you have any questions or run into any blockers. We're here to help ensure a smooth go-live.
+
+Best regards`,
+      };
+    }
 
     return {
       subject: `Follow-up: ${meetingTitle}`,

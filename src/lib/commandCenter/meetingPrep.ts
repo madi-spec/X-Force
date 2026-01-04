@@ -12,12 +12,13 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { callAIJson } from '@/lib/ai/core/aiClient';
-import { getPromptWithVariables } from '@/lib/ai/promptManager';
+import { getPromptWithProcessFallback } from '@/lib/ai/promptManager';
 import {
   MeetingAttendee,
   MeetingPrepContent,
   PrepMaterial,
 } from '@/types/commandCenter';
+import { getProcessTypeForContext, type ProcessType } from '@/lib/process/getProcessContext';
 
 // ============================================
 // ATTENDEE ENRICHMENT
@@ -93,6 +94,7 @@ export async function enrichAttendees(
 
 /**
  * Generate AI-powered meeting prep content
+ * Uses process-aware prompts (e.g., meeting_prep__onboarding for onboarding context)
  */
 export async function generateMeetingPrep(
   title: string,
@@ -103,7 +105,8 @@ export async function generateMeetingPrep(
     value?: number;
     health_score?: number;
   },
-  recentContext?: string[]
+  recentContext?: string[],
+  processType: ProcessType = 'sales'
 ): Promise<MeetingPrepContent> {
   // Format attendees for the prompt
   const attendeesList = attendees.map(a =>
@@ -121,30 +124,23 @@ export async function generateMeetingPrep(
     : 'No recent context';
 
   try {
-    // Load the managed prompt from database
-    const promptResult = await getPromptWithVariables('meeting_prep_brief', {
-      meetingTitle: title || 'Meeting',
-      attendees: attendeesList,
-      dealContext: dealContextText,
-      recentCommunications: recentCommsText,
+    console.log(`[MeetingPrep] Generating prep with process type: ${processType}`);
+
+    // Load the managed prompt from database with process-aware fallback
+    // Uses 'meeting_prep' base key with process type suffix (e.g., 'meeting_prep__onboarding')
+    const promptResult = await getPromptWithProcessFallback('meeting_prep', processType, {
+      title: title || 'Meeting',
+      meetingTime: new Date().toISOString(),
+      attendeeList: attendeesList,
+      relationshipContext: `${dealContextText}\n\nRecent activity:\n${recentCommsText}`,
     });
 
     if (!promptResult || !promptResult.prompt) {
-      console.warn('[generateMeetingPrep] Failed to load meeting_prep_brief prompt, using fallback');
-      return {
-        objective: `Conduct productive ${title} meeting`,
-        talking_points: [
-          'Review current status and progress',
-          'Discuss next steps and action items',
-          'Address any questions or concerns',
-        ],
-        landmines: [],
-        questions_to_ask: [
-          'What are your main priorities right now?',
-          'What would success look like for you?',
-        ],
-      };
+      console.warn(`[generateMeetingPrep] Failed to load meeting_prep prompt for process type ${processType}, using fallback`);
+      return getDefaultMeetingPrep(title, processType);
     }
+
+    console.log(`[MeetingPrep] Using prompt: ${promptResult.usedKey}`);
 
     const result = await callAIJson<MeetingPrepContent>({
       prompt: promptResult.prompt,
@@ -156,21 +152,47 @@ export async function generateMeetingPrep(
     return result.data;
   } catch (error) {
     console.error('[MeetingPrep] AI generation failed:', error);
-    // Return sensible defaults
+    return getDefaultMeetingPrep(title, processType);
+  }
+}
+
+/**
+ * Get default meeting prep based on process type
+ */
+function getDefaultMeetingPrep(title: string, processType: ProcessType): MeetingPrepContent {
+  if (processType === 'onboarding') {
     return {
-      objective: `Conduct productive ${title} meeting`,
+      objective: `Review implementation progress for ${title}`,
       talking_points: [
-        'Review current status and progress',
-        'Discuss next steps and action items',
-        'Address any questions or concerns',
+        'Review implementation milestones and status',
+        'Discuss any blockers or training needs',
+        'Confirm go-live timeline and readiness',
+        'Address outstanding action items',
       ],
       landmines: [],
       questions_to_ask: [
-        'What are your main priorities right now?',
-        'What would success look like for you?',
+        'How is the team adapting to the new system?',
+        'Are there any training gaps we should address?',
+        'What blockers are preventing progress?',
+        'Is the current go-live date still realistic?',
       ],
     };
   }
+
+  // Default sales prep
+  return {
+    objective: `Conduct productive ${title} meeting`,
+    talking_points: [
+      'Review current status and progress',
+      'Discuss next steps and action items',
+      'Address any questions or concerns',
+    ],
+    landmines: [],
+    questions_to_ask: [
+      'What are your main priorities right now?',
+      'What would success look like for you?',
+    ],
+  };
 }
 
 // ============================================
@@ -297,6 +319,7 @@ interface MeetingContext {
 
 /**
  * Generate complete meeting prep including all components
+ * Automatically detects process type based on user/company context
  */
 export async function generateCompleteMeetingPrep(
   userId: string,
@@ -305,8 +328,17 @@ export async function generateCompleteMeetingPrep(
   attendees: MeetingAttendee[];
   prep: MeetingPrepContent;
   materials: PrepMaterial[];
+  processType: ProcessType;
 }> {
   const supabase = createAdminClient();
+
+  // Detect process type for this meeting context
+  const processType = await getProcessTypeForContext({
+    userId,
+    companyId: meeting.companyId,
+  });
+
+  console.log(`[CompleteMeetingPrep] Detected process type: ${processType} for meeting ${meeting.id}`);
 
   // Enrich attendees
   const attendees = await enrichAttendees(meeting.attendeeEmails, meeting.companyId);
@@ -343,12 +375,13 @@ export async function generateCompleteMeetingPrep(
     `[${a.type}] ${a.subject}${a.description ? `: ${a.description.substring(0, 100)}` : ''}`
   ) || [];
 
-  // Generate prep content
+  // Generate prep content with process-aware prompt
   const prep = await generateMeetingPrep(
     meeting.title,
     attendees,
     dealContext,
-    recentContext
+    recentContext,
+    processType
   );
 
   // Gather materials
@@ -362,5 +395,6 @@ export async function generateCompleteMeetingPrep(
     attendees,
     prep,
     materials,
+    processType,
   };
 }

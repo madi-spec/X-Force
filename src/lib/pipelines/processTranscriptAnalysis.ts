@@ -19,6 +19,8 @@ import {
 // Migrated to context-first pipeline
 import { buildFullRelationshipContext } from '@/lib/intelligence';
 import type { InteractionForReconciliation } from '@/types/commandCenter';
+import { getProcessTypeForContext, type ProcessType } from '@/lib/process/getProcessContext';
+import { isOnboardingAnalysis, type OnboardingTranscriptAnalysis } from '@/types/onboardingAnalysis';
 
 // Types for transcript analysis structure
 interface Commitment {
@@ -359,6 +361,169 @@ async function processCommitments(
 }
 
 /**
+ * Process onboarding-specific items from transcript analysis
+ * Creates items for blockers, training gaps, go-live risks, etc.
+ */
+async function processOnboardingItems(
+  supabase: ReturnType<typeof createAdminClient>,
+  transcript: Transcript,
+  analysis: OnboardingTranscriptAnalysis
+): Promise<{ tier2: number; tier3: number }> {
+  let tier2Created = 0;
+  let tier3Created = 0;
+
+  // Critical blockers -> Tier 2 (ONBOARDING_BLOCKER)
+  const blockers = analysis.blockers || [];
+  for (const blocker of blockers) {
+    if (blocker.severity === 'critical' || blocker.severity === 'moderate') {
+      const exists = await itemExists(supabase, transcript.id, 'onboarding_blocker', blocker.blocker);
+      if (exists) continue;
+
+      await createItem(supabase, transcript, {
+        tier: blocker.severity === 'critical' ? 2 : 3,
+        tierTrigger: 'onboarding_blocker',
+        title: `Blocker: ${blocker.blocker.substring(0, 60)}`,
+        description: `${blocker.blocker}\n\nResolution path: ${blocker.resolution_path}`,
+        whyNow: `${blocker.severity.toUpperCase()} blocker owned by ${blocker.owner}: ${blocker.blocker}`,
+        actionType: blocker.owner === 'us' ? 'task_complex' : 'follow_up',
+        urgencyScore: blocker.severity === 'critical' ? 90 : 70,
+      });
+
+      if (blocker.severity === 'critical') {
+        tier2Created++;
+      } else {
+        tier3Created++;
+      }
+    }
+  }
+
+  // Training gaps -> Tier 3 (TRAINING_GAP)
+  const gaps = analysis.training_gaps || [];
+  for (const gap of gaps) {
+    const exists = await itemExists(supabase, transcript.id, 'training_gap', gap.area);
+    if (exists) continue;
+
+    await createItem(supabase, transcript, {
+      tier: 3,
+      tierTrigger: 'training_gap',
+      title: `Training needed: ${gap.area.substring(0, 60)}`,
+      description: `${gap.area}\n\nUsers affected: ${gap.users_affected}\nSuggested remedy: ${gap.suggested_remedy}`,
+      whyNow: `Training gap identified for ${gap.users_affected}: ${gap.area}`,
+      actionType: 'task_complex',
+    });
+    tier3Created++;
+  }
+
+  // Go-live risks -> Tier 2 if at_risk or delayed
+  if (analysis.go_live_confidence === 'at_risk' || analysis.go_live_confidence === 'delayed') {
+    const riskLevel = analysis.go_live_confidence;
+    const exists = await itemExists(supabase, transcript.id, 'go_live_risk', riskLevel);
+    if (!exists) {
+      await createItem(supabase, transcript, {
+        tier: 2,
+        tierTrigger: 'go_live_risk',
+        title: `Go-live ${riskLevel === 'delayed' ? 'DELAYED' : 'AT RISK'}${analysis.go_live_date ? ` - Target: ${analysis.go_live_date}` : ''}`,
+        description: `Go-live confidence: ${riskLevel}\n\n${analysis.summary}`,
+        whyNow: `Implementation is ${riskLevel}. Review blockers and risks immediately.`,
+        actionType: 'review_meeting',
+        urgencyScore: riskLevel === 'delayed' ? 95 : 80,
+      });
+      tier2Created++;
+    }
+  }
+
+  // Adoption concerns -> Tier 3 (ADOPTION_RISK)
+  const adoptionConcerns = (analysis.adoption_indicators || []).filter(i => i.sentiment === 'concerning');
+  for (const concern of adoptionConcerns) {
+    const exists = await itemExists(supabase, transcript.id, 'adoption_risk', concern.signal);
+    if (exists) continue;
+
+    await createItem(supabase, transcript, {
+      tier: 3,
+      tierTrigger: 'adoption_risk',
+      title: `Adoption concern: ${concern.signal.substring(0, 60)}`,
+      description: concern.quote ? `${concern.signal}\n\nQuote: "${concern.quote}"` : concern.signal,
+      whyNow: `Concerning adoption signal detected: ${concern.signal}`,
+      actionType: 'follow_up',
+    });
+    tier3Created++;
+  }
+
+  // Frustrated/blocker stakeholders -> Tier 2 (STAKEHOLDER_ISSUE)
+  const problematicStakeholders = (analysis.stakeholder_sentiment || []).filter(
+    s => s.sentiment === 'frustrated' || s.sentiment === 'blocker'
+  );
+  for (const stakeholder of problematicStakeholders) {
+    const exists = await itemExists(supabase, transcript.id, 'stakeholder_issue', stakeholder.name);
+    if (exists) continue;
+
+    await createItem(supabase, transcript, {
+      tier: stakeholder.sentiment === 'blocker' ? 2 : 3,
+      tierTrigger: 'stakeholder_issue',
+      title: `${stakeholder.sentiment === 'blocker' ? 'BLOCKER' : 'Frustrated'}: ${stakeholder.name} (${stakeholder.role})`,
+      description: stakeholder.notes,
+      whyNow: `${stakeholder.name} is ${stakeholder.sentiment}. Address their concerns to ensure successful implementation.`,
+      actionType: 'call',
+      urgencyScore: stakeholder.sentiment === 'blocker' ? 85 : 65,
+    });
+
+    if (stakeholder.sentiment === 'blocker') {
+      tier2Created++;
+    } else {
+      tier3Created++;
+    }
+  }
+
+  // Our commitments -> Tier 3 (same as sales, but with onboarding context)
+  for (const commitment of analysis.ourCommitments || []) {
+    const exists = await itemExists(supabase, transcript.id, 'promise_made', commitment.commitment);
+    if (exists) continue;
+
+    const dueDate = parseTimeframe(commitment.due_date, transcript.meeting_date);
+
+    await createItem(supabase, transcript, {
+      tier: 3,
+      tierTrigger: 'promise_made',
+      title: `Onboarding commitment: ${commitment.commitment.substring(0, 50)}`,
+      description: commitment.commitment,
+      whyNow: commitment.due_date
+        ? `Promised during onboarding meeting by ${commitment.due_date}`
+        : `Commitment made during onboarding: ${commitment.commitment}`,
+      actionType: 'task_complex',
+      commitmentText: commitment.commitment,
+      promiseDate: dueDate,
+      dueAt: dueDate,
+    });
+    tier3Created++;
+  }
+
+  // Action items -> Tier 3
+  for (const ai of analysis.actionItems || []) {
+    if (ai.owner !== 'us' && ai.owner !== undefined) continue;
+
+    const exists = await itemExists(supabase, transcript.id, 'action_item', ai.description);
+    if (exists) continue;
+
+    const dueDate = ai.due_date ? new Date(ai.due_date) : parseTimeframe(null, transcript.meeting_date);
+
+    await createItem(supabase, transcript, {
+      tier: 3,
+      tierTrigger: 'action_item',
+      title: ai.description.substring(0, 80),
+      description: ai.description,
+      whyNow: `Onboarding action item: ${ai.description}`,
+      actionType: ai.priority === 'high' ? 'task_complex' : 'task_simple',
+      commitmentText: ai.description,
+      promiseDate: dueDate,
+      dueAt: dueDate,
+    });
+    tier3Created++;
+  }
+
+  return { tier2: tier2Created, tier3: tier3Created };
+}
+
+/**
  * Main pipeline function: Process all unprocessed transcripts
  */
 export async function processTranscriptAnalysis(userId?: string): Promise<PipelineResult> {
@@ -498,11 +663,36 @@ export async function processSingleTranscript(transcriptId: string): Promise<{
     // Note: RI updates now happen via processIncomingCommunication when transcripts are synced
     // See src/lib/sync/initialHistoricalSync.ts for the migration
 
-    // Process buying signals -> Tier 2
-    const tier2Created = await processBuyingSignals(supabase, typedTranscript, typedTranscript.analysis!);
+    // Detect process type to determine which processor to use
+    const processType = await getProcessTypeForContext({
+      userId: transcript.user_id,
+      companyId: transcript.company_id,
+    });
 
-    // Process commitments -> Tier 3
-    const tier3Created = await processCommitments(supabase, typedTranscript, typedTranscript.analysis!);
+    console.log(`[ProcessTranscript] Using process type: ${processType} for transcript ${transcriptId}`);
+
+    let tier2Created = 0;
+    let tier3Created = 0;
+
+    // Check if this is an onboarding analysis and process accordingly
+    if (processType === 'onboarding' && isOnboardingAnalysis(typedTranscript.analysis)) {
+      console.log(`[ProcessTranscript] Processing as onboarding transcript`);
+      const onboardingResult = await processOnboardingItems(
+        supabase,
+        typedTranscript,
+        typedTranscript.analysis as OnboardingTranscriptAnalysis
+      );
+      tier2Created = onboardingResult.tier2;
+      tier3Created = onboardingResult.tier3;
+    } else {
+      // Default to sales processing
+      console.log(`[ProcessTranscript] Processing as sales transcript`);
+      // Process buying signals -> Tier 2
+      tier2Created = await processBuyingSignals(supabase, typedTranscript, typedTranscript.analysis!);
+
+      // Process commitments -> Tier 3
+      tier3Created = await processCommitments(supabase, typedTranscript, typedTranscript.analysis!);
+    }
 
     const totalCreated = tier2Created + tier3Created;
 
