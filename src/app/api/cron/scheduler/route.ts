@@ -354,8 +354,60 @@ async function handleProcessResponse(
   // Find the matching inbound email
   let matchingEmail: IncomingEmail | null = null;
 
-  // Strategy 1: Use email_thread_id to find emails in the same thread
-  if (request.email_thread_id) {
+  // Strategy 0: Use email_id from the scheduling_actions table (most reliable)
+  const { data: recentAction } = await supabase
+    .from('scheduling_actions')
+    .select('email_id')
+    .eq('scheduling_request_id', request.id)
+    .eq('action_type', 'email_received')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (recentAction?.email_id) {
+    console.log(`[Cron/Scheduler:${correlationId}] Found email_id in actions: ${recentAction.email_id}`);
+
+    const token = await getValidToken(request.created_by);
+    if (token) {
+      const response = await fetch(
+        `https://graph.microsoft.com/v1.0/me/messages/${recentAction.email_id}?$select=id,subject,bodyPreview,body,from,receivedDateTime,conversationId`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Prefer': 'IdType="ImmutableId"',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const msg = await response.json();
+        if (msg) {
+          const rawBody = msg.body?.content || msg.bodyPreview || '';
+          const cleanedBody = cleanEmailBody(rawBody);
+
+          matchingEmail = {
+            id: msg.id,
+            subject: msg.subject || '',
+            body: cleanedBody,
+            bodyPreview: msg.bodyPreview || '',
+            from: {
+              address: msg.from?.emailAddress?.address || '',
+              name: msg.from?.emailAddress?.name || '',
+            },
+            receivedDateTime: msg.receivedDateTime,
+            conversationId: msg.conversationId,
+          };
+          console.log(`[Cron/Scheduler:${correlationId}] Found email via email_id`);
+          console.log(`[Cron/Scheduler:${correlationId}] Subject: ${msg.subject}`);
+        }
+      } else {
+        console.warn(`[Cron/Scheduler:${correlationId}] Failed to fetch email by ID: ${response.status}`);
+      }
+    }
+  }
+
+  // Strategy 1: Use email_thread_id to find emails in the same thread (fallback)
+  if (!matchingEmail && request.email_thread_id) {
     console.log(`[Cron/Scheduler:${correlationId}] Looking for email with thread_id: ${request.email_thread_id}`);
 
     const token = await getValidToken(request.created_by);
