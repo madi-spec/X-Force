@@ -161,8 +161,8 @@ export async function fetchQueueItems(
   // Apply queue-specific filters
   switch (queueId) {
     case 'action_now':
-      // Critical items or items due soon
-      query = query.or('momentum_score.gte.90,due_at.lte.' + new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());
+      // Critical items, items due soon, or scheduler escalations needing human review
+      query = query.or('momentum_score.gte.90,due_at.lte.' + new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() + ',action_type.eq.scheduling_review');
       break;
 
     case 'needs_response':
@@ -186,8 +186,8 @@ export async function fetchQueueItems(
       break;
 
     case 'scheduling':
-      // Scheduling tasks
-      query = query.in('action_type', ['schedule']);
+      // Scheduling tasks and scheduler escalations needing human review
+      query = query.in('action_type', ['schedule', 'scheduling_review']);
       break;
 
     case 'stalled_deals': {
