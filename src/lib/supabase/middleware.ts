@@ -38,8 +38,9 @@ export async function updateSession(request: NextRequest) {
   const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
                      request.nextUrl.pathname.startsWith('/signup');
   const isPublicRoom = request.nextUrl.pathname.startsWith('/room/');
+  const isAuthCallback = request.nextUrl.pathname.startsWith('/auth/callback');
 
-  if (!user && !isAuthPage && !isPublicRoom && !request.nextUrl.pathname.startsWith('/api')) {
+  if (!user && !isAuthPage && !isPublicRoom && !isAuthCallback && !request.nextUrl.pathname.startsWith('/api')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
@@ -48,7 +49,7 @@ export async function updateSession(request: NextRequest) {
   // Redirect authenticated users away from auth pages
   if (user && isAuthPage) {
     const url = request.nextUrl.clone();
-    url.pathname = '/pipeline';
+    url.pathname = '/work';
     return NextResponse.redirect(url);
   }
 
