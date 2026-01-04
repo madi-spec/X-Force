@@ -570,24 +570,38 @@ export function MeetingPrepPopout({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            Close
-          </button>
-          {/* Join Meeting button would go here if we have the URL */}
-          <button
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-            onClick={() => {
-              // In production, this would open the meeting URL
-              alert('Join meeting functionality coming soon');
-            }}
-          >
-            <Video className="h-4 w-4" />
-            Join Meeting
-          </button>
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
+          {/* Link to full prep page */}
+          {meeting.meeting_id && (
+            <Link
+              href={`/meetings/${meeting.meeting_id}/prep`}
+              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open Full Prep
+            </Link>
+          )}
+          {!meeting.meeting_id && <div />}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              Close
+            </button>
+            {/* Join Meeting button would go here if we have the URL */}
+            <button
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              onClick={() => {
+                // In production, this would open the meeting URL
+                alert('Join meeting functionality coming soon');
+              }}
+            >
+              <Video className="h-4 w-4" />
+              Join Meeting
+            </button>
+          </div>
         </div>
       </div>
     </>

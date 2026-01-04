@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
   Video,
@@ -18,6 +19,7 @@ interface MeetingCardProps {
   prepItemId?: string;
   className?: string;
   compact?: boolean;
+  /** @deprecated Use direct links to /meetings/[meetingId]/prep instead */
   onViewPrep?: (meetingId: string) => void;
 }
 
@@ -104,13 +106,14 @@ export function MeetingCard({
             <Clock className="h-3 w-3" />
             {meeting.duration_minutes}m
           </span>
-          {meeting.meeting_id && onViewPrep && (
-            <button
-              onClick={() => onViewPrep(meeting.meeting_id!)}
+          {meeting.meeting_id && (
+            <Link
+              href={`/meetings/${meeting.meeting_id}/prep`}
               className="px-2 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100 rounded transition-colors"
+              title="View Meeting Prep"
             >
               <FileText className="h-3 w-3" />
-            </button>
+            </Link>
           )}
           {joinUrl && (
             <a
@@ -170,14 +173,14 @@ export function MeetingCard({
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50">
-        {meeting.meeting_id && onViewPrep && (
-          <button
-            onClick={() => onViewPrep(meeting.meeting_id!)}
+        {meeting.meeting_id && (
+          <Link
+            href={`/meetings/${meeting.meeting_id}/prep`}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
           >
             <FileText className="h-4 w-4" />
             View Prep
-          </button>
+          </Link>
         )}
         {joinUrl ? (
           <a
