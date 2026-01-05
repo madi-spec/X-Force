@@ -22,6 +22,7 @@ import {
   ChevronRight,
   FolderOpen,
   FileText,
+  Video,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { LensSwitcher } from '@/components/lens';
@@ -38,6 +39,7 @@ interface NavItem {
 const workNavigation: NavItem[] = [
   { id: 'work', name: 'Daily Driver', href: '/work', icon: Inbox },
   { id: 'scheduler', name: 'Scheduler', href: '/scheduler', icon: Calendar },
+  { id: 'meetings', name: 'Meetings', href: '/meetings', icon: Video },
 ];
 
 // Manage section - admin/management tools
