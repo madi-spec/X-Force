@@ -89,10 +89,12 @@ interface Company {
   name: string;
 }
 
-interface Deal {
+interface CompanyProduct {
   id: string;
-  name: string;
   company_id: string;
+  product_name: string;
+  company_name: string;
+  status: string;
 }
 
 interface User {
@@ -185,7 +187,7 @@ export function ScheduleMeetingModal({
   const [avoidDays, setAvoidDays] = useState<string[]>([]);
 
   // Associations
-  const [dealId, setDealId] = useState(initialDealId || '');
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [companyId, setCompanyId] = useState(initialCompanyId || '');
 
   // Attendees
@@ -200,7 +202,7 @@ export function ScheduleMeetingModal({
 
   // Data for dropdowns
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [deals, setDeals] = useState<Deal[]>([]);
+  const [companyProducts, setCompanyProducts] = useState<CompanyProduct[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
@@ -328,12 +330,33 @@ export function ScheduleMeetingModal({
           .order('name');
         if (companiesData) setCompanies(companiesData);
 
-        // Load deals
-        const { data: dealsData } = await supabase
-          .from('deals')
-          .select('id, name, company_id')
-          .order('name');
-        if (dealsData) setDeals(dealsData);
+        // Load company products with product names
+        const { data: productsData } = await supabase
+          .from('company_products')
+          .select(`
+            id,
+            company_id,
+            status,
+            product:products(name),
+            company:companies(name)
+          `)
+          .in('status', ['in_sales', 'in_onboarding', 'active'])
+          .order('updated_at', { ascending: false });
+        if (productsData) {
+          const transformed = productsData.map(cp => {
+            // Handle Supabase's nested select which may return array or object
+            const product = cp.product as { name: string } | { name: string }[] | null;
+            const company = cp.company as { name: string } | { name: string }[] | null;
+            return {
+              id: cp.id,
+              company_id: cp.company_id,
+              status: cp.status,
+              product_name: Array.isArray(product) ? product[0]?.name : product?.name || 'Unknown Product',
+              company_name: Array.isArray(company) ? company[0]?.name : company?.name || 'Unknown Company',
+            };
+          });
+          setCompanyProducts(transformed);
+        }
 
         // Load users for internal attendees
         const { data: usersData } = await supabase
@@ -359,15 +382,15 @@ export function ScheduleMeetingModal({
     loadData();
   }, [isOpen]);
 
-  // Update company when deal changes
+  // Update company when product selection changes
   useEffect(() => {
-    if (dealId) {
-      const deal = deals.find(d => d.id === dealId);
-      if (deal && deal.company_id) {
-        setCompanyId(deal.company_id);
+    if (selectedProductIds.length > 0 && !companyId) {
+      const product = companyProducts.find(p => p.id === selectedProductIds[0]);
+      if (product && product.company_id) {
+        setCompanyId(product.company_id);
       }
     }
-  }, [dealId, deals]);
+  }, [selectedProductIds, companyProducts, companyId]);
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -397,7 +420,7 @@ export function ScheduleMeetingModal({
         preferred_times: preferredTimes,
         avoid_days: avoidDays,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        deal_id: dealId || undefined,
+        company_product_ids: selectedProductIds.length > 0 ? selectedProductIds : undefined,
         company_id: companyId || undefined,
         internal_attendees: internalAttendees,
         external_attendees: externalAttendees,
@@ -598,7 +621,7 @@ export function ScheduleMeetingModal({
           })),
           isOnlineMeeting: true,
           companyId: companyId || workItem?.company_id,
-          dealId: dealId,
+          companyProductIds: selectedProductIds.length > 0 ? selectedProductIds : undefined,
           contactId: externalAttendees[0]?.contact_id,
           workItemId: workItem?.id,
           attentionFlagId: workItem?.metadata?.attention_flag_id as string | undefined,
@@ -1293,24 +1316,60 @@ export function ScheduleMeetingModal({
                   Context & Associations
                 </h3>
 
-                {/* Deal/Company association */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Products & Company association */}
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       <Briefcase className="h-4 w-4 inline mr-1" />
-                      Deal (optional)
+                      Products (optional - select one or more)
                     </label>
+
+                    {/* Selected products */}
+                    {selectedProductIds.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {selectedProductIds.map(productId => {
+                          const product = companyProducts.find(p => p.id === productId);
+                          return product ? (
+                            <span
+                              key={productId}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm text-blue-700"
+                            >
+                              {product.product_name} - {product.company_name}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProductIds(selectedProductIds.filter(id => id !== productId))}
+                                className="text-blue-400 hover:text-blue-600"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+
+                    {/* Product selector */}
                     <select
-                      value={dealId}
-                      onChange={(e) => setDealId(e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value && !selectedProductIds.includes(e.target.value)) {
+                          setSelectedProductIds([...selectedProductIds, e.target.value]);
+                        }
+                        e.target.value = '';
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
+                      defaultValue=""
                     >
-                      <option value="">None</option>
-                      {deals.map((deal) => (
-                        <option key={deal.id} value={deal.id}>{deal.name}</option>
-                      ))}
+                      <option value="" disabled>Select a product...</option>
+                      {companyProducts
+                        .filter(p => !selectedProductIds.includes(p.id))
+                        .map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {product.product_name} - {product.company_name} ({product.status})
+                          </option>
+                        ))}
                     </select>
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       <Building2 className="h-4 w-4 inline mr-1" />

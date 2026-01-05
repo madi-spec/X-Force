@@ -206,12 +206,16 @@ export class SchedulingService {
         };
       }
 
+      // Determine company_product_id from input (prefer array, fallback to single value)
+      const companyProductId = input.company_product_ids?.[0] || input.company_product_id || null;
+
       // 1. Create the scheduling request
       const { data: request, error: requestError } = await supabase
         .from('scheduling_requests')
         .insert({
           created_by: createdBy,
           deal_id: input.deal_id || null,
+          company_product_id: companyProductId,
           company_id: input.company_id || null,
           source_communication_id: input.source_communication_id || null,
           meeting_type: input.meeting_type,

@@ -436,8 +436,11 @@ export interface CreateSchedulingRequestInput {
   avoid_days?: string[];
   timezone?: string;
 
+  /** @deprecated Use company_product_ids instead. */
   deal_id?: string;
   company_product_id?: string;
+  /** Array of company_product IDs to associate with this scheduling request. */
+  company_product_ids?: string[];
   company_id?: string;
   source_communication_id?: string;
 
