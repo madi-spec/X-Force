@@ -19,7 +19,7 @@ FROM meeting_transcriptions mt
 WHERE cci.source = 'transcription'
   AND cci.source_id IS NULL
   AND cci.meeting_id IS NOT NULL
-  AND mt.id = cci.meeting_id;
+  AND mt.id = cci.meeting_id::uuid;
 
 -- 3. Backfill system items (deal-based) - use deal_id as source_id
 UPDATE command_center_items

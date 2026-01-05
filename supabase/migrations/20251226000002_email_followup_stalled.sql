@@ -9,12 +9,7 @@ INSERT INTO ai_prompts (
   prompt_template,
   schema_template,
   default_prompt_template,
-  default_schema_template,
-  category,
-  purpose,
-  variables,
-  model,
-  max_tokens
+  default_schema_template
 ) VALUES (
   'email_followup_stalled',
   'Email Follow-up (Stalled Deal)',
@@ -116,24 +111,14 @@ Write a brief follow-up email to re-engage this prospect about **{{product_name}
     "used_contact_name": "boolean",
     "referenced_prior_interaction": "boolean"
   }
-}',
-  'daily_driver',
-  'Generates personalized follow-up emails for stalled deals. Product name is mandatory and must appear in the output.',
-  ARRAY['company_name', 'contact_first_name', 'contact_title', 'product_name', 'stage_name', 'reason', 'recommended_action', 'last_inbound_summary', 'last_outbound_summary'],
-  'claude-sonnet-4-20250514',
-  1000
+}'
 ) ON CONFLICT (key) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
   prompt_template = EXCLUDED.prompt_template,
   schema_template = EXCLUDED.schema_template,
   default_prompt_template = EXCLUDED.default_prompt_template,
-  default_schema_template = EXCLUDED.default_schema_template,
-  category = EXCLUDED.category,
-  purpose = EXCLUDED.purpose,
-  variables = EXCLUDED.variables,
-  model = EXCLUDED.model,
-  max_tokens = EXCLUDED.max_tokens;
+  default_schema_template = EXCLUDED.default_schema_template;
 
 -- NEEDS_REPLY variant for urgent replies
 INSERT INTO ai_prompts (
@@ -143,12 +128,7 @@ INSERT INTO ai_prompts (
   prompt_template,
   schema_template,
   default_prompt_template,
-  default_schema_template,
-  category,
-  purpose,
-  variables,
-  model,
-  max_tokens
+  default_schema_template
 ) VALUES (
   'email_followup_needs_reply',
   'Email Follow-up (Needs Reply)',
@@ -248,21 +228,11 @@ Write a helpful response about **{{product_name}}** to move this deal forward.
     "used_contact_name": "boolean",
     "referenced_prior_interaction": "boolean"
   }
-}',
-  'daily_driver',
-  'Generates response emails when awaiting our reply. Product name is mandatory and must appear in the output.',
-  ARRAY['company_name', 'contact_first_name', 'contact_title', 'product_name', 'stage_name', 'reason', 'recommended_action', 'last_inbound_summary', 'last_outbound_summary'],
-  'claude-sonnet-4-20250514',
-  1000
+}'
 ) ON CONFLICT (key) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
   prompt_template = EXCLUDED.prompt_template,
   schema_template = EXCLUDED.schema_template,
   default_prompt_template = EXCLUDED.default_prompt_template,
-  default_schema_template = EXCLUDED.default_schema_template,
-  category = EXCLUDED.category,
-  purpose = EXCLUDED.purpose,
-  variables = EXCLUDED.variables,
-  model = EXCLUDED.model,
-  max_tokens = EXCLUDED.max_tokens;
+  default_schema_template = EXCLUDED.default_schema_template;

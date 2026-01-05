@@ -114,8 +114,8 @@ CREATE TABLE IF NOT EXISTS outbound_webhooks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_webhooks_user ON outbound_webhooks(user_id, is_active);
-CREATE INDEX idx_webhooks_active ON outbound_webhooks(is_active) WHERE is_active = TRUE;
+CREATE INDEX idx_outbound_webhooks_user ON outbound_webhooks(user_id, is_active);
+CREATE INDEX idx_outbound_webhooks_active ON outbound_webhooks(is_active) WHERE is_active = TRUE;
 
 -- ============================================
 -- WEBHOOK DELIVERIES TABLE
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS tracking_tokens (
 
 CREATE INDEX idx_tokens_lookup ON tracking_tokens(token);
 CREATE INDEX idx_tokens_source ON tracking_tokens(source_type, source_id);
-CREATE INDEX idx_tokens_expiry ON tracking_tokens(expires_at) WHERE expires_at > NOW();
+CREATE INDEX idx_tokens_expiry ON tracking_tokens(expires_at);
 
 -- ============================================
 -- HELPER FUNCTIONS

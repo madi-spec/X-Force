@@ -266,36 +266,47 @@ ALTER TABLE company_product_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE prospecting_pipeline ENABLE ROW LEVEL SECURITY;
 
 -- Products: readable by all authenticated users
+DROP POLICY IF EXISTS "Products are viewable by authenticated users" ON products;
 CREATE POLICY "Products are viewable by authenticated users" ON products
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Product tiers are viewable by authenticated users" ON product_tiers;
 CREATE POLICY "Product tiers are viewable by authenticated users" ON product_tiers
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Product stages are viewable by authenticated users" ON product_sales_stages;
 CREATE POLICY "Product stages are viewable by authenticated users" ON product_sales_stages
   FOR SELECT TO authenticated USING (true);
 
 -- Company products: users can see their org's data
+DROP POLICY IF EXISTS "Company products viewable by org members" ON company_products;
 CREATE POLICY "Company products viewable by org members" ON company_products
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Company products insertable by org members" ON company_products;
 CREATE POLICY "Company products insertable by org members" ON company_products
   FOR INSERT TO authenticated WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Company products updatable by org members" ON company_products;
 CREATE POLICY "Company products updatable by org members" ON company_products
   FOR UPDATE TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Company product history viewable" ON company_product_history;
 CREATE POLICY "Company product history viewable" ON company_product_history
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Company product history insertable" ON company_product_history;
 CREATE POLICY "Company product history insertable" ON company_product_history
   FOR INSERT TO authenticated WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Prospecting pipeline viewable" ON prospecting_pipeline;
 CREATE POLICY "Prospecting pipeline viewable" ON prospecting_pipeline
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Prospecting pipeline insertable" ON prospecting_pipeline;
 CREATE POLICY "Prospecting pipeline insertable" ON prospecting_pipeline
   FOR INSERT TO authenticated WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Prospecting pipeline updatable" ON prospecting_pipeline;
 CREATE POLICY "Prospecting pipeline updatable" ON prospecting_pipeline
   FOR UPDATE TO authenticated USING (true);
