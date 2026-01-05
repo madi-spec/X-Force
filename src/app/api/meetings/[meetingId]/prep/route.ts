@@ -27,14 +27,17 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Look up the meeting - check both ID and external_id (Microsoft Graph ID)
-    const { data: meeting, error: meetingError } = await supabase
+    // Look up the meeting - try external_id first (for Microsoft Graph IDs), then fall back to activity ID
+    let meeting = null;
+    let meetingError = null;
+
+    // First try by external_id (Microsoft Graph event ID)
+    const { data: meetingByExternal, error: externalError } = await supabase
       .from('activities')
       .select(`
         id,
-        title,
-        scheduled_at,
-        duration_minutes,
+        subject,
+        occurred_at,
         metadata,
         company_id,
         companies (
@@ -42,9 +45,34 @@ export async function GET(
           name
         )
       `)
-      .or(`id.eq.${meetingId},external_id.eq.${meetingId}`)
-      .eq('activity_type', 'meeting')
-      .single();
+      .eq('external_id', meetingId)
+      .eq('type', 'meeting')
+      .maybeSingle();
+
+    if (meetingByExternal) {
+      meeting = meetingByExternal;
+    } else {
+      // Fall back to activity ID lookup
+      const { data: meetingById, error: idError } = await supabase
+        .from('activities')
+        .select(`
+          id,
+          subject,
+          occurred_at,
+          metadata,
+          company_id,
+          companies (
+            id,
+            name
+          )
+        `)
+        .eq('id', meetingId)
+        .eq('type', 'meeting')
+        .maybeSingle();
+
+      meeting = meetingById;
+      meetingError = idError;
+    }
 
     if (meetingError || !meeting) {
       console.error('[MeetingPrepAPI] Meeting not found:', meetingError);
@@ -62,15 +90,16 @@ export async function GET(
       .filter((email): email is string => Boolean(email));
 
     // Calculate end time from start time and duration
-    const startTime = new Date(meeting.scheduled_at);
-    const endTime = new Date(startTime.getTime() + (meeting.duration_minutes || 30) * 60000);
+    const durationMinutes = (metadata.duration_minutes as number) || (metadata.duration as number) || 30;
+    const startTime = new Date(meeting.occurred_at);
+    const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
 
     // Get deal ID if associated
     const dealId = metadata.deal_id as string | null;
 
     // Build the meeting input
     const meetingInput: MeetingInput = {
-      title: meeting.title || 'Untitled Meeting',
+      title: meeting.subject || 'Untitled Meeting',
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
       attendeeEmails,
