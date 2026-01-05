@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>X-FORCE — Work Queues + Comms + Command Center + Scheduler (Mock)</title>
+  <style>
+    :root{
+      --bg:#f6f8fb;
+      --panel:#ffffff;
+      --muted:#667085;
+      --text:#0b1220;
+      --line:#e6eaf0;
+      --line2:#eef2f7;
+      --nav:#0b1628;
+      --nav2:#0e1a30;
+      --good:#22c55e;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --shadow:0 10px 26px rgba(16,24,40,.08);
+      --shadow2:0 18px 50px rgba(16,24,40,.16);
+      --r2:18px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:var(--font);color:var(--text);background:var(--bg)}
+    a{color:inherit}
+    .app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+    .sidebar{background:linear-gradient(180deg,var(--nav),var(--nav2));color:#eaf0ff;padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+    .brand{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+    .brand .logo{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;background:rgba(37,99,235,.18);border:1px solid rgba(37,99,235,.25)}
+    .brand b{display:block;font-size:13px;letter-spacing:.5px}
+    .brand span{display:block;font-size:12px;color:rgba(234,240,255,.72)}
+    .focus{margin:10px 0 14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);border-radius:16px;overflow:hidden}
+    .focusTop{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .focusTop .lbl{font-size:11px;color:rgba(234,240,255,.7);text-transform:uppercase;letter-spacing:.08em}
+    .select{width:100%;margin-top:6px;padding:10px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.15);color:#eaf0ff;outline:none;font-size:12px}
+    .nav{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+    .nav a{text-decoration:none;padding:10px 12px;border-radius:12px;color:rgba(234,240,255,.78);border:1px solid transparent;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .nav a:hover{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.06);color:#fff}
+    .nav a.active{background:rgba(37,99,235,.18);border-color:rgba(37,99,235,.25);color:#fff}
+    .pill{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:rgba(234,240,255,.75);white-space:nowrap}
+    .sidebarFooter{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);color:rgba(234,240,255,.62);font-size:11px;line-height:1.45}
+    .main{padding:18px 18px 26px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .search{flex:1;max-width:760px;min-width:320px;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid #e6eaf0;border-radius:14px;padding:10px 12px;box-shadow:0 6px 18px rgba(16,24,40,.06)}
+    .search input{width:100%;border:none;outline:none;background:transparent;font-size:12px}
+    .rightTop{display:flex;align-items:center;gap:10px}
+    .iconBtn{background:var(--panel);border:1px solid #e6eaf0;border-radius:12px;padding:10px 10px;cursor:pointer;box-shadow:0 6px 18px rgba(16,24,40,.06);font-size:12px}
+    .avatar{width:32px;height:32px;border-radius:999px;background:#e8efff;border:1px solid #d6e4ff;display:grid;place-items:center;font-weight:700;color:#1d4ed8;font-size:12px}
+    .grid{display:grid;grid-template-columns:360px 1fr;gap:14px;align-items:start}
+    .card{background:var(--panel);border:1px solid #e6eaf0;border-radius:var(--r2);box-shadow:var(--shadow);overflow:hidden}
+    .cardHead{padding:12px 14px;border-bottom:1px solid #eef2f7;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .cardHead h2{margin:0;font-size:13px}
+    .cardHead .meta{font-size:12px;color:var(--muted)}
+    .segRow{padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid #eef2f7}
+    .seg{width:100%;padding:10px 12px;border-radius:14px;border:1px solid #e6eaf0;background:#fafbff;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:.12s ease}
+    .seg:hover{border-color:#d7deea;transform:translateY(-1px)}
+    .seg.active{background:#eef5ff;border-color:#cfe0ff}
+    .seg .left{display:flex;gap:10px;align-items:flex-start}
+    .seg .ico{width:34px;height:34px;border-radius:14px;display:grid;place-items:center;background:#eef2ff;border:1px solid #e3e8ff}
+    .seg b{display:block;font-size:12px}
+    .seg span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+    .seg .count{font-size:12px;color:var(--muted)}
+    .list{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+    .item{border:1px solid #e6eaf0;border-radius:16px;padding:12px 12px 10px;background:#fff;cursor:pointer;transition:.12s ease;position:relative}
+    .item:hover{border-color:#cfe0ff;box-shadow:0 10px 22px rgba(16,24,40,.08)}
+    .item.selected{border-color:#93c5fd;box-shadow:0 18px 40px rgba(37,99,235,.12)}
+    .row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .title{font-weight:700;font-size:12.5px}
+    .sub{color:var(--muted);font-size:12px;margin-top:4px}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #e6eaf0;background:#fbfcff;color:var(--muted);padding:4px 8px;border-radius:999px;font-size:11px}
+    .dot{width:8px;height:8px;border-radius:999px;background:var(--good)}
+    .dot.warn{background:var(--warn)}
+    .dot.bad{background:var(--bad)}
+    .prio{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #e6eaf0;background:#fbfcff;color:var(--muted);white-space:nowrap}
+    .prio .p{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .prio.low .p{background:var(--good)}
+    .prio.high .p{background:var(--bad)}
+    .why{margin-top:8px;padding:8px 10px;border-radius:12px;border:1px solid #e6edf9;background:#f7fbff;font-size:12px;color:#334155;display:flex;gap:8px;align-items:flex-start}
+    .why b{font-weight:700}
+    .ctaBar{margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:flex-end;opacity:0;transform:translateY(2px);transition:.12s ease}
+    .item:hover .ctaBar,.item.selected .ctaBar{opacity:1;transform:translateY(0)}
+    .btn{border:1px solid #e6eaf0;background:#fff;border-radius:12px;padding:8px 10px;font-size:12px;cursor:pointer}
+    .btn:hover{background:#f7f9ff;border-color:#d7deea}
+    .btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}
+    .contextHeader{padding:14px 14px 10px;border-bottom:1px solid #eef2f7}
+    .crumbs{font-size:12px;color:var(--muted)}
+    .contextHeader h1{margin:6px 0 0;font-size:15px}
+    .kvRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .k{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);padding:6px 10px;border-radius:999px;border:1px solid #e6eaf0;background:#fbfcff}
+    .k strong{color:var(--text)}
+    .paneBody{padding:14px}
+    .contextWrap{display:flex;flex-direction:column;gap:14px}
+    .section{border:1px solid #e6eaf0;border-radius:16px;background:#fff;overflow:hidden}
+    .sectionHead{padding:10px 12px;border-bottom:1px solid #eef2f7;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .sectionHead b{font-size:12px}
+    .sectionHead .meta{font-size:12px;color:var(--muted)}
+    .sectionBody{padding:12px}
+    .msg{border:1px solid #e6eaf0;border-radius:14px;padding:10px;background:#fbfcff}
+    .msgTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .msgTop .from{font-size:12px;font-weight:700}
+    .msgTop .when{font-size:12px;color:var(--muted)}
+    .msgText{margin-top:8px;color:#334155;font-size:12px;line-height:1.45}
+    .hl{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:8px 10px;margin-top:10px;font-size:12px;color:#7c2d12}
+    .aiBox{background:#f5f3ff;border:1px solid #e9d5ff;border-radius:14px;padding:10px;font-size:12px;color:#3b0764}
+    .aiBox ul{margin:8px 0 0;padding-left:16px;color:#4c1d95}
+    .actionRow{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .ghost{background:#f8fafc}
+    .drawer{position:fixed;inset:0;background:rgba(2,6,23,.35);display:none;align-items:flex-end;justify-content:center;z-index:50}
+    .drawer.open{display:flex}
+    .sheet{width:min(980px,100vw);max-height:92vh;background:#fff;border-radius:18px 18px 0 0;border:1px solid #e6eaf0;box-shadow:var(--shadow2);overflow:auto}
+    .sheetTop{padding:12px 14px;border-bottom:1px solid #eef2f7;display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;background:#fff;z-index:2}
+    .sheetTop b{font-size:13px}
+    .close{border:1px solid #e6eaf0;background:#fff;border-radius:12px;padding:8px 10px;cursor:pointer}
+    .sheetGrid{display:grid;grid-template-columns:1fr 360px;gap:12px;padding:14px}
+    .thread{display:flex;flex-direction:column;gap:10px}
+    .bubble{border:1px solid #e6eaf0;border-radius:16px;padding:10px;background:#fff}
+    .bubble.me{background:#eff6ff;border-color:#cfe0ff}
+    .bubble .hdr{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .bubble .hdr b{font-size:12px}
+    .bubble .hdr span{font-size:12px;color:var(--muted)}
+    .bubble p{margin:8px 0 0;font-size:12px;color:#334155;line-height:1.45}
+    .sideStack{display:flex;flex-direction:column;gap:12px}
+    .modalBackdrop{position:fixed;inset:0;background:rgba(2,6,23,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:60}
+    .modalBackdrop.open{display:flex}
+    .modal{width:min(720px,96vw);background:#fff;border-radius:18px;border:1px solid #e6eaf0;box-shadow:var(--shadow2);overflow:hidden}
+    .modalTop{padding:12px 14px;border-bottom:1px solid #eef2f7;display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .modalTop b{font-size:13px}
+    .modalTop span{display:block;margin-top:4px;font-size:12px;color:var(--muted)}
+    .modalBody{padding:14px}
+    .form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    label{font-size:11px;color:var(--muted);display:block;margin:0 0 6px}
+    input,select,textarea{width:100%;border:1px solid #e6eaf0;background:#fff;border-radius:12px;padding:10px;font-size:12px;outline:none}
+    textarea{min-height:86px;resize:vertical}
+    @media (max-width:1100px){.grid{grid-template-columns:1fr}.sheetGrid{grid-template-columns:1fr}}
+    @media (max-width:760px){.app{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.search{min-width:unset}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">⚡</div><div><b>X-FORCE</b><span>Work-driven lifecycle CRM</span></div></div>
+    <div class="focus">
+      <div class="focusTop">
+        <div>
+          <div class="lbl">Focus</div>
+          <select class="select" id="focusSelect">
+            <option value="sales" selected>Sales</option>
+            <option value="cs">Customer Success</option>
+            <option value="onboarding">Onboarding</option>
+            <option value="support">Support</option>
+          </select>
+        </div>
+        <span class="pill" id="focusPill">Sales</span>
+      </div>
+      <div style="padding:10px 12px;font-size:11px;color:rgba(234,240,255,.7);line-height:1.4">
+        Focus changes queues, default CTAs, and what’s emphasized — without changing underlying data.
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a class="active" href="#" data-nav="work">Work <span class="pill" id="navWorkCount">23</span></a>
+      <a href="#" data-nav="customers">Customers <span class="pill">360</span></a>
+      <a href="#" data-nav="process">Process Studio <span class="pill">playbooks</span></a>
+      <a href="#" data-nav="products">Products <span class="pill">config</span></a>
+      <a href="#" data-nav="reports">Reports <span class="pill">KPIs</span></a>
+    </nav>
+
+    <div class="sidebarFooter">
+      <b style="color:#fff">What’s new in this mock:</b><br/>
+      • Each queue item shows <i>why it exists</i> (from Communications/CC signals)<br/>
+      • Clicking opens right-pane context (triggering message + AI interpretation)<br/>
+      • One primary resolver CTA (Reply / Schedule / Resolve)<br/>
+      • Scheduler closes the loop and resolves the item
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="search"><span style="color:var(--muted)">⌕</span><input placeholder="Search deals, companies, contacts..." /></div>
+      <div class="rightTop">
+        <button class="iconBtn" id="btnCommandCenter">Command Center</button>
+        <button class="iconBtn" id="btnComms">Communications</button>
+        <div class="avatar">BA</div>
+      </div>
+    </div>
+
+    <div class="grid" id="view-work">
+      <section class="card">
+        <div class="cardHead">
+          <div><h2>Work Queues</h2><div class="meta"><span id="queueMeta">23 items • 0 critical</span></div></div>
+          <span class="pill" id="queueLens">Sales</span>
+        </div>
+        <div class="segRow" id="queueSegments"></div>
+        <div class="list" id="queueItems"></div>
+      </section>
+
+      <section class="card">
+        <div class="contextHeader">
+          <div class="crumbs" id="contextCrumbs">—</div>
+          <h1 id="contextTitle">Select a queue item</h1>
+          <div class="kvRow" id="contextKVs"></div>
+        </div>
+        <div class="paneBody">
+          <div class="contextWrap" id="contextWrap">
+            <div class="section ghost">
+              <div class="sectionBody" style="color:var(--muted);font-size:12px;line-height:1.55">
+                <b>Pick an item</b> to see the triggering communication, Command Center signal, and the one best resolver action.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="card" id="view-placeholder" style="display:none">
+      <div class="cardHead"><h2 id="phTitle">Placeholder</h2><div class="meta">This mock focuses on /work</div></div>
+      <div class="list"><div class="item" style="cursor:default"><div class="title">This section is intentionally minimal in this mock.</div><div class="sub">The goal is demonstrating how Comms + Command Center + Scheduler fold into Work Queues.</div></div></div>
+    </div>
+  </main>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="sheet">
+    <div class="sheetTop">
+      <div><b id="drawerTitle">Conversation</b><div style="font-size:12px;color:var(--muted);margin-top:4px" id="drawerSub"></div></div>
+      <button class="close" id="drawerClose">Close</button>
+    </div>
+    <div class="sheetGrid">
+      <div class="thread" id="thread"></div>
+      <div class="sideStack">
+        <div class="section">
+          <div class="sectionHead"><b>AI Interpretation (Explainable)</b><span class="meta">no keyword matching</span></div>
+          <div class="sectionBody"><div class="aiBox" id="drawerAI"></div></div>
+        </div>
+        <div class="section">
+          <div class="sectionHead"><b>Resolvers</b><span class="meta">closes loop</span></div>
+          <div class="sectionBody">
+            <div class="actionRow">
+              <button class="btn" id="btnQuickReply">Reply</button>
+              <button class="btn primary" id="btnQuickSchedule">Schedule</button>
+            </div>
+            <div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.45">
+              After you reply or schedule, the queue item resolves and drops from the list.
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="sectionHead"><b>Command Center Signal</b><span class="meta">powers priority</span></div>
+          <div class="sectionBody" id="drawerCC" style="font-size:12px;color:#334155;line-height:1.55"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modalBackdrop" id="schedBackdrop">
+  <div class="modal">
+    <div class="modalTop">
+      <div><b>Schedule follow-up</b><span id="schedSub"></span></div>
+      <button class="close" id="schedClose">Close</button>
+    </div>
+    <div class="modalBody">
+      <div class="form">
+        <div><label>Company</label><input id="schedCompany"/></div>
+        <div><label>Contact</label><input id="schedContact"/></div>
+        <div>
+          <label>Reason</label>
+          <select id="schedReason">
+            <option>Sales follow-up</option><option>Objection handling</option><option>Pricing clarification</option>
+            <option>Renewal check-in</option><option>Support escalation</option>
+          </select>
+        </div>
+        <div>
+          <label>Suggested duration</label>
+          <select><option>15 minutes</option><option selected>30 minutes</option><option>45 minutes</option><option>60 minutes</option></select>
+        </div>
+        <div style="grid-column:1/-1"><label>Context (linked)</label><textarea id="schedContext"></textarea></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="schedCancel">Cancel</button>
+        <button class="btn primary" id="schedConfirm">Send Scheduling Email → Auto-book → Resolve Item</button>
+      </div>
+      <div style="margin-top:10px;color:var(--muted);font-size:12px;line-height:1.55">
+        Mock behavior: confirming resolves the Work item.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const lenses = {
+    sales: { label:"Sales", meta:"23 items • 0 critical",
+      segments:[
+        {key:"followups",title:"Follow-ups",sub:"Deals requiring follow-up action",icon:"🕒",count:3},
+        {key:"stalled",title:"Stalled Deals",sub:"Deals with no activity in 7+ days",icon:"⏸️",count:0},
+        {key:"newleads",title:"New Leads",sub:"Recently added opportunities",icon:"✨",count:20},
+      ],
+      items:[
+        { id:"q1", company:"Fast Action Pest Control", prio:"medium", stage:"Actively Engaging", age:"3d since update", amount:"$89/mo",
+          cc:{category:"Needs response",severity:"medium"},
+          why:{icon:"📨",text:"Customer replied asking about pricing tiers & timeline."},
+          primary:"reply",
+          trigger:{from:"Customer (Owner)",when:"Today 9:14 AM",text:"Hey Brent — can you send pricing tiers? Also, what does onboarding look like and how fast can we go live?"},
+          ai:{summary:"Customer asked about pricing tiers and timeline. Next best action: reply with tiers + schedule 15-min call.",
+              bullets:[["communicationType","Sales Q&A"],["playbook","Pricing Clarification"],["CC category","Needs response"]]}
+        },
+        { id:"q2", company:"Triangle Home Services", prio:"medium", stage:"Actively Engaging", age:"3d since update", amount:"$89/mo",
+          cc:{category:"Promise at risk",severity:"medium"},
+          why:{icon:"⏰",text:"You promised a follow-up by Friday; no action logged yet."},
+          primary:"schedule",
+          trigger:{from:"You",when:"3 days ago",text:"I'll get you a quick ROI breakdown and we can review it together — does Thursday work?"},
+          ai:{summary:"You made a commitment to send ROI breakdown and schedule review. Best action: schedule call and send ROI resource.",
+              bullets:[["communicationType","Sales commitment"],["playbook","ROI Proof / Next Step Lock"],["CC category","Promise at risk"]]}
+        },
+        { id:"q3", company:"Bug Busters", prio:"medium", stage:"Actively Engaging", age:"3d since update", amount:"",
+          cc:{category:"Follow-up due",severity:"medium"},
+          why:{icon:"⚠️",text:"No response to last outreach; deal going quiet."},
+          primary:"schedule",
+          trigger:{from:"You",when:"3 days ago",text:"Wanted to bump this — if it's easier, I can send a couple time slots for a quick call."},
+          ai:{summary:"Deal is stalling. Best action: schedule by offering time slots (scheduler) and add 1 value hook.",
+              bullets:[["communicationType","Sales follow-up"],["playbook","Ghosting / Re-engage"],["CC category","Follow-up due"]]}
+        },
+      ]
+    },
+    cs:{ label:"Customer Success", meta:"12 items • 2 critical",
+      segments:[
+        {key:"risk",title:"At Risk",sub:"Accounts needing attention",icon:"🚨",count:4},
+        {key:"exp",title:"Expansion Ready",sub:"Signals suggest upsell",icon:"📈",count:3},
+        {key:"issues",title:"Unresolved Issues",sub:"Open blockers across lifecycle",icon:"🧩",count:5},
+      ],
+      items:[
+        { id:"c1", company:"Sunset Pest Pros", prio:"high", stage:"Active", age:"SLA breached • 2h", amount:"",
+          cc:{category:"Escalation signal",severity:"high"},
+          why:{icon:"🔥",text:"Urgent case + SLA breach is impacting renewal risk."},
+          primary:"resolve",
+          trigger:{from:"Customer",when:"2h ago",text:"We can’t access the dashboard — this is blocking today’s routes. Need ETA ASAP."},
+          ai:{summary:"Service-impacting outage; prioritize response + ETA and schedule escalation call if needed.",
+              bullets:[["communicationType","Support escalation"],["playbook","Issue-to-Trust Reset"],["CC category","Escalation signal"]]}
+        }
+      ]
+    },
+    onboarding:{ label:"Onboarding", meta:"6 items • 1 critical",
+      segments:[
+        {key:"blocked",title:"Blocked",sub:"Blocked by customer/system",icon:"⛔",count:2},
+        {key:"due",title:"Due This Week",sub:"Milestones coming due",icon:"📅",count:3},
+        {key:"kickoff",title:"New Kickoffs",sub:"Recently sold accounts",icon:"🚀",count:1},
+      ],
+      items:[
+        { id:"o1", company:"Evergreen Lawn Care", prio:"medium", stage:"Connect Data", age:"Waiting on customer • 1d", amount:"",
+          cc:{category:"Needs customer action",severity:"medium"},
+          why:{icon:"📎",text:"Customer hasn’t connected data source; milestone due tomorrow."},
+          primary:"reply",
+          trigger:{from:"System",when:"Yesterday",text:"Data connection pending: awaiting customer authorization."},
+          ai:{summary:"Send simple instructions + offer 10-min screen share to unblock.",
+              bullets:[["communicationType","Onboarding blocker"],["playbook","Unblock Milestone"],["CC category","Needs customer action"]]}
+        }
+      ]
+    },
+    support:{ label:"Support", meta:"10 items • 3 critical",
+      segments:[
+        {key:"sla",title:"SLA Breaches",sub:"Past due response/resolution",icon:"⏱️",count:3},
+        {key:"sev",title:"High Severity",sub:"High/urgent cases",icon:"🛑",count:4},
+        {key:"unassigned",title:"Unassigned",sub:"Needs owner",icon:"👤",count:3},
+      ],
+      items:[
+        { id:"s1", company:"Metro Pest & Lawn", prio:"high", stage:"Case C-0207", age:"First response overdue", amount:"",
+          cc:{category:"SLA breach",severity:"high"},
+          why:{icon:"⏱️",text:"First response SLA breached; send update now."},
+          primary:"reply",
+          trigger:{from:"Customer",when:"1h ago",text:"Any update? We’re waiting on your team."},
+          ai:{summary:"Respond with status update + ETA. If no ETA, schedule escalation.",
+              bullets:[["communicationType","Support follow-up"],["playbook","Status Update + ETA"],["CC category","SLA breach"]]}
+        }
+      ]
+    }
+  };
+
+  const navLinks = document.querySelectorAll(".nav a");
+  const viewWork = document.getElementById("view-work");
+  const viewPlaceholder = document.getElementById("view-placeholder");
+  const phTitle = document.getElementById("phTitle");
+
+  const focusSelect = document.getElementById("focusSelect");
+  const focusPill = document.getElementById("focusPill");
+  const queueLens = document.getElementById("queueLens");
+  const queueMeta = document.getElementById("queueMeta");
+  const navWorkCount = document.getElementById("navWorkCount");
+
+  const queueSegments = document.getElementById("queueSegments");
+  const queueItems = document.getElementById("queueItems");
+
+  const contextTitle = document.getElementById("contextTitle");
+  const contextCrumbs = document.getElementById("contextCrumbs");
+  const contextKVs = document.getElementById("contextKVs");
+  const contextWrap = document.getElementById("contextWrap");
+
+  const drawer = document.getElementById("drawer");
+  const drawerClose = document.getElementById("drawerClose");
+  const drawerTitle = document.getElementById("drawerTitle");
+  const drawerSub = document.getElementById("drawerSub");
+  const thread = document.getElementById("thread");
+  const drawerAI = document.getElementById("drawerAI");
+  const drawerCC = document.getElementById("drawerCC");
+  const btnQuickReply = document.getElementById("btnQuickReply");
+  const btnQuickSchedule = document.getElementById("btnQuickSchedule");
+
+  const schedBackdrop = document.getElementById("schedBackdrop");
+  const schedClose = document.getElementById("schedClose");
+  const schedCancel = document.getElementById("schedCancel");
+  const schedConfirm = document.getElementById("schedConfirm");
+  const schedCompany = document.getElementById("schedCompany");
+  const schedContact = document.getElementById("schedContact");
+  const schedReason = document.getElementById("schedReason");
+  const schedContext = document.getElementById("schedContext");
+  const schedSub = document.getElementById("schedSub");
+
+  const btnCommandCenter = document.getElementById("btnCommandCenter");
+  const btnComms = document.getElementById("btnComms");
+
+  let currentLensKey = "sales";
+  let currentSegmentKey = null;
+  let selectedItemId = null;
+
+  function prioClass(p){ return p==="high" ? "prio high" : p==="low" ? "prio low" : "prio"; }
+  function dotClass(p){ return p==="high" ? "dot bad" : p==="low" ? "dot" : "dot warn"; }
+  function escapeHtml(s){ return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
+  function render(){
+    const lens = lenses[currentLensKey];
+    focusPill.textContent = lens.label;
+    queueLens.textContent = lens.label;
+    queueMeta.textContent = lens.meta;
+    navWorkCount.textContent = (lens.items?.length || 0) + (lens.label==="Sales" ? 20 : 0);
+
+    queueSegments.innerHTML = "";
+    lens.segments.forEach((s,idx)=>{
+      const seg = document.createElement("div");
+      seg.className = "seg" + ((currentSegmentKey===null && idx===0) || currentSegmentKey===s.key ? " active":"");
+      seg.onclick = ()=>{ currentSegmentKey = s.key; selectedItemId = null; render(); clearContext(); };
+      seg.innerHTML = `<div class="left"><div class="ico">${s.icon}</div><div><b>${s.title}</b><span>${s.sub}</span></div></div><div class="count">${s.count}</div>`;
+      queueSegments.appendChild(seg);
+      if(currentSegmentKey===null && idx===0) currentSegmentKey = s.key;
+    });
+
+    queueItems.innerHTML = "";
+    (lens.items || []).forEach(item=>{
+      const el = document.createElement("div");
+      el.className = "item" + (selectedItemId===item.id ? " selected" : "");
+      el.innerHTML = `
+        <div class="row">
+          <div><div class="title">${item.company}</div><div class="sub">${item.company} — Summary Note</div></div>
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            <span class="${prioClass(item.prio)}"><span class="p"></span> ${item.prio}</span>
+            <span style="font-size:11px;color:var(--muted)">${item.age}</span>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip"><span class="${dotClass(item.prio)}"></span> CC <b style="color:var(--text)">${item.cc.category}</b></span>
+          <span class="chip">Stage <b style="color:var(--text)">${item.stage}</b></span>
+          ${item.amount ? `<span class="chip">MRR <b style="color:var(--text)">${item.amount}</b></span>` : ``}
+        </div>
+        <div class="why"><div style="font-size:16px;line-height:1">${item.why.icon}</div><div><b>Why this is here:</b> ${item.why.text}</div></div>
+        <div class="ctaBar">
+          <button class="btn" data-act="viewComms">View comms</button>
+          ${item.primary==="reply" ? `<button class="btn primary" data-act="reply">Reply</button>` : ""}
+          ${item.primary==="schedule" ? `<button class="btn primary" data-act="schedule">Schedule</button>` : ""}
+          ${item.primary==="resolve" ? `<button class="btn primary" data-act="resolve">Resolve</button>` : ""}
+        </div>
+      `;
+      el.onclick = (e)=>{
+        const act = e.target?.dataset?.act;
+        selectedItemId = item.id;
+        render();
+        showContext(item);
+        if(act==="viewComms" || act==="reply") openDrawer(item);
+        if(act==="schedule") openScheduler(item);
+        if(act==="resolve") resolveItem(item.id);
+      };
+      queueItems.appendChild(el);
+    });
+
+    if((lens.items||[]).length===0){
+      const empty = document.createElement("div");
+      empty.className="item";
+      empty.style.cursor="default";
+      empty.innerHTML = `<div class="title">No items in this queue.</div><div class="sub">As signals arrive from Communications, items appear here automatically.</div>`;
+      queueItems.appendChild(empty);
+    }
+  }
+
+  function clearContext(){
+    contextTitle.textContent = "Select a queue item";
+    contextCrumbs.textContent = "—";
+    contextKVs.innerHTML = "";
+    contextWrap.innerHTML = `<div class="section ghost"><div class="sectionBody" style="color:var(--muted);font-size:12px;line-height:1.55"><b>Pick an item</b> to see the triggering communication, Command Center signal, and the best resolver action.</div></div>`;
+  }
+
+  function showContext(item){
+    contextTitle.textContent = item.company;
+    const segTitle = lenses[currentLensKey].segments.find(s=>s.key===currentSegmentKey)?.title || "Queue";
+    contextCrumbs.textContent = `${segTitle} › ${item.cc.category}`;
+    contextKVs.innerHTML = `<span class="k"><strong>Primary</strong> ${item.primary.toUpperCase()}</span><span class="k"><strong>Stage</strong> ${item.stage}</span><span class="k"><strong>Priority</strong> ${item.prio}</span>`;
+    const resolverBtn = item.primary==="reply" ? "Reply" : item.primary==="schedule" ? "Schedule" : "Resolve";
+    contextWrap.innerHTML = `
+      <div class="section">
+        <div class="sectionHead"><b>Triggering communication</b><span class="meta">opens at exact message</span></div>
+        <div class="sectionBody">
+          <div class="msg">
+            <div class="msgTop"><div class="from">${escapeHtml(item.trigger.from)}</div><div class="when">${escapeHtml(item.trigger.when)}</div></div>
+            <div class="msgText">${escapeHtml(item.trigger.text)}</div>
+            <div class="hl"><b>Why it triggered Work:</b> ${escapeHtml(item.why.text)}</div>
+          </div>
+          <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap"><button class="btn" id="ctxViewComms">View full conversation</button></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="sectionHead"><b>Command Center signal</b><span class="meta">drives urgency + category</span></div>
+        <div class="sectionBody" style="color:#334155;font-size:12px;line-height:1.55"><b>${escapeHtml(item.cc.category)}</b> • ${escapeHtml(item.prio)} priority • ${escapeHtml(item.age)}</div>
+      </div>
+      <div class="section">
+        <div class="sectionHead"><b>AI interpretation (explainable)</b><span class="meta">no keyword matching</span></div>
+        <div class="sectionBody">
+          <div class="aiBox">${escapeHtml(item.ai.summary)}<ul>${item.ai.bullets.map(b=>`<li>${escapeHtml(b[0])}: <b>${escapeHtml(b[1])}</b></li>`).join("")}</ul></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="sectionHead"><b>Resolver</b><span class="meta">closes loop</span></div>
+        <div class="sectionBody">
+          <div class="actionRow"><button class="btn" id="ctxSecondary">View comms</button><button class="btn primary" id="ctxPrimary">${resolverBtn}</button></div>
+          <div style="margin-top:10px;color:var(--muted);font-size:12px;line-height:1.55">Resolver actions should automatically resolve the Work item and emit lifecycle events.</div>
+        </div>
+      </div>
+    `;
+    document.getElementById("ctxViewComms").onclick = ()=>openDrawer(item);
+    document.getElementById("ctxSecondary").onclick = ()=>openDrawer(item);
+    document.getElementById("ctxPrimary").onclick = ()=>{
+      if(item.primary==="schedule") openScheduler(item);
+      else if(item.primary==="reply") openDrawer(item);
+      else resolveItem(item.id);
+    };
+  }
+
+  function openDrawer(item){
+    drawerTitle.textContent = `Conversation — ${item.company}`;
+    drawerSub.textContent = `Jumped to triggering message (${item.trigger.when})`;
+    thread.innerHTML = `
+      <div class="bubble me"><div class="hdr"><b>You</b><span>3 days ago</span></div><p>Quick follow-up — happy to send details and propose a quick call to lock next steps.</p></div>
+      <div class="bubble"><div class="hdr"><b>${escapeHtml(item.trigger.from)}</b><span>${escapeHtml(item.trigger.when)}</span></div><p>${escapeHtml(item.trigger.text)}</p></div>
+      <div class="bubble me" style="opacity:.85"><div class="hdr"><b>Draft reply (suggested)</b><span>not sent</span></div><p>Absolutely — here are the tiers. If you can do a quick 15 minutes, I’ll tailor it to your operation. Want me to send a couple time slots?</p></div>
+    `;
+    drawerAI.innerHTML = `${escapeHtml(item.ai.summary)}<ul>${item.ai.bullets.map(b=>`<li>${escapeHtml(b[0])}: <b>${escapeHtml(b[1])}</b></li>`).join("")}</ul>`;
+    drawerCC.innerHTML = `<b>${escapeHtml(item.cc.category)}</b> • ${escapeHtml(item.prio)} priority • ${escapeHtml(item.age)}`;
+    btnQuickReply.onclick = ()=>{ alert("Mock: reply sent (event emitted). Item resolved."); resolveItem(item.id); closeDrawer(); };
+    btnQuickSchedule.onclick = ()=>{ closeDrawer(); openScheduler(item); };
+    drawer.classList.add("open");
+  }
+  function closeDrawer(){ drawer.classList.remove("open"); }
+  drawerClose.onclick = closeDrawer;
+  drawer.onclick = (e)=>{ if(e.target===drawer) closeDrawer(); };
+
+  function openScheduler(item){
+    schedCompany.value = item.company;
+    schedContact.value = item.trigger.from.includes("Customer") ? "Owner / Decision Maker" : "Primary Contact";
+    schedReason.value = (currentLensKey==="support") ? "Support escalation" :
+      (item.ai.bullets.find(b=>b[0]==="playbook")?.[1]||"").toLowerCase().includes("pricing") ? "Pricing clarification" : "Sales follow-up";
+    schedContext.value = `Linked to:
+- communication_id: msg_${Math.floor(1000+Math.random()*8999)}
+- command_center_item_id: cc_${Math.floor(1000+Math.random()*8999)}
+Primary goal: ${item.ai.summary}`;
+    schedSub.textContent = `Prefilled from queue item “${item.cc.category}”`;
+    schedBackdrop.classList.add("open");
+    schedConfirm.onclick = ()=>{ alert("Mock: scheduling initiated → meeting booked → item resolved."); resolveItem(item.id); closeScheduler(); };
+  }
+  function closeScheduler(){ schedBackdrop.classList.remove("open"); }
+  schedClose.onclick = closeScheduler;
+  schedCancel.onclick = closeScheduler;
+  schedBackdrop.onclick = (e)=>{ if(e.target===schedBackdrop) closeScheduler(); };
+
+  function resolveItem(id){
+    const lens = lenses[currentLensKey];
+    lens.items = (lens.items||[]).filter(it=>it.id!==id);
+    selectedItemId = null;
+    render();
+    clearContext();
+  }
+
+  navLinks.forEach(a=>{
+    a.onclick = (e)=>{
+      e.preventDefault();
+      navLinks.forEach(x=>x.classList.remove("active"));
+      a.classList.add("active");
+      const key = a.dataset.nav;
+      if(key==="work"){ viewWork.style.display=""; viewPlaceholder.style.display="none"; }
+      else{ viewWork.style.display="none"; viewPlaceholder.style.display=""; phTitle.textContent = key[0].toUpperCase()+key.slice(1); }
+    };
+  });
+
+  focusSelect.onchange = ()=>{ currentLensKey = focusSelect.value; currentSegmentKey = null; selectedItemId = null; render(); clearContext(); };
+  btnCommandCenter.onclick = ()=>alert("Mock: Command Center powers queues + priority (tuning/debug view).");
+  btnComms.onclick = ()=>alert("Mock: Communications is best accessed contextually from items or customer hub.");
+
+  render();
+  clearContext();
+</script>
+</body>
+</html>

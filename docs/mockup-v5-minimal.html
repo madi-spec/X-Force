@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X-FORCE Products - Process Views</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --muted: #667085;
+      --text: #0b1220;
+      --line: #e6eaf0;
+      --line2: #eef2f7;
+      --nav: #0b1628;
+      --nav2: #0e1a30;
+      --good: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --primary: #3b82f6;
+      --shadow: 0 1px 3px rgba(16,24,40,.06);
+      --shadow2: 0 10px 40px rgba(16,24,40,.12);
+      --r: 12px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .app { display: flex; height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: var(--nav);
+      color: #fff;
+      padding: 16px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-logo {
+      font-size: 18px;
+      font-weight: 700;
+      padding: 8px 12px;
+      margin-bottom: 24px;
+    }
+
+    .sidebar-section { margin-bottom: 24px; }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #667085;
+      padding: 0 12px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: #94a3b8;
+      text-decoration: none;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .sidebar-link:hover { background: var(--nav2); color: #fff; }
+    .sidebar-link.active { background: var(--nav2); color: #fff; }
+    .sidebar-link svg { width: 18px; height: 18px; opacity: 0.7; }
+    .sidebar-link.active svg { opacity: 1; }
+    .sidebar-spacer { flex: 1; }
+
+    /* Main */
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Process Tabs */
+    .process-tabs {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 0 24px;
+      display: flex;
+      gap: 4px;
+    }
+
+    .process-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      border: none;
+      background: none;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.2s;
+    }
+
+    .process-tab:hover { color: var(--text); }
+    .process-tab.active { color: var(--text); border-bottom-color: var(--text); }
+    .process-tab-icon { font-size: 16px; }
+
+    .process-tab-count {
+      background: var(--line2);
+      color: var(--muted);
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .process-tab.active .process-tab-count { background: var(--text); color: #fff; }
+
+    .process-tab-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--warn);
+      border-radius: 50%;
+    }
+
+    /* Header */
+    .header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 20px 24px;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .header-title { display: flex; align-items: center; gap: 10px; }
+    .header-title h1 { font-size: 20px; font-weight: 600; color: var(--text); }
+    .header-title-icon { font-size: 20px; }
+    .header-subtitle { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+    .header-action {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .header-action:hover { background: var(--bg); }
+
+    /* Stats - Minimal */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      padding: 16px;
+    }
+
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-value.warn { color: var(--warn); }
+    .stat-value.good { color: var(--good); }
+
+    .stat-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* Filter Bar */
+    .filter-bar {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .filter-dropdown { position: relative; }
+
+    .filter-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-btn:hover { border-color: #d1d5db; }
+    .filter-btn.active { border-color: var(--primary); background: #f8fafc; }
+    .filter-btn svg { width: 16px; height: 16px; color: var(--muted); }
+    .filter-chevron { width: 12px !important; height: 12px !important; }
+
+    .filter-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      min-width: 280px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      box-shadow: var(--shadow2);
+      z-index: 100;
+      display: none;
+    }
+
+    .filter-menu.open { display: block; }
+
+    .filter-menu-section { padding: 8px; border-bottom: 1px solid var(--line); }
+    .filter-menu-section:last-child { border-bottom: none; }
+
+    .filter-menu-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      padding: 8px 12px 4px;
+    }
+
+    .filter-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .filter-menu-item:hover { background: var(--bg); }
+
+    .filter-menu-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      accent-color: var(--primary);
+    }
+
+    .filter-menu-avatar {
+      width: 32px;
+      height: 32px;
+      background: var(--line);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .filter-menu-info { flex: 1; }
+    .filter-menu-name { font-size: 14px; font-weight: 500; color: var(--text); }
+    .filter-menu-role { font-size: 12px; color: var(--muted); }
+
+    .filter-menu-footer {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .filter-menu-link {
+      font-size: 13px;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .filter-menu-link:hover { color: var(--text); background: var(--bg); }
+    .filter-menu-link.primary { color: var(--primary); }
+
+    .filter-search { flex: 1; max-width: 280px; position: relative; }
+
+    .filter-search input {
+      width: 100%;
+      padding: 8px 12px 8px 36px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .filter-search input:focus { border-color: var(--primary); }
+    .filter-search input::placeholder { color: var(--muted); }
+
+    .filter-search svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      color: var(--muted);
+    }
+
+    .filter-spacer { flex: 1; }
+
+    .quick-filter {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .quick-filter:hover { background: var(--bg); color: var(--text); }
+    .quick-filter.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+    /* View Controls */
+    .view-controls {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .view-tabs {
+      display: flex;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 8px;
+      gap: 2px;
+    }
+
+    .view-tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+    .view-tab svg { width: 16px; height: 16px; }
+
+    .view-toggle {
+      display: flex;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 8px;
+      gap: 2px;
+    }
+
+    .view-toggle-btn {
+      padding: 8px 12px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+
+    .view-toggle-btn:hover { color: var(--text); }
+    .view-toggle-btn.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+    .view-toggle-btn svg { width: 16px; height: 16px; }
+
+    /* Content */
+    .content { flex: 1; overflow: auto; padding: 20px 24px; }
+
+    /* Kanban - Minimal */
+    .kanban-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      height: 100%;
+      min-height: 500px;
+    }
+
+    .kanban-column {
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border-radius: var(--r);
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .kanban-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kanban-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .kanban-title-icon {
+      font-size: 14px;
+    }
+
+    .kanban-count {
+      background: var(--bg);
+      padding: 2px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .kanban-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--bg);
+    }
+
+    /* Cards - Clean & Minimal */
+    .card {
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .card:hover { box-shadow: var(--shadow2); transform: translateY(-1px); }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .card-company { font-weight: 600; font-size: 14px; color: var(--text); line-height: 1.3; }
+
+    .card-badge {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--line);
+      color: var(--muted);
+    }
+
+    .card-stage { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+
+    .card-alert {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .card-alert-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--warn);
+    }
+
+    .card-alert-dot.danger { background: var(--bad); }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 10px;
+      border-top: 1px solid var(--line2);
+    }
+
+    .card-days {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .card-days.warning { color: var(--warn); }
+    .card-days.danger { color: var(--bad); }
+
+    .card-mrr { font-size: 13px; color: var(--muted); }
+
+    .card-avatar {
+      width: 24px;
+      height: 24px;
+      background: var(--line);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 14px;
+      padding: 40px;
+    }
+
+    /* Side Panel */
+    .panel-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+    }
+
+    .panel-overlay.open { display: flex; justify-content: flex-end; }
+
+    .panel-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.15); }
+
+    .panel {
+      position: relative;
+      width: 480px;
+      background: var(--panel);
+      box-shadow: var(--shadow2);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header { padding: 20px; border-bottom: 1px solid var(--line); }
+
+    .panel-header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .panel-title { font-size: 18px; font-weight: 600; color: var(--text); }
+
+    .panel-close {
+      padding: 8px;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+
+    .panel-close:hover { background: var(--bg); color: var(--text); }
+    .panel-close svg { width: 20px; height: 20px; }
+
+    .panel-meta { display: flex; align-items: center; gap: 8px; }
+
+    .panel-body { flex: 1; overflow-y: auto; padding: 20px; }
+
+    .panel-section { margin-bottom: 24px; }
+    .panel-section:last-child { margin-bottom: 0; }
+
+    .panel-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .panel-alert {
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .panel-alert-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warn);
+      flex-shrink: 0;
+    }
+
+    .panel-alert-dot.danger { background: var(--bad); }
+
+    .panel-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+    .panel-stat {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .panel-stat-value { font-size: 20px; font-weight: 700; color: var(--text); }
+    .panel-stat-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .panel-actions-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+    .panel-action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .panel-action-btn:hover { background: var(--bg); }
+
+    .panel-stages { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .panel-stage-btn {
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .panel-stage-btn:hover { background: var(--line); }
+    .panel-stage-btn.active { background: var(--panel); border-color: var(--primary); color: var(--primary); font-weight: 500; }
+
+    .panel-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 10px;
+    }
+
+    .panel-footer-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .panel-footer-btn.primary { background: var(--primary); border: none; color: #fff; }
+    .panel-footer-btn.primary:hover { background: #2563eb; }
+    .panel-footer-btn.secondary { background: var(--panel); border: 1px solid var(--line); color: var(--text); }
+    .panel-footer-btn.secondary:hover { background: var(--bg); }
+    .panel-footer-btn.icon-only { flex: 0; padding: 10px 14px; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open { display: flex; }
+    .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.3); }
+
+    .modal {
+      position: relative;
+      width: 440px;
+      background: var(--panel);
+      border-radius: var(--r);
+      box-shadow: var(--shadow2);
+      padding: 24px;
+    }
+
+    .modal-title { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
+
+    .modal-info {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .modal-info-label { font-size: 12px; color: var(--muted); }
+    .modal-info-company { font-weight: 600; color: var(--text); margin-top: 2px; }
+
+    .modal-info-stages {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+
+    .modal-info-stages span { color: var(--muted); }
+    .modal-info-stages strong { color: var(--primary); }
+
+    .modal-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .modal-label span { color: var(--bad); }
+
+    .modal-textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .modal-textarea:focus { border-color: var(--primary); }
+    .modal-textarea::placeholder { color: var(--muted); }
+
+    .modal-buttons { display: flex; gap: 10px; margin-top: 20px; }
+
+    .modal-btn {
+      flex: 1;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .modal-btn.cancel { background: var(--bg); border: 1px solid var(--line); color: var(--text); }
+    .modal-btn.cancel:hover { background: var(--line2); }
+    .modal-btn.confirm { background: var(--primary); border: none; color: #fff; }
+    .modal-btn.confirm:hover { background: #2563eb; }
+
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+      outline: none;
+    }
+
+    select:focus { border-color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script>
+    const products = [
+      { id: 'xrai', name: 'X-RAI 2.0', color: '#f97316', icon: '🤖' },
+      { id: 'summary', name: 'Summary Note', color: '#8b5cf6', icon: '📝' },
+      { id: 'aiagents', name: 'AI Agents', color: '#ec4899', icon: '🎙️' },
+      { id: 'smartdata', name: 'Smart Data Plus', color: '#06b6d4', icon: '📊' },
+    ];
+
+    const users = [
+      { id: 'jd', name: 'John Doe', initials: 'JD', role: 'Sales Rep' },
+      { id: 'sd', name: 'Sarah Davis', initials: 'SD', role: 'Sales Rep' },
+      { id: 'mj', name: 'Mike Johnson', initials: 'MJ', role: 'Onboarding Specialist' },
+      { id: 'ak', name: 'Amy Kim', initials: 'AK', role: 'CSR' },
+      { id: 'tb', name: 'Tom Brown', initials: 'TB', role: 'Account Manager' },
+    ];
+
+    const processes = {
+      sales: { id: 'sales', name: 'Sales', icon: '🎯', stages: ['Actively Engaging', 'Demo Scheduled', 'Demo Complete', 'Preview Ready', 'Trial', 'Proposal'], stats: { total: 94, attention: 29, mrr: 12865 } },
+      onboarding: { id: 'onboarding', name: 'Onboarding', icon: '🚀', stages: ['Kickoff', 'Training', 'Data Migration', 'Go Live Prep', 'Go Live'], stats: { total: 12, attention: 3, mrr: 4500 } },
+      customer_service: { id: 'customer_service', name: 'Customer Service', icon: '🛟', stages: ['New', 'In Progress', 'Waiting', 'Escalated', 'Resolved'], stats: { total: 8, attention: 5, mrr: 0 } },
+      engagement: { id: 'engagement', name: 'Engagement', icon: '💚', stages: ['Health Check', 'QBR Scheduled', 'Upsell', 'Renewal Due', 'At Risk'], stats: { total: 156, attention: 12, mrr: 89000 } },
+    };
+
+    const items = {
+      sales: [
+        { id: '1', company: 'Lawn Doctor of West Lake County', product: 'xrai', stage: 'Actively Engaging', days: 8, mrr: 500, owner: 'jd', health: 'healthy' },
+        { id: '2', company: 'Spring Green', product: 'xrai', stage: 'Preview Ready', days: 20, mrr: 200, owner: 'sd', health: 'attention', reason: 'No activity 14d' },
+        { id: '3', company: 'Mosquito Hunters of Chicago', product: 'xrai', stage: 'Preview Ready', days: 20, mrr: 150, owner: 'sd', health: 'attention', reason: 'Overdue task' },
+        { id: '4', company: 'Custom Lawn Care, Inc.', product: 'xrai', stage: 'Preview Ready', days: 45, mrr: 300, owner: 'jd', health: 'stalled', reason: 'Stalled 45d' },
+        { id: '5', company: 'Pest Pros of Michigan', product: 'xrai', stage: 'Proposal', days: 5, mrr: 180, owner: 'sd', health: 'healthy' },
+        { id: '6', company: 'Spring Green', product: 'aiagents', stage: 'Discovery Call', days: 12, mrr: 300, owner: 'jd', health: 'attention', reason: 'No activity 9d' },
+        { id: '7', company: 'GetEm Services', product: 'aiagents', stage: 'Demo Scheduled', days: 3, mrr: 400, owner: 'sd', health: 'healthy' },
+        { id: '8', company: 'Nozzle Nolen Pest Solutions', product: 'aiagents', stage: 'Proposal', days: 2, mrr: 500, owner: 'jd', health: 'healthy' },
+        { id: '9', company: 'Lawn Doctor of West Lake County', product: 'summary', stage: 'Demo', days: 5, mrr: 79, owner: 'jd', health: 'healthy' },
+        { id: '10', company: 'Universal Pest & Termite Inc.', product: 'summary', stage: 'Closing', days: 8, mrr: 79, owner: 'sd', health: 'attention', reason: 'Overdue task' },
+      ],
+      onboarding: [
+        { id: '11', company: 'ABC Pest Control', product: 'xrai', stage: 'Training', days: 5, mrr: 450, owner: 'mj', health: 'healthy' },
+        { id: '12', company: 'Green Lawn Pro', product: 'xrai', stage: 'Data Migration', days: 12, mrr: 300, owner: 'mj', health: 'attention', reason: 'Delayed 5d' },
+      ],
+      customer_service: [
+        { id: '14', company: 'Lawn Doctor of West Lake County', product: 'xrai', stage: 'In Progress', days: 2, mrr: 0, owner: 'ak', health: 'healthy' },
+        { id: '15', company: 'Spring Green', product: 'xrai', stage: 'Escalated', days: 5, mrr: 0, owner: 'ak', health: 'attention', reason: 'Escalated 3d' },
+      ],
+      engagement: [
+        { id: '17', company: 'Premium Pest Services', product: 'xrai', stage: 'QBR Scheduled', days: 5, mrr: 800, owner: 'tb', health: 'healthy' },
+        { id: '19', company: 'City Pest Control', product: 'xrai', stage: 'At Risk', days: 30, mrr: 600, owner: 'tb', health: 'attention', reason: 'Low usage 30d' },
+      ]
+    };
+
+    let state = {
+      process: 'sales',
+      view: 'all',
+      listMode: 'kanban',
+      selectedUsers: [],
+      selectedProducts: ['xrai', 'aiagents', 'summary', 'smartdata'],
+      healthFilter: 'all',
+      search: '',
+      userDropdownOpen: false,
+      productDropdownOpen: false,
+      sidePanel: null,
+      modal: null,
+    };
+
+    const getProduct = (id) => products.find(p => p.id === id);
+    const getUser = (id) => users.find(u => u.id === id) || { name: 'Unknown', initials: '??' };
+    const getProcess = () => processes[state.process];
+
+    function getFilteredItems() {
+      const processItems = items[state.process] || [];
+      return processItems.filter(item => {
+        if (!state.selectedProducts.includes(item.product)) return false;
+        if (state.selectedUsers.length > 0 && !state.selectedUsers.includes(item.owner)) return false;
+        if (state.healthFilter !== 'all' && item.health !== state.healthFilter) return false;
+        if (state.search && !item.company.toLowerCase().includes(state.search.toLowerCase())) return false;
+        return true;
+      });
+    }
+
+    function getDaysClass(days) {
+      if (days >= 30) return 'danger';
+      if (days >= 14) return 'warning';
+      return '';
+    }
+
+    function render() {
+      document.getElementById('app').innerHTML = `
+        ${renderSidebar()}
+        <div class="main">
+          ${renderProcessTabs()}
+          ${renderHeader()}
+          ${renderFilterBar()}
+          ${renderViewControls()}
+          ${renderContent()}
+        </div>
+        ${renderSidePanel()}
+        ${renderModal()}
+      `;
+      attachEvents();
+    }
+
+    function renderSidebar() {
+      return `
+        <aside class="sidebar">
+          <div class="sidebar-logo">X-FORCE</div>
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">Work</div>
+            <nav class="sidebar-nav">
+              <a href="#" class="sidebar-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Work Queue</a>
+              <a href="#" class="sidebar-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Scheduler</a>
+            </nav>
+          </div>
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">Manage</div>
+            <nav class="sidebar-nav">
+              <a href="#" class="sidebar-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Customers</a>
+              <a href="#" class="sidebar-link active"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Products</a>
+              <a href="#" class="sidebar-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v10"/></svg>Process Studio</a>
+              <a href="#" class="sidebar-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Reports</a>
+            </nav>
+          </div>
+          <div class="sidebar-spacer"></div>
+          <nav class="sidebar-nav">
+            <a href="#" class="sidebar-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09"/></svg>Settings</a>
+          </nav>
+        </aside>
+      `;
+    }
+
+    function renderProcessTabs() {
+      return `
+        <div class="process-tabs">
+          ${Object.values(processes).map(p => `
+            <button class="process-tab ${state.process === p.id ? 'active' : ''}" data-process="${p.id}">
+              <span class="process-tab-icon">${p.icon}</span>
+              <span>${p.name}</span>
+              <span class="process-tab-count">${p.stats.total}</span>
+              ${p.stats.attention > 0 ? '<span class="process-tab-dot"></span>' : ''}
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderHeader() {
+      const process = getProcess();
+      const filtered = getFilteredItems();
+      const totalMrr = filtered.reduce((sum, i) => sum + (i.mrr || 0), 0);
+      const attention = filtered.filter(i => i.health !== 'healthy').length;
+      
+      return `
+        <div class="header">
+          <div class="header-top">
+            <div>
+              <div class="header-title">
+                <span class="header-title-icon">${process.icon}</span>
+                <h1>${process.name} Process</h1>
+              </div>
+              <p class="header-subtitle">Track and manage your ${process.name.toLowerCase()} pipeline</p>
+            </div>
+            <button class="header-action">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
+              Process Editor
+            </button>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value">${filtered.length}</div>
+              <div class="stat-label">Total Items</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value ${attention > 0 ? 'warn' : ''}">${attention}</div>
+              <div class="stat-label">Need Attention</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value good">$${totalMrr.toLocaleString()}</div>
+              <div class="stat-label">${state.process === 'sales' ? 'Pipeline MRR' : 'MRR'}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">${state.selectedProducts.length}</div>
+              <div class="stat-label">Products</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderFilterBar() {
+      const userCount = state.selectedUsers.length;
+      const productCount = state.selectedProducts.length;
+      
+      return `
+        <div class="filter-bar">
+          <div class="filter-dropdown">
+            <button class="filter-btn ${userCount > 0 ? 'active' : ''}" id="userDropdownBtn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              <span>${userCount === 0 ? 'All Users' : userCount === 1 ? getUser(state.selectedUsers[0]).name : userCount + ' Users'}</span>
+              <svg class="filter-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="filter-menu ${state.userDropdownOpen ? 'open' : ''}" id="userDropdown">
+              <div class="filter-menu-section">
+                <div class="filter-menu-item" data-action="myItems">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <span style="font-weight: 500;">My Items Only</span>
+                </div>
+              </div>
+              <div class="filter-menu-section">
+                <div class="filter-menu-title">Team Members</div>
+                ${users.map(u => `
+                  <label class="filter-menu-item">
+                    <input type="checkbox" ${state.selectedUsers.includes(u.id) ? 'checked' : ''} data-user="${u.id}">
+                    <div class="filter-menu-avatar">${u.initials}</div>
+                    <div class="filter-menu-info">
+                      <div class="filter-menu-name">${u.name}</div>
+                      <div class="filter-menu-role">${u.role}</div>
+                    </div>
+                  </label>
+                `).join('')}
+              </div>
+              <div class="filter-menu-footer">
+                <button class="filter-menu-link" data-action="clearUsers">Clear</button>
+                <button class="filter-menu-link primary" data-action="closeUserDropdown">Done</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-dropdown">
+            <button class="filter-btn ${productCount < products.length ? 'active' : ''}" id="productDropdownBtn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              <span>${productCount === products.length ? 'All Products' : productCount === 1 ? getProduct(state.selectedProducts[0])?.name : productCount + ' Products'}</span>
+              <svg class="filter-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="filter-menu ${state.productDropdownOpen ? 'open' : ''}" id="productDropdown">
+              <div class="filter-menu-section">
+                ${products.map(p => `
+                  <label class="filter-menu-item">
+                    <input type="checkbox" ${state.selectedProducts.includes(p.id) ? 'checked' : ''} data-product="${p.id}">
+                    <span style="font-size: 18px;">${p.icon}</span>
+                    <span class="filter-menu-name">${p.name}</span>
+                  </label>
+                `).join('')}
+              </div>
+              <div class="filter-menu-footer">
+                <button class="filter-menu-link" data-action="selectAllProducts">Select All</button>
+                <button class="filter-menu-link primary" data-action="closeProductDropdown">Done</button>
+              </div>
+            </div>
+          </div>
+
+          <select id="healthFilter" style="width: auto; padding-right: 32px;">
+            <option value="all" ${state.healthFilter === 'all' ? 'selected' : ''}>All Health</option>
+            <option value="attention" ${state.healthFilter === 'attention' ? 'selected' : ''}>Needs Attention</option>
+            <option value="stalled" ${state.healthFilter === 'stalled' ? 'selected' : ''}>Stalled</option>
+            <option value="healthy" ${state.healthFilter === 'healthy' ? 'selected' : ''}>Healthy</option>
+          </select>
+
+          <div class="filter-search">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" placeholder="Search companies..." id="searchInput" value="${state.search}">
+          </div>
+
+          <div class="filter-spacer"></div>
+
+          <button class="quick-filter ${state.healthFilter === 'attention' ? 'active' : ''}" data-action="toggleAttention">
+            Needs Attention
+          </button>
+        </div>
+      `;
+    }
+
+    function renderViewControls() {
+      return `
+        <div class="view-controls">
+          <div class="view-tabs">
+            <button class="view-tab ${state.view === 'all' ? 'active' : ''}" data-view="all">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              All Items
+            </button>
+            <button class="view-tab ${state.view === 'stage' ? 'active' : ''}" data-view="stage">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg>
+              By Stage
+            </button>
+            <button class="view-tab ${state.view === 'company' ? 'active' : ''}" data-view="company">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              By Company
+            </button>
+          </div>
+          <div class="view-toggle">
+            <button class="view-toggle-btn ${state.listMode === 'kanban' ? 'active' : ''}" data-mode="kanban">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </button>
+            <button class="view-toggle-btn ${state.listMode === 'list' ? 'active' : ''}" data-mode="list">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderContent() {
+      const filtered = getFilteredItems();
+      const groups = {
+        attention: filtered.filter(i => i.health === 'attention'),
+        stalled: filtered.filter(i => i.health === 'stalled'),
+        healthy: filtered.filter(i => i.health === 'healthy'),
+      };
+      
+      return `
+        <div class="content">
+          <div class="kanban-grid">
+            ${renderColumn('⚠️', 'Needs Attention', groups.attention)}
+            ${renderColumn('🔴', 'Stalled 30d+', groups.stalled)}
+            ${renderColumn('✓', 'On Track', groups.healthy)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderColumn(icon, title, items) {
+      return `
+        <div class="kanban-column">
+          <div class="kanban-header">
+            <div class="kanban-title">
+              <span class="kanban-title-icon">${icon}</span>
+              ${title}
+            </div>
+            <div class="kanban-count">${items.length}</div>
+          </div>
+          <div class="kanban-body">
+            ${items.length === 0 
+              ? '<div class="empty-state">No items</div>'
+              : items.map(item => renderCard(item)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCard(item) {
+      const product = getProduct(item.product);
+      const owner = getUser(item.owner);
+      
+      return `
+        <div class="card" data-item="${item.id}">
+          <div class="card-header">
+            <div class="card-company">${item.company}</div>
+            <div class="card-badge">${product?.name?.split(' ')[0] || 'Unknown'}</div>
+          </div>
+          <div class="card-stage">${item.stage}</div>
+          ${item.reason ? `
+            <div class="card-alert">
+              <span class="card-alert-dot ${item.health === 'stalled' ? 'danger' : ''}"></span>
+              ${item.reason}
+            </div>
+          ` : ''}
+          <div class="card-footer">
+            <span class="card-days ${getDaysClass(item.days)}">${item.days}d</span>
+            ${item.mrr > 0 ? `<span class="card-mrr">$${item.mrr}/mo</span>` : ''}
+            <div class="card-avatar" title="${owner.name}">${owner.initials}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSidePanel() {
+      if (!state.sidePanel) return '<div class="panel-overlay"></div>';
+      
+      const allItems = Object.values(items).flat();
+      const item = allItems.find(i => i.id === state.sidePanel);
+      if (!item) return '<div class="panel-overlay"></div>';
+      
+      const product = getProduct(item.product);
+      const owner = getUser(item.owner);
+      const process = getProcess();
+      
+      return `
+        <div class="panel-overlay open">
+          <div class="panel-backdrop" data-action="closePanel"></div>
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-header-top">
+                <div class="panel-title">${item.company}</div>
+                <button class="panel-close" data-action="closePanel">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              <div class="panel-meta">
+                <span class="card-badge">${product?.name || 'Unknown'}</span>
+                <span style="color: var(--muted); font-size: 13px;">${item.stage}</span>
+              </div>
+            </div>
+            
+            <div class="panel-body">
+              ${item.reason ? `
+                <div class="panel-section">
+                  <div class="panel-alert">
+                    <span class="panel-alert-dot ${item.health === 'stalled' ? 'danger' : ''}"></span>
+                    ${item.reason}
+                  </div>
+                </div>
+              ` : ''}
+              
+              <div class="panel-section">
+                <div class="panel-stats">
+                  <div class="panel-stat">
+                    <div class="panel-stat-value">${item.days}d</div>
+                    <div class="panel-stat-label">In Stage</div>
+                  </div>
+                  <div class="panel-stat">
+                    <div class="panel-stat-value">${item.mrr > 0 ? '$' + item.mrr : '-'}</div>
+                    <div class="panel-stat-label">MRR</div>
+                  </div>
+                  <div class="panel-stat">
+                    <div class="panel-stat-value" style="font-size: 14px;">${owner.name}</div>
+                    <div class="panel-stat-label">Owner</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="panel-section">
+                <div class="panel-section-title">Quick Actions</div>
+                <div class="panel-actions-grid">
+                  <button class="panel-action-btn">📞 Schedule Call</button>
+                  <button class="panel-action-btn">📧 Send Email</button>
+                  <button class="panel-action-btn">📝 Add Note</button>
+                  <button class="panel-action-btn">✅ Add Task</button>
+                </div>
+              </div>
+              
+              <div class="panel-section">
+                <div class="panel-section-title">Move Stage</div>
+                <div class="panel-stages">
+                  ${process.stages.map(stage => `
+                    <button class="panel-stage-btn ${stage === item.stage ? 'active' : ''}" data-stage="${stage}">${stage}</button>
+                  `).join('')}
+                </div>
+              </div>
+              
+              <div class="panel-section">
+                <div class="panel-section-title">Assigned To</div>
+                <select>
+                  ${users.map(u => `<option value="${u.id}" ${u.id === item.owner ? 'selected' : ''}>${u.name} (${u.role})</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            
+            <div class="panel-footer">
+              <button class="panel-footer-btn primary">Log Activity</button>
+              <button class="panel-footer-btn secondary">Add Task</button>
+              <button class="panel-footer-btn secondary icon-only">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderModal() {
+      if (!state.modal) return '<div class="modal-overlay"></div>';
+      
+      return `
+        <div class="modal-overlay open">
+          <div class="modal-backdrop" data-action="closeModal"></div>
+          <div class="modal">
+            <div class="modal-title">Move to New Stage</div>
+            <div class="modal-info">
+              <div class="modal-info-label">Moving</div>
+              <div class="modal-info-company">${state.modal.company}</div>
+              <div class="modal-info-stages">
+                <span>${state.modal.fromStage}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                <strong>${state.modal.toStage}</strong>
+              </div>
+            </div>
+            <label class="modal-label">Why are you moving this? <span>*</span></label>
+            <textarea class="modal-textarea" placeholder="Describe the reason for this stage change..." id="moveNote"></textarea>
+            <div class="modal-buttons">
+              <button class="modal-btn cancel" data-action="closeModal">Cancel</button>
+              <button class="modal-btn confirm" data-action="confirmMove">Move & Save Note</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function attachEvents() {
+      document.querySelectorAll('[data-process]').forEach(el => {
+        el.addEventListener('click', () => { state.process = el.dataset.process; state.sidePanel = null; render(); });
+      });
+
+      document.querySelectorAll('[data-view]').forEach(el => {
+        el.addEventListener('click', () => { state.view = el.dataset.view; render(); });
+      });
+
+      document.querySelectorAll('[data-mode]').forEach(el => {
+        el.addEventListener('click', () => { state.listMode = el.dataset.mode; render(); });
+      });
+
+      document.getElementById('userDropdownBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.userDropdownOpen = !state.userDropdownOpen;
+        state.productDropdownOpen = false;
+        render();
+      });
+
+      document.getElementById('productDropdownBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.productDropdownOpen = !state.productDropdownOpen;
+        state.userDropdownOpen = false;
+        render();
+      });
+
+      document.querySelectorAll('[data-user]').forEach(el => {
+        el.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const userId = el.dataset.user;
+          if (el.checked) { if (!state.selectedUsers.includes(userId)) state.selectedUsers.push(userId); }
+          else { state.selectedUsers = state.selectedUsers.filter(id => id !== userId); }
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-product]').forEach(el => {
+        el.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const productId = el.dataset.product;
+          if (el.checked) { if (!state.selectedProducts.includes(productId)) state.selectedProducts.push(productId); }
+          else { state.selectedProducts = state.selectedProducts.filter(id => id !== productId); }
+          render();
+        });
+      });
+
+      document.getElementById('healthFilter')?.addEventListener('change', (e) => { state.healthFilter = e.target.value; render(); });
+      document.getElementById('searchInput')?.addEventListener('input', (e) => { state.search = e.target.value; render(); });
+
+      document.querySelectorAll('[data-action]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const action = el.dataset.action;
+          switch (action) {
+            case 'myItems': state.selectedUsers = ['jd']; state.userDropdownOpen = false; break;
+            case 'clearUsers': state.selectedUsers = []; break;
+            case 'closeUserDropdown': state.userDropdownOpen = false; break;
+            case 'selectAllProducts': state.selectedProducts = products.map(p => p.id); break;
+            case 'closeProductDropdown': state.productDropdownOpen = false; break;
+            case 'toggleAttention': state.healthFilter = state.healthFilter === 'attention' ? 'all' : 'attention'; break;
+            case 'closePanel': state.sidePanel = null; break;
+            case 'closeModal': state.modal = null; break;
+            case 'confirmMove':
+              const note = document.getElementById('moveNote')?.value;
+              if (note && note.trim()) { alert(`Stage changed!\nNote: "${note}"`); state.modal = null; state.sidePanel = null; }
+              else { alert('Please enter a note explaining the stage change.'); }
+              break;
+          }
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-item]').forEach(el => {
+        el.addEventListener('click', () => { state.sidePanel = el.dataset.item; render(); });
+      });
+
+      document.querySelectorAll('[data-stage]').forEach(el => {
+        el.addEventListener('click', () => {
+          const allItems = Object.values(items).flat();
+          const item = allItems.find(i => i.id === state.sidePanel);
+          if (item && el.dataset.stage !== item.stage) {
+            state.modal = { itemId: item.id, company: item.company, fromStage: item.stage, toStage: el.dataset.stage };
+            render();
+          }
+        });
+      });
+
+      document.addEventListener('click', () => {
+        if (state.userDropdownOpen || state.productDropdownOpen) {
+          state.userDropdownOpen = false;
+          state.productDropdownOpen = false;
+          render();
+        }
+      });
+
+      document.getElementById('userDropdown')?.addEventListener('click', e => e.stopPropagation());
+      document.getElementById('productDropdown')?.addEventListener('click', e => e.stopPropagation());
+    }
+
+    render();
+  </script>
+</body>
+</html>
