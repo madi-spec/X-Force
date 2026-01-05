@@ -1411,96 +1411,105 @@ export function ScheduleMeetingModal({
                   {/* Products - only show when company is selected */}
                   {companyId && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
                         <Briefcase className="h-4 w-4 inline mr-1" />
                         Products (optional)
                       </label>
 
-                      {/* Selected products */}
-                      {selectedProductIds.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {selectedProductIds.map(productId => {
-                            const product = companyProducts.find(p => p.id === productId);
-                            return product ? (
-                              <span
-                                key={productId}
-                                className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm text-blue-700"
-                              >
-                                {product.product_name}
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedProductIds(selectedProductIds.filter(id => id !== productId))}
-                                  className="text-blue-400 hover:text-blue-600"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </span>
-                            ) : null;
-                          })}
-                        </div>
-                      )}
-
-                      {/* Product selector - filtered by selected company */}
                       {(() => {
-                        const existingProductIds = companyProducts
-                          .filter(p => p.company_id === companyId)
-                          .map(p => p.product_id);
-                        const availableExistingProducts = companyProducts.filter(
-                          p => p.company_id === companyId && !selectedProductIds.includes(p.id)
-                        );
-                        const productsToAdd = products.filter(
-                          p => !existingProductIds.includes(p.id)
-                        );
+                        const existingProducts = companyProducts.filter(p => p.company_id === companyId);
+                        const existingProductIds = existingProducts.map(p => p.product_id);
+                        const productsToAdd = products.filter(p => !existingProductIds.includes(p.id));
 
                         return (
-                          <div className="space-y-2">
-                            {/* Existing products for this company */}
-                            {availableExistingProducts.length > 0 && (
-                              <select
-                                onChange={(e) => {
-                                  if (e.target.value && !selectedProductIds.includes(e.target.value)) {
-                                    setSelectedProductIds([...selectedProductIds, e.target.value]);
-                                  }
-                                  e.target.value = '';
-                                }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
-                                defaultValue=""
-                              >
-                                <option value="" disabled>Select existing product...</option>
-                                {availableExistingProducts.map((product) => (
-                                  <option key={product.id} value={product.id}>
-                                    {product.product_name}
-                                  </option>
+                          <div className="space-y-3">
+                            {/* Existing products as checkboxes */}
+                            {existingProducts.length > 0 && (
+                              <div className="space-y-2">
+                                {existingProducts.map((product) => (
+                                  <label
+                                    key={product.id}
+                                    className={cn(
+                                      'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all',
+                                      selectedProductIds.includes(product.id)
+                                        ? 'border-blue-500 bg-blue-50'
+                                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                    )}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedProductIds.includes(product.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedProductIds([...selectedProductIds, product.id]);
+                                        } else {
+                                          setSelectedProductIds(selectedProductIds.filter(id => id !== product.id));
+                                        }
+                                      }}
+                                      className="sr-only"
+                                    />
+                                    <div className={cn(
+                                      'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
+                                      selectedProductIds.includes(product.id)
+                                        ? 'border-blue-500 bg-blue-500'
+                                        : 'border-gray-300'
+                                    )}>
+                                      {selectedProductIds.includes(product.id) && (
+                                        <Check className="h-3 w-3 text-white" />
+                                      )}
+                                    </div>
+                                    <span className={cn(
+                                      'text-sm',
+                                      selectedProductIds.includes(product.id)
+                                        ? 'text-blue-700 font-medium'
+                                        : 'text-gray-700'
+                                    )}>
+                                      {product.product_name}
+                                    </span>
+                                    <span className={cn(
+                                      'text-xs px-2 py-0.5 rounded-full ml-auto',
+                                      product.status === 'active'
+                                        ? 'bg-green-100 text-green-700'
+                                        : product.status === 'in_onboarding'
+                                        ? 'bg-purple-100 text-purple-700'
+                                        : 'bg-blue-100 text-blue-700'
+                                    )}>
+                                      {product.status === 'in_sales' ? 'In Sales' :
+                                       product.status === 'in_onboarding' ? 'Onboarding' :
+                                       product.status === 'active' ? 'Active' : product.status}
+                                    </span>
+                                  </label>
                                 ))}
-                              </select>
+                              </div>
                             )}
 
-                            {/* Add new product to company */}
+                            {/* Add new product section */}
                             {productsToAdd.length > 0 && (
-                              <select
-                                onChange={(e) => {
-                                  if (e.target.value) {
-                                    addProductToCompany(e.target.value);
-                                  }
-                                  e.target.value = '';
-                                }}
-                                disabled={addingProduct}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 disabled:opacity-50"
-                                defaultValue=""
-                              >
-                                <option value="" disabled>
-                                  {addingProduct ? 'Adding...' : '+ Add new product to company...'}
-                                </option>
-                                {productsToAdd.map((product) => (
-                                  <option key={product.id} value={product.id}>
-                                    {product.name}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="pt-2 border-t border-gray-100">
+                                <p className="text-xs text-gray-500 mb-2">Add new product to this company:</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {productsToAdd.map((product) => (
+                                    <button
+                                      key={product.id}
+                                      type="button"
+                                      onClick={() => addProductToCompany(product.id)}
+                                      disabled={addingProduct}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 bg-gray-50 border border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 transition-colors disabled:opacity-50"
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                      {product.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
                             )}
 
-                            {availableExistingProducts.length === 0 && productsToAdd.length === 0 && (
-                              <p className="text-sm text-gray-500">All products already selected</p>
+                            {existingProducts.length === 0 && productsToAdd.length === 0 && (
+                              <p className="text-sm text-gray-500 text-center py-4">No products available</p>
+                            )}
+
+                            {existingProducts.length === 0 && productsToAdd.length > 0 && (
+                              <p className="text-xs text-gray-500 italic">No products linked yet. Add one below to get started.</p>
                             )}
                           </div>
                         );
