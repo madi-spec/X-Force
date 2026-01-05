@@ -13,7 +13,7 @@ import {
 } from '@/lib/supabase/meetings';
 import type { Meeting } from '@/types/meetings';
 
-// Helper to get current user
+// Helper to get current user and organization
 async function getCurrentContext() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -25,7 +25,7 @@ async function getCurrentContext() {
   // Get user profile from users table
   const { data: profile } = await supabase
     .from('users')
-    .select('id')
+    .select('id, organization_id')
     .eq('auth_id', user.id)
     .single();
 
@@ -33,9 +33,14 @@ async function getCurrentContext() {
     throw new Error('User profile not found');
   }
 
+  if (!profile.organization_id) {
+    throw new Error('User has no organization');
+  }
+
   return {
     userId: user.id,
     profileId: profile.id,
+    organizationId: profile.organization_id,
   };
 }
 
@@ -109,8 +114,8 @@ export async function createActionItemAction(input: {
   transcript_id?: string;
 }) {
   try {
-    const { userId, profileId } = await getCurrentContext();
-    const result = await createActionItem(profileId, input, userId);
+    const { profileId, organizationId } = await getCurrentContext();
+    const result = await createActionItem(organizationId, input, profileId);
     revalidatePath('/meetings');
     return { success: true, data: result };
   } catch (error) {
