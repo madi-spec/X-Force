@@ -15,7 +15,6 @@ import {
   MessageSquare,
   Package,
   ListTodo,
-  Brain,
   Ticket,
   Inbox,
   Users,
@@ -28,6 +27,12 @@ import {
   Loader2,
   Briefcase,
   User,
+  Calendar,
+  FolderOpen,
+  FileText,
+  Archive,
+  Layers,
+  Video,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 
@@ -46,22 +51,32 @@ interface SearchResult {
 // NAVIGATION CONFIGURATION
 // ============================================================================
 
-// Primary navigation - new IA structure (always visible)
-const primaryNavigation = [
-  { name: 'Work', href: '/work', icon: Inbox },
+// Work section - daily tasks
+const workNavigation = [
+  { name: 'Work Queue', href: '/work', icon: Inbox },
+  { name: 'Meetings', href: '/meetings', icon: Video },
+  { name: 'Scheduler', href: '/scheduler', icon: Calendar },
+  { name: 'Pipeline', href: '/products/process', icon: Layers },
+  { name: 'Collateral', href: '/collateral', icon: FolderOpen },
+];
+
+// Manage section - admin/management tools
+const manageNavigation = [
   { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Process Studio', href: '/process', icon: Workflow },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Process Studio', href: '/process', icon: Workflow },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
 ];
 
-// Secondary navigation - other tools (collapsible)
+// More Tools - secondary navigation (collapsible)
 const secondaryNavigation = [
-  { name: 'Command Center', href: '/ai', icon: Brain },
-  { name: 'Daily Driver', href: '/daily', icon: ListTodo },
   { name: 'Communications', href: '/communications', icon: MessageSquare },
+  { name: 'Transcripts', href: '/transcripts', icon: FileText },
   { name: 'Support Cases', href: '/cases', icon: Ticket },
+  { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Deals', href: '/deals', icon: Zap },
+  { name: 'Legacy Deals', href: '/legacy-deals', icon: Archive },
+  { name: 'Onboarding', href: '/onboarding', icon: ListTodo },
 ];
 
 const bottomNavigation = [
@@ -276,31 +291,68 @@ export function UnifiedShell({ children, user }: UnifiedShellProps) {
           <FocusSwitcher variant="sidebar" />
         </div>
 
-        {/* Primary Navigation */}
+        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 overflow-y-auto border-t border-gray-800">
-          <div className="space-y-1">
-            {primaryNavigation.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                  )}
-                >
-                  <item.icon className="h-5 w-5 shrink-0" />
-                  {item.name}
-                </Link>
-              );
-            })}
+          {/* Work Section */}
+          <div className="mb-4">
+            <div className="px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                Work
+              </span>
+            </div>
+            <div className="space-y-1">
+              {workNavigation.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Secondary Navigation - Collapsible */}
-          <div className="mt-6">
+          {/* Manage Section */}
+          <div className="mb-4">
+            <div className="px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                Manage
+              </span>
+            </div>
+            <div className="space-y-1">
+              {manageNavigation.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* More Tools - Collapsible */}
+          <div>
             <button
               onClick={() => setShowSecondary(!showSecondary)}
               className={cn(

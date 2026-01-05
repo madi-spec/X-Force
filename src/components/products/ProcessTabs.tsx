@@ -28,7 +28,6 @@ export function ProcessTabs({ activeProcess, processStats, onProcessChange }: Pr
                   : 'text-[#667085] border-transparent hover:text-[#0b1220]'
               )}
             >
-              <span className="text-base">{process.icon}</span>
               <span>{process.name}</span>
               <span className={cn(
                 'px-2 py-0.5 rounded-full text-xs font-semibold',

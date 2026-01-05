@@ -245,6 +245,7 @@ export interface ProductCardData {
 export type ProcessType = 'sales' | 'onboarding' | 'customer_service' | 'engagement';
 export type HealthStatus = 'healthy' | 'attention' | 'stalled';
 export type ViewMode = 'all' | 'stage' | 'company';
+export type DisplayMode = 'kanban' | 'list';
 
 export interface ProcessDefinition {
   id: ProcessType;
@@ -302,6 +303,7 @@ export interface PipelineItem {
   last_activity_at: string | null;
   last_stage_moved_at: string | null;
   days_in_stage: number;
+  days_since_activity: number;
   health_status: HealthStatus;
   health_reason: string | null;
 }

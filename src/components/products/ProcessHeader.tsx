@@ -62,12 +62,9 @@ export function ProcessHeader({ process, stats, isLoading }: ProcessHeaderProps)
   return (
     <div>
       {/* Title & Description */}
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-2xl">{process.icon}</span>
-        <div>
-          <h1 className="text-xl font-normal text-[#0b1220]">{process.name}</h1>
-          <p className="text-sm text-[#667085]">{process.description}</p>
-        </div>
+      <div className="mb-4">
+        <h1 className="text-xl font-normal text-[#0b1220]">{process.name}</h1>
+        <p className="text-sm text-[#667085]">{process.description}</p>
       </div>
 
       {/* Stats Grid */}

@@ -8,7 +8,7 @@ function computeHealthStatus(
   lastStageMoved: string | null,
   stageEnteredAt: string | null,
   createdAt: string
-): { status: HealthStatus; reason: string | null; daysInStage: number } {
+): { status: HealthStatus; reason: string | null; daysInStage: number; daysSinceActivity: number } {
   const now = new Date();
 
   const activityDate = lastActivityAt || lastHumanTouchAt || createdAt;
@@ -18,12 +18,12 @@ function computeHealthStatus(
   const daysInStage = Math.floor((now.getTime() - new Date(stageDate).getTime()) / (1000 * 60 * 60 * 24));
 
   if (daysSinceActivity > 14) {
-    return { status: 'attention', reason: `No activity ${daysSinceActivity}d`, daysInStage };
+    return { status: 'attention', reason: `No activity ${daysSinceActivity}d`, daysInStage, daysSinceActivity };
   }
   if (daysInStage >= 30) {
-    return { status: 'stalled', reason: `Stalled ${daysInStage}d`, daysInStage };
+    return { status: 'stalled', reason: `Stalled ${daysInStage}d`, daysInStage, daysSinceActivity };
   }
-  return { status: 'healthy', reason: null, daysInStage };
+  return { status: 'healthy', reason: null, daysInStage, daysSinceActivity };
 }
 
 export async function GET(request: NextRequest) {
@@ -104,7 +104,22 @@ export async function GET(request: NextRequest) {
 
     if (products.length > 0) query = query.in('product_id', products);
     if (users.length > 0) query = query.in('owner_user_id', users);
-    if (search) query = query.ilike('companies.name', `%${search}%`);
+
+    // If searching, first get matching company IDs, then filter
+    let companyIdFilter: string[] | null = null;
+    if (search) {
+      const { data: matchingCompanies } = await supabase
+        .from('companies')
+        .select('id')
+        .ilike('name', `%${search}%`);
+      companyIdFilter = (matchingCompanies || []).map(c => c.id);
+
+      // If no companies match, return empty
+      if (companyIdFilter.length === 0) {
+        return NextResponse.json({ items: [], stats: { total: 0, needsAttention: 0, stalled: 0, healthy: 0, totalMrr: 0, productCount: 0 }, stages: [] });
+      }
+      query = query.in('company_id', companyIdFilter);
+    }
 
     const { data: rawItems, error } = await query;
 
@@ -120,7 +135,7 @@ export async function GET(request: NextRequest) {
       const stage = item.product_process_stages as { id: string; name: string; stage_order: number } | null;
       const owner = item.users as { id: string; name: string } | null;
 
-      const { status: healthStatus, reason: healthReason, daysInStage } = computeHealthStatus(
+      const { status: healthStatus, reason: healthReason, daysInStage, daysSinceActivity } = computeHealthStatus(
         item.last_activity_at as string | null,
         item.last_human_touch_at as string | null,
         item.last_stage_moved_at as string | null,
@@ -157,6 +172,7 @@ export async function GET(request: NextRequest) {
         last_activity_at: item.last_activity_at as string | null,
         last_stage_moved_at: item.last_stage_moved_at as string | null,
         days_in_stage: daysInStage,
+        days_since_activity: daysSinceActivity,
         health_status: healthStatus,
         health_reason: healthReason,
       };
@@ -179,33 +195,31 @@ export async function GET(request: NextRequest) {
       productCount: new Set(filteredItems.map(i => i.product_id)).size,
     };
 
-    // Get stages for valid products only (through product_processes)
+    // Get processes for valid products first (two-step approach for reliable filtering)
+    const { data: processes } = await supabase
+      .from('product_processes')
+      .select('id, product_id, process_type')
+      .in('product_id', validProductIds);
+
+    const processIds = (processes || []).map(p => p.id);
+    const processMap = new Map((processes || []).map(p => [p.id, p]));
+
+    // Get stages for those processes
     const { data: stages } = await supabase
       .from('product_process_stages')
-      .select(`
-        id,
-        name,
-        stage_order,
-        process:product_processes!inner (
-          id,
-          process_type,
-          product_id
-        )
-      `)
-      .in('product_processes.product_id', validProductIds)
+      .select('id, name, stage_order, process_id')
+      .in('process_id', processIds.length > 0 ? processIds : ['00000000-0000-0000-0000-000000000000'])
       .order('stage_order');
 
     // Flatten the stages to include product_id directly
-    // Note: process comes back as an array from the inner join
     const flatStages = (stages || []).map(s => {
-      const processArr = s.process as Array<{ id: string; process_type: string; product_id: string }> | null;
-      const processObj = Array.isArray(processArr) ? processArr[0] : null;
+      const processData = processMap.get(s.process_id);
       return {
         id: s.id,
         name: s.name,
         stage_order: s.stage_order,
-        product_id: processObj?.product_id,
-        process_type: processObj?.process_type,
+        product_id: processData?.product_id,
+        process_type: processData?.process_type,
       };
     });
 

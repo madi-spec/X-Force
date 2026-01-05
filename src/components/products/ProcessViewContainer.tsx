@@ -7,6 +7,7 @@ import { ProcessHeader } from './ProcessHeader';
 import { ProcessFilters } from './ProcessFilters';
 import { ProcessViewControls } from './ProcessViewControls';
 import { ProcessKanban } from './ProcessKanban';
+import { ProcessList } from './ProcessList';
 import { ProcessSidePanel } from './ProcessSidePanel';
 import { StageMoveModal } from './StageMoveModal';
 import { ProcessEmptyState } from './ProcessEmptyState';
@@ -17,6 +18,7 @@ import {
   ProcessStats,
   StageDefinition,
   ViewMode,
+  DisplayMode,
   HealthStatus,
   PROCESSES
 } from '@/types/products';
@@ -38,6 +40,7 @@ export function ProcessViewContainer() {
   const healthFilter = (searchParams.get('health') || 'all') as HealthStatus | 'all';
   const searchQuery = searchParams.get('search') || '';
   const viewMode = (searchParams.get('view') || 'all') as ViewMode;
+  const displayMode = (searchParams.get('display') || 'kanban') as DisplayMode;
 
   // Memoize arrays to prevent infinite re-renders
   const selectedProducts = useMemo(
@@ -196,6 +199,56 @@ export function ProcessViewContainer() {
     }
   }, [stageMoveTarget, fetchData, fetchProcessStats]);
 
+  // Handle marking deal as won
+  const handleMarkWon = useCallback(async (item: PipelineItem) => {
+    if (!confirm(`Mark ${item.company_name} - ${item.product_name} as WON?`)) return;
+
+    try {
+      const res = await fetch('/api/products/process/update-outcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: item.id,
+          outcome: 'won'
+        })
+      });
+
+      if (res.ok) {
+        setSelectedItem(null);
+        await fetchData();
+        await fetchProcessStats();
+      }
+    } catch (error) {
+      console.error('Failed to mark as won:', error);
+    }
+  }, [fetchData, fetchProcessStats]);
+
+  // Handle marking deal as lost
+  const handleMarkLost = useCallback(async (item: PipelineItem) => {
+    const reason = prompt(`Mark ${item.company_name} - ${item.product_name} as LOST?\n\nEnter reason (optional):`);
+    if (reason === null) return; // User cancelled
+
+    try {
+      const res = await fetch('/api/products/process/update-outcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: item.id,
+          outcome: 'lost',
+          reason: reason || undefined
+        })
+      });
+
+      if (res.ok) {
+        setSelectedItem(null);
+        await fetchData();
+        await fetchProcessStats();
+      }
+    } catch (error) {
+      console.error('Failed to mark as lost:', error);
+    }
+  }, [fetchData, fetchProcessStats]);
+
   const currentProcess = PROCESSES[activeProcess];
 
   return (
@@ -230,7 +283,9 @@ export function ProcessViewContainer() {
 
           <ProcessViewControls
             viewMode={viewMode}
+            displayMode={displayMode}
             onViewModeChange={(mode) => updateParams({ view: mode })}
+            onDisplayModeChange={(mode) => updateParams({ display: mode })}
           />
         </div>
 
@@ -239,12 +294,21 @@ export function ProcessViewContainer() {
           <ProcessViewSkeleton />
         ) : items.length === 0 ? (
           <ProcessEmptyState process={currentProcess} />
+        ) : displayMode === 'list' ? (
+          <ProcessList
+            items={items}
+            onItemClick={setSelectedItem}
+            onMarkWon={handleMarkWon}
+            onMarkLost={handleMarkLost}
+          />
         ) : (
           <ProcessKanban
             items={items}
             stages={stages}
             viewMode={viewMode}
             onItemClick={setSelectedItem}
+            onMarkWon={handleMarkWon}
+            onMarkLost={handleMarkLost}
           />
         )}
       </div>

@@ -1,14 +1,21 @@
 'use client';
 
-import { ViewMode } from '@/types/products';
+import { ViewMode, DisplayMode } from '@/types/products';
 import { cn } from '@/lib/utils';
 
 interface ProcessViewControlsProps {
   viewMode: ViewMode;
+  displayMode: DisplayMode;
   onViewModeChange: (mode: ViewMode) => void;
+  onDisplayModeChange: (mode: DisplayMode) => void;
 }
 
-export function ProcessViewControls({ viewMode, onViewModeChange }: ProcessViewControlsProps) {
+export function ProcessViewControls({
+  viewMode,
+  displayMode,
+  onViewModeChange,
+  onDisplayModeChange
+}: ProcessViewControlsProps) {
   const views: { id: ViewMode; label: string }[] = [
     { id: 'all', label: 'All Items' },
     { id: 'stage', label: 'By Stage' },
@@ -38,7 +45,13 @@ export function ProcessViewControls({ viewMode, onViewModeChange }: ProcessViewC
       {/* Display Toggle */}
       <div className="flex items-center border border-[#e6eaf0] rounded-lg overflow-hidden">
         <button
-          className="px-3 py-2 bg-[#0b1220] text-white"
+          onClick={() => onDisplayModeChange('kanban')}
+          className={cn(
+            'px-3 py-2 transition-colors',
+            displayMode === 'kanban'
+              ? 'bg-[#0b1220] text-white'
+              : 'bg-white text-[#667085] hover:text-[#0b1220]'
+          )}
           title="Kanban View"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -46,7 +59,13 @@ export function ProcessViewControls({ viewMode, onViewModeChange }: ProcessViewC
           </svg>
         </button>
         <button
-          className="px-3 py-2 bg-white text-[#667085] hover:text-[#0b1220]"
+          onClick={() => onDisplayModeChange('list')}
+          className={cn(
+            'px-3 py-2 transition-colors',
+            displayMode === 'list'
+              ? 'bg-[#0b1220] text-white'
+              : 'bg-white text-[#667085] hover:text-[#0b1220]'
+          )}
           title="List View"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

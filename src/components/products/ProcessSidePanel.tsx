@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { PipelineItem, StageDefinition, HealthStatus } from '@/types/products';
+import { ScheduleMeetingModal } from '@/components/scheduler/ScheduleMeetingModal';
+import { ComposeEmailModal } from './ComposeEmailModal';
 import { cn } from '@/lib/utils';
+import { ChevronDown, Check } from 'lucide-react';
 
 interface ProcessSidePanelProps {
   item: PipelineItem;
@@ -61,9 +65,34 @@ function StatBox({ label, value, variant = 'default' }: { label: string; value: 
 }
 
 export function ProcessSidePanel({ item, stages, onClose, onStageMove }: ProcessSidePanelProps) {
+  const router = useRouter();
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [stageDropdownOpen, setStageDropdownOpen] = useState(false);
+  const stageDropdownRef = useRef<HTMLDivElement>(null);
+
   const handleEscape = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-  }, [onClose]);
+    if (e.key === 'Escape') {
+      if (stageDropdownOpen) {
+        setStageDropdownOpen(false);
+      } else {
+        onClose();
+      }
+    }
+  }, [onClose, stageDropdownOpen]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (stageDropdownRef.current && !stageDropdownRef.current.contains(e.target as Node)) {
+        setStageDropdownOpen(false);
+      }
+    }
+    if (stageDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [stageDropdownOpen]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleEscape);
@@ -135,53 +164,86 @@ export function ProcessSidePanel({ item, stages, onClose, onStageMove }: Process
           <HealthAlert status={item.health_status} reason={item.health_reason} />
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <StatBox label="Days in Stage" value={item.days_in_stage} variant={getDaysVariant()} />
+            <StatBox
+              label="Last Activity"
+              value={`${item.days_since_activity}d ago`}
+              variant={item.days_since_activity > 14 ? 'warning' : 'default'}
+            />
             <StatBox label="MRR" value={formatMrr(item.mrr)} variant="success" />
             <StatBox label="Owner" value={item.owner_initials || '-'} />
           </div>
 
-          {/* Stage Selector */}
-          <div>
-            <h3 className="text-xs text-[#667085] uppercase tracking-wider font-medium mb-3">Move to Stage</h3>
-            <div className="space-y-2">
-              {sortedStages.map((stage) => {
-                const isCurrentStage = stage.id === item.current_stage_id;
-                return (
-                  <button
-                    key={stage.id}
-                    onClick={() => !isCurrentStage && onStageMove(item, stage)}
-                    disabled={isCurrentStage}
-                    className={cn(
-                      'w-full px-4 py-2.5 text-sm text-left rounded-lg border transition-colors',
-                      isCurrentStage
-                        ? 'bg-[#3b82f6] text-white border-[#3b82f6]'
-                        : 'bg-[#f6f8fb] text-[#0b1220] border-[#e6eaf0] hover:border-[#3b82f6] hover:bg-blue-50'
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span>{stage.name}</span>
-                      {isCurrentStage && (
-                        <span className="text-xs opacity-80">Current</span>
+          {/* Stage Selector Dropdown */}
+          <div ref={stageDropdownRef} className="relative">
+            <h3 className="text-xs text-[#667085] uppercase tracking-wider font-medium mb-2">Stage</h3>
+            <button
+              onClick={() => setStageDropdownOpen(!stageDropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-[#e6eaf0] rounded-lg hover:border-[#d1d5db] transition-colors"
+            >
+              <span className="text-sm font-medium text-[#0b1220]">
+                {item.stage_name || 'Select stage'}
+              </span>
+              <ChevronDown className={cn(
+                "h-4 w-4 text-[#667085] transition-transform",
+                stageDropdownOpen && "rotate-180"
+              )} />
+            </button>
+
+            {stageDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#e6eaf0] rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
+                {sortedStages.map((stage) => {
+                  const isCurrentStage = stage.id === item.current_stage_id;
+                  return (
+                    <button
+                      key={stage.id}
+                      onClick={() => {
+                        if (!isCurrentStage) {
+                          onStageMove(item, stage);
+                        }
+                        setStageDropdownOpen(false);
+                      }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[#f6f8fb] transition-colors',
+                        isCurrentStage && 'bg-[#eef2f7]'
                       )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                    >
+                      <span className={cn(
+                        isCurrentStage ? 'font-medium text-[#3b82f6]' : 'text-[#0b1220]'
+                      )}>
+                        {stage.name}
+                      </span>
+                      {isCurrentStage && (
+                        <Check className="h-4 w-4 text-[#3b82f6]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Quick Actions */}
           <div>
             <h3 className="text-xs text-[#667085] uppercase tracking-wider font-medium mb-3">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-2">
-              <button className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors">
+              <button
+                onClick={() => setShowScheduleModal(true)}
+                className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors"
+              >
                 Schedule Meeting
               </button>
-              <button className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors">
+              <button
+                onClick={() => setShowEmailModal(true)}
+                className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors"
+              >
                 Send Email
               </button>
-              <button className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors">
+              <button
+                onClick={() => router.push(`/companies/${item.company_id}`)}
+                className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors"
+              >
                 View Company
               </button>
               <button className="px-3 py-2 text-sm text-[#667085] bg-[#f6f8fb] rounded-lg hover:bg-[#eef2f7] transition-colors">
@@ -206,6 +268,23 @@ export function ProcessSidePanel({ item, stages, onClose, onStageMove }: Process
           </button>
         </div>
       </div>
+
+      {/* Schedule Meeting Modal */}
+      <ScheduleMeetingModal
+        isOpen={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        onSuccess={() => setShowScheduleModal(false)}
+        companyId={item.company_id}
+      />
+
+      {/* Compose Email Modal */}
+      <ComposeEmailModal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        onSent={() => setShowEmailModal(false)}
+        companyId={item.company_id}
+        companyName={item.company_name}
+      />
     </>
   );
 }
