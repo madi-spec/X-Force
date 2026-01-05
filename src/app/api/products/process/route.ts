@@ -63,18 +63,18 @@ export async function GET(request: NextRequest) {
         last_stage_moved_at,
         stage_entered_at,
         last_human_touch_at,
-        companies!inner (
+        companies (
           id,
           name,
           customer_type
         ),
-        products!inner (
+        products (
           id,
           name,
           color,
           icon
         ),
-        product_sales_stages (
+        product_process_stages (
           id,
           name,
           stage_order
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
     const items: PipelineItem[] = (rawItems || []).map((item: Record<string, unknown>) => {
       const company = item.companies as { id: string; name: string; customer_type: string | null } | null;
       const product = item.products as { id: string; name: string; color: string | null; icon: string | null } | null;
-      const stage = item.product_sales_stages as { id: string; name: string; stage_order: number } | null;
+      const stage = item.product_process_stages as { id: string; name: string; stage_order: number } | null;
       const owner = item.users as { id: string; name: string } | null;
 
       const { status: healthStatus, reason: healthReason, daysInStage } = computeHealthStatus(
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
 
     // Get stages for the process
     const { data: stages } = await supabase
-      .from('product_sales_stages')
+      .from('product_process_stages')
       .select('id, name, stage_order')
       .order('stage_order');
 
