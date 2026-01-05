@@ -5,11 +5,17 @@ export async function GET() {
   const supabase = await createClient();
 
   try {
+    // Match the filters used on /products page:
+    // - is_active: only active products
+    // - is_sellable: only sellable products (not prerequisites)
+    // - parent_product_id is null: only top-level products (not child products)
     const { data, error } = await supabase
       .from('products')
       .select('id, name, color, icon')
       .eq('is_active', true)
-      .order('name');
+      .eq('is_sellable', true)
+      .is('parent_product_id', null)
+      .order('display_order');
 
     if (error) {
       console.error('Products list error:', error);
