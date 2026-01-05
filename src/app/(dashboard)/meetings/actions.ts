@@ -109,8 +109,8 @@ export async function createActionItemAction(input: {
   transcript_id?: string;
 }) {
   try {
-    const { userId, organizationId } = await getCurrentContext();
-    const result = await createActionItem(organizationId, input, userId);
+    const { userId, profileId } = await getCurrentContext();
+    const result = await createActionItem(profileId, input, userId);
     revalidatePath('/meetings');
     return { success: true, data: result };
   } catch (error) {

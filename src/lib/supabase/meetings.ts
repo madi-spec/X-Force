@@ -361,7 +361,7 @@ export async function getPendingActionItems(
 // ============================================
 
 export async function createActionItem(
-  organizationId: string,
+  userProfileId: string,
   input: {
     text: string;
     assignee_id?: string;
@@ -369,21 +369,22 @@ export async function createActionItem(
     meeting_id?: string;
     transcript_id?: string;
   },
-  userId: string
+  authUserId: string
 ): Promise<ActionItemWithAssignee> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .from('meeting_action_items')
+    .from('action_items')
     .insert({
-      organization_id: organizationId,
+      user_id: userProfileId,
       text: input.text,
       assignee_id: input.assignee_id || null,
       due_date: input.due_date || null,
-      meeting_id: input.meeting_id || null,
-      transcript_id: input.transcript_id || null,
+      activity_id: input.meeting_id || null,
+      transcription_id: input.transcript_id || null,
       source: 'manual',
-      created_by: userId,
+      created_by: userProfileId,
+      status: 'pending',
     })
     .select(`
       *,
