@@ -237,3 +237,92 @@ export interface ProductCardData {
   };
   pipelineByStage: Record<string, number>;
 }
+
+// ============================================
+// Process View Types
+// ============================================
+
+export type ProcessType = 'sales' | 'onboarding' | 'customer_service' | 'engagement';
+export type HealthStatus = 'healthy' | 'attention' | 'stalled';
+export type ViewMode = 'all' | 'stage' | 'company';
+
+export interface ProcessDefinition {
+  id: ProcessType;
+  name: string;
+  icon: string;
+  description: string;
+}
+
+export const PROCESSES: Record<ProcessType, ProcessDefinition> = {
+  sales: {
+    id: 'sales',
+    name: 'Sales',
+    icon: '🎯',
+    description: 'Track prospects through your sales process',
+  },
+  onboarding: {
+    id: 'onboarding',
+    name: 'Onboarding',
+    icon: '🚀',
+    description: 'Get new customers up and running',
+  },
+  customer_service: {
+    id: 'customer_service',
+    name: 'Customer Service',
+    icon: '🛟',
+    description: 'Handle customer issues and requests',
+  },
+  engagement: {
+    id: 'engagement',
+    name: 'Engagement',
+    icon: '💚',
+    description: 'Retention, upsells, and customer success',
+  },
+};
+
+export interface PipelineItem {
+  id: string;
+  company_id: string;
+  company_name: string;
+  company_type: string | null;
+  product_id: string;
+  product_name: string;
+  product_color: string | null;
+  product_icon: string | null;
+  status: string;
+  current_stage_id: string | null;
+  stage_name: string | null;
+  stage_order: number | null;
+  owner_id: string | null;
+  owner_name: string | null;
+  owner_initials: string | null;
+  mrr: number | null;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string | null;
+  last_stage_moved_at: string | null;
+  days_in_stage: number;
+  health_status: HealthStatus;
+  health_reason: string | null;
+}
+
+export interface ProcessStats {
+  total: number;
+  needsAttention: number;
+  stalled: number;
+  healthy: number;
+  totalMrr: number;
+  productCount: number;
+}
+
+export interface StageDefinition {
+  id: string;
+  name: string;
+  stage_order: number;
+}
+
+export interface ProcessViewResponse {
+  items: PipelineItem[];
+  stats: ProcessStats;
+  stages: StageDefinition[];
+}
