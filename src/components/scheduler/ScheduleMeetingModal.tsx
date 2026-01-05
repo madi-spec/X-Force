@@ -92,9 +92,16 @@ interface Company {
 interface CompanyProduct {
   id: string;
   company_id: string;
+  product_id: string;
   product_name: string;
   company_name: string;
   status: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  is_sellable: boolean;
 }
 
 interface User {
@@ -203,9 +210,11 @@ export function ScheduleMeetingModal({
   // Data for dropdowns
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyProducts, setCompanyProducts] = useState<CompanyProduct[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [addingProduct, setAddingProduct] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -330,12 +339,22 @@ export function ScheduleMeetingModal({
           .order('name');
         if (companiesData) setCompanies(companiesData);
 
+        // Load master products list (for adding new products to companies)
+        const { data: masterProducts } = await supabase
+          .from('products')
+          .select('id, name, is_sellable')
+          .eq('is_active', true)
+          .eq('is_sellable', true)
+          .order('display_order');
+        if (masterProducts) setProducts(masterProducts);
+
         // Load company products with product names
         const { data: productsData } = await supabase
           .from('company_products')
           .select(`
             id,
             company_id,
+            product_id,
             status,
             product:products(name),
             company:companies(name)
@@ -350,6 +369,7 @@ export function ScheduleMeetingModal({
             return {
               id: cp.id,
               company_id: cp.company_id,
+              product_id: cp.product_id,
               status: cp.status,
               product_name: Array.isArray(product) ? product[0]?.name : product?.name || 'Unknown Product',
               company_name: Array.isArray(company) ? company[0]?.name : company?.name || 'Unknown Company',
@@ -391,6 +411,55 @@ export function ScheduleMeetingModal({
       }
     }
   }, [selectedProductIds, companyProducts, companyId]);
+
+  // Add a new product to a company
+  const addProductToCompany = async (productId: string) => {
+    if (!companyId || !productId) return;
+
+    setAddingProduct(true);
+    try {
+      const { data: newCompanyProduct, error } = await supabase
+        .from('company_products')
+        .insert({
+          company_id: companyId,
+          product_id: productId,
+          status: 'in_sales',
+          sales_started_at: new Date().toISOString(),
+          owner_user_id: currentUserId || null,
+        })
+        .select(`
+          id,
+          company_id,
+          product_id,
+          status,
+          product:products(name),
+          company:companies(name)
+        `)
+        .single();
+
+      if (error) throw error;
+
+      if (newCompanyProduct) {
+        const product = newCompanyProduct.product as { name: string } | { name: string }[] | null;
+        const company = newCompanyProduct.company as { name: string } | { name: string }[] | null;
+        const transformed = {
+          id: newCompanyProduct.id,
+          company_id: newCompanyProduct.company_id,
+          product_id: newCompanyProduct.product_id,
+          status: newCompanyProduct.status,
+          product_name: Array.isArray(product) ? product[0]?.name : product?.name || 'Unknown Product',
+          company_name: Array.isArray(company) ? company[0]?.name : company?.name || 'Unknown Company',
+        };
+        setCompanyProducts(prev => [...prev, transformed]);
+        setSelectedProductIds(prev => [...prev, newCompanyProduct.id]);
+      }
+    } catch (err) {
+      console.error('Error adding product to company:', err);
+      setError('Failed to add product');
+    } finally {
+      setAddingProduct(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -1373,29 +1442,67 @@ export function ScheduleMeetingModal({
 
                       {/* Product selector - filtered by selected company */}
                       {(() => {
-                        const availableProducts = companyProducts.filter(
+                        const existingProductIds = companyProducts
+                          .filter(p => p.company_id === companyId)
+                          .map(p => p.product_id);
+                        const availableExistingProducts = companyProducts.filter(
                           p => p.company_id === companyId && !selectedProductIds.includes(p.id)
                         );
-                        return availableProducts.length > 0 ? (
-                          <select
-                            onChange={(e) => {
-                              if (e.target.value && !selectedProductIds.includes(e.target.value)) {
-                                setSelectedProductIds([...selectedProductIds, e.target.value]);
-                              }
-                              e.target.value = '';
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
-                            defaultValue=""
-                          >
-                            <option value="" disabled>Select a product...</option>
-                            {availableProducts.map((product) => (
-                              <option key={product.id} value={product.id}>
-                                {product.product_name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p className="text-sm text-gray-500">No products available for this company</p>
+                        const productsToAdd = products.filter(
+                          p => !existingProductIds.includes(p.id)
+                        );
+
+                        return (
+                          <div className="space-y-2">
+                            {/* Existing products for this company */}
+                            {availableExistingProducts.length > 0 && (
+                              <select
+                                onChange={(e) => {
+                                  if (e.target.value && !selectedProductIds.includes(e.target.value)) {
+                                    setSelectedProductIds([...selectedProductIds, e.target.value]);
+                                  }
+                                  e.target.value = '';
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
+                                defaultValue=""
+                              >
+                                <option value="" disabled>Select existing product...</option>
+                                {availableExistingProducts.map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.product_name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            {/* Add new product to company */}
+                            {productsToAdd.length > 0 && (
+                              <select
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    addProductToCompany(e.target.value);
+                                  }
+                                  e.target.value = '';
+                                }}
+                                disabled={addingProduct}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 disabled:opacity-50"
+                                defaultValue=""
+                              >
+                                <option value="" disabled>
+                                  {addingProduct ? 'Adding...' : '+ Add new product to company...'}
+                                </option>
+                                {productsToAdd.map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            {availableExistingProducts.length === 0 && productsToAdd.length === 0 && (
+                              <p className="text-sm text-gray-500">All products already selected</p>
+                            )}
+                          </div>
                         );
                       })()}
                     </div>
