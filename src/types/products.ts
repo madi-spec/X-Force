@@ -319,6 +319,8 @@ export interface StageDefinition {
   id: string;
   name: string;
   stage_order: number;
+  product_id?: string;
+  process_type?: string;
 }
 
 export interface ProcessViewResponse {

@@ -86,7 +86,9 @@ export function ProcessSidePanel({ item, stages, onClose, onStageMove }: Process
     return 'default';
   };
 
-  const sortedStages = [...stages].sort((a, b) => a.stage_order - b.stage_order);
+  // Filter stages to only show ones for this item's product
+  const productStages = stages.filter(s => s.product_id === item.product_id);
+  const sortedStages = [...productStages].sort((a, b) => a.stage_order - b.stage_order);
 
   return (
     <>

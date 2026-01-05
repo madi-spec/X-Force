@@ -179,13 +179,32 @@ export async function GET(request: NextRequest) {
       productCount: new Set(filteredItems.map(i => i.product_id)).size,
     };
 
-    // Get stages for the process
+    // Get stages for valid products only (through product_processes)
     const { data: stages } = await supabase
       .from('product_process_stages')
-      .select('id, name, stage_order')
+      .select(`
+        id,
+        name,
+        stage_order,
+        process:product_processes!inner (
+          id,
+          process_type,
+          product_id
+        )
+      `)
+      .in('product_processes.product_id', validProductIds)
       .order('stage_order');
 
-    return NextResponse.json({ items: filteredItems, stats, stages: stages || [] });
+    // Flatten the stages to include product_id directly
+    const flatStages = (stages || []).map(s => ({
+      id: s.id,
+      name: s.name,
+      stage_order: s.stage_order,
+      product_id: (s.process as { product_id: string })?.product_id,
+      process_type: (s.process as { process_type: string })?.process_type,
+    }));
+
+    return NextResponse.json({ items: filteredItems, stats, stages: flatStages });
   } catch (error) {
     console.error('Process API error:', error);
     return NextResponse.json({ error: 'Failed to fetch process data' }, { status: 500 });
