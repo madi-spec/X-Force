@@ -196,13 +196,18 @@ export async function GET(request: NextRequest) {
       .order('stage_order');
 
     // Flatten the stages to include product_id directly
-    const flatStages = (stages || []).map(s => ({
-      id: s.id,
-      name: s.name,
-      stage_order: s.stage_order,
-      product_id: (s.process as { product_id: string })?.product_id,
-      process_type: (s.process as { process_type: string })?.process_type,
-    }));
+    // Note: process comes back as an array from the inner join
+    const flatStages = (stages || []).map(s => {
+      const processArr = s.process as Array<{ id: string; process_type: string; product_id: string }> | null;
+      const processObj = Array.isArray(processArr) ? processArr[0] : null;
+      return {
+        id: s.id,
+        name: s.name,
+        stage_order: s.stage_order,
+        product_id: processObj?.product_id,
+        process_type: processObj?.process_type,
+      };
+    });
 
     return NextResponse.json({ items: filteredItems, stats, stages: flatStages });
   } catch (error) {
