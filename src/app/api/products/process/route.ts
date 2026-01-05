@@ -46,7 +46,22 @@ export async function GET(request: NextRequest) {
 
     const statuses = statusMap[process] || ['in_sales'];
 
-    // Query company_products with joins
+    // First, get valid product IDs (sellable, top-level products only)
+    const { data: validProducts } = await supabase
+      .from('products')
+      .select('id')
+      .eq('is_active', true)
+      .eq('is_sellable', true)
+      .is('parent_product_id', null);
+
+    const validProductIds = (validProducts || []).map(p => p.id);
+
+    // If no valid products, return empty
+    if (validProductIds.length === 0) {
+      return NextResponse.json({ items: [], stats: { total: 0, needsAttention: 0, stalled: 0, healthy: 0, totalMrr: 0, productCount: 0 }, stages: [] });
+    }
+
+    // Query company_products with joins - filtered to valid products only
     let query = supabase
       .from('company_products')
       .select(`
@@ -84,7 +99,8 @@ export async function GET(request: NextRequest) {
           name
         )
       `)
-      .in('status', statuses);
+      .in('status', statuses)
+      .in('product_id', validProductIds);
 
     if (products.length > 0) query = query.in('product_id', products);
     if (users.length > 0) query = query.in('owner_user_id', users);
