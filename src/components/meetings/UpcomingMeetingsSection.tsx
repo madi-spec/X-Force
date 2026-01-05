@@ -1,54 +1,113 @@
 'use client';
 
-import Link from 'next/link';
-import { Calendar, Users, Building2, Video, ClipboardList, Clock } from 'lucide-react';
-import { format, formatDistanceToNow, isToday, isTomorrow } from 'date-fns';
+import { useState } from 'react';
+import { Calendar, ChevronRight } from 'lucide-react';
+import { MeetingCard, Meeting } from './MeetingCard';
+import { cn } from '@/lib/utils';
 
-interface UpcomingMeeting {
-  id: string;
-  subject: string;
-  occurred_at: string;
-  metadata: Record<string, unknown>;
-  company_id: string | null;
-  external_id: string | null;
-  company_name: string | null;
-  contact_name: string | null;
-  attendee_count: number;
-  join_url: string | null;
+interface GroupedUpcoming {
+  today: Meeting[];
+  tomorrow: Meeting[];
+  later: Meeting[];
+  totalCount: number;
 }
 
 interface UpcomingMeetingsSectionProps {
-  meetings: UpcomingMeeting[];
+  meetings: GroupedUpcoming;
+  onExclude: (meetingId: string, reason?: string) => Promise<void>;
+  onRestore: (meetingId: string) => Promise<void>;
+  onAssignCompany: (meetingId: string) => void;
+  onOpenPrep: (meetingId: string) => void;
+  onExpandUpcoming: () => void;
+  isExpanded: boolean;
+  isExcluding?: boolean;
 }
 
-function formatMeetingTime(dateStr: string): string {
-  const date = new Date(dateStr);
-
-  if (isToday(date)) {
-    return `Today at ${format(date, 'h:mm a')}`;
-  }
-
-  if (isTomorrow(date)) {
-    return `Tomorrow at ${format(date, 'h:mm a')}`;
-  }
-
-  return format(date, 'EEE, MMM d \'at\' h:mm a');
+interface DateGroupProps {
+  title: string;
+  meetings: Meeting[];
+  onExclude: (meetingId: string, reason?: string) => Promise<void>;
+  onRestore: (meetingId: string) => Promise<void>;
+  onAssignCompany: (meetingId: string) => void;
+  onOpenPrep: (meetingId: string) => void;
+  isExcluding?: boolean;
+  accent?: 'blue' | 'gray';
 }
 
-function getTimeUntil(dateStr: string): string {
-  const date = new Date(dateStr);
-  return formatDistanceToNow(date, { addSuffix: true });
+function DateGroup({
+  title,
+  meetings,
+  onExclude,
+  onRestore,
+  onAssignCompany,
+  onOpenPrep,
+  isExcluding,
+  accent = 'gray',
+}: DateGroupProps) {
+  if (meetings.length === 0) return null;
+
+  return (
+    <div className="mb-4 last:mb-0">
+      <div className="flex items-center gap-2 mb-2">
+        <h3
+          className={cn(
+            'text-xs font-medium uppercase tracking-wider',
+            accent === 'blue' ? 'text-blue-600' : 'text-gray-500'
+          )}
+        >
+          {title}
+        </h3>
+        <span
+          className={cn(
+            'text-xs font-medium px-1.5 py-0.5 rounded',
+            accent === 'blue'
+              ? 'bg-blue-50 text-blue-600'
+              : 'bg-gray-100 text-gray-500'
+          )}
+        >
+          {meetings.length}
+        </span>
+      </div>
+      <div className="space-y-1">
+        {meetings.map((meeting) => (
+          <MeetingCard
+            key={meeting.id}
+            meeting={meeting}
+            variant="upcoming"
+            onExclude={onExclude}
+            onRestore={onRestore}
+            onAssignCompany={onAssignCompany}
+            onOpenPrep={onOpenPrep}
+            isExcluding={isExcluding}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-export function UpcomingMeetingsSection({ meetings }: UpcomingMeetingsSectionProps) {
-  if (meetings.length === 0) {
+export function UpcomingMeetingsSection({
+  meetings,
+  onExclude,
+  onRestore,
+  onAssignCompany,
+  onOpenPrep,
+  onExpandUpcoming,
+  isExpanded,
+  isExcluding,
+}: UpcomingMeetingsSectionProps) {
+  const hasTodayOrTomorrow = meetings.today.length > 0 || meetings.tomorrow.length > 0;
+  const hasLater = meetings.later.length > 0;
+  const isEmpty = meetings.totalCount === 0;
+
+  if (isEmpty) {
     return (
       <section>
-        <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">
+        <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
           Upcoming Meetings
         </h2>
-        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-          <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
+          <Calendar className="h-8 w-8 text-gray-300 mx-auto mb-2" />
           <p className="text-sm text-gray-500">No upcoming meetings</p>
           <p className="text-xs text-gray-400 mt-1">
             Meetings synced from your calendar will appear here
@@ -60,72 +119,73 @@ export function UpcomingMeetingsSection({ meetings }: UpcomingMeetingsSectionPro
 
   return (
     <section>
-      <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">
-        Upcoming Meetings ({meetings.length})
+      <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+        Upcoming Meetings
       </h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {meetings.map((meeting) => (
-          <div
-            key={meeting.id}
-            className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        {/* Today */}
+        <DateGroup
+          title="Today"
+          meetings={meetings.today}
+          onExclude={onExclude}
+          onRestore={onRestore}
+          onAssignCompany={onAssignCompany}
+          onOpenPrep={onOpenPrep}
+          isExcluding={isExcluding}
+          accent="blue"
+        />
+
+        {/* Tomorrow */}
+        <DateGroup
+          title="Tomorrow"
+          meetings={meetings.tomorrow}
+          onExclude={onExclude}
+          onRestore={onRestore}
+          onAssignCompany={onAssignCompany}
+          onOpenPrep={onOpenPrep}
+          isExcluding={isExcluding}
+        />
+
+        {/* Later - only if expanded */}
+        {isExpanded && (
+          <DateGroup
+            title="This Week & Beyond"
+            meetings={meetings.later}
+            onExclude={onExclude}
+            onRestore={onRestore}
+            onAssignCompany={onAssignCompany}
+            onOpenPrep={onOpenPrep}
+            isExcluding={isExcluding}
+          />
+        )}
+
+        {/* Expand button */}
+        {hasLater && !isExpanded && (
+          <button
+            onClick={onExpandUpcoming}
+            className="w-full mt-3 pt-3 border-t border-gray-100 flex items-center justify-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
           >
-            {/* Meeting Title */}
-            <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">
-              {meeting.subject}
-            </h3>
+            Show {meetings.later.length} more this week
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        )}
 
-            {/* Time */}
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-              <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span>{formatMeetingTime(meeting.occurred_at)}</span>
-            </div>
-
-            {/* Time Until */}
-            <p className="text-xs text-blue-600 mb-3">
-              {getTimeUntil(meeting.occurred_at)}
+        {/* Empty state for today/tomorrow but has later */}
+        {!hasTodayOrTomorrow && hasLater && !isExpanded && (
+          <div className="text-center py-3">
+            <p className="text-sm text-gray-500 mb-2">
+              No meetings today or tomorrow
             </p>
-
-            {/* Company / Attendees */}
-            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mb-4">
-              {meeting.company_name && (
-                <span className="flex items-center gap-1">
-                  <Building2 className="h-3.5 w-3.5" />
-                  {meeting.company_name}
-                </span>
-              )}
-              {meeting.attendee_count > 0 && (
-                <span className="flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5" />
-                  {meeting.attendee_count} attendee{meeting.attendee_count !== 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2">
-              <Link
-                href={`/meetings/${meeting.id}/prep`}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                <ClipboardList className="h-3.5 w-3.5" />
-                Prep
-              </Link>
-
-              {meeting.join_url && (
-                <a
-                  href={meeting.join_url as string}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                >
-                  <Video className="h-3.5 w-3.5" />
-                  Join
-                </a>
-              )}
-            </div>
+            <button
+              onClick={onExpandUpcoming}
+              className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              View {meetings.later.length} upcoming
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-        ))}
+        )}
       </div>
     </section>
   );
