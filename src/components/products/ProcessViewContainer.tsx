@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ProcessTabs } from './ProcessTabs';
 import { ProcessHeader } from './ProcessHeader';
@@ -31,13 +31,23 @@ export function ProcessViewContainer() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // URL State
+  // URL State - use primitive strings to avoid infinite loops
   const activeProcess = (searchParams.get('process') || 'sales') as ProcessType;
-  const selectedProducts = searchParams.get('products')?.split(',').filter(Boolean) || [];
-  const selectedUsers = searchParams.get('users')?.split(',').filter(Boolean) || [];
+  const productsParam = searchParams.get('products') || '';
+  const usersParam = searchParams.get('users') || '';
   const healthFilter = (searchParams.get('health') || 'all') as HealthStatus | 'all';
   const searchQuery = searchParams.get('search') || '';
   const viewMode = (searchParams.get('view') || 'all') as ViewMode;
+
+  // Memoize arrays to prevent infinite re-renders
+  const selectedProducts = useMemo(
+    () => productsParam.split(',').filter(Boolean),
+    [productsParam]
+  );
+  const selectedUsers = useMemo(
+    () => usersParam.split(',').filter(Boolean),
+    [usersParam]
+  );
 
   // Data State
   const [items, setItems] = useState<PipelineItem[]>([]);
@@ -89,7 +99,9 @@ export function ProcessViewContainer() {
       if (healthFilter !== 'all') params.set('health', healthFilter);
       if (searchQuery) params.set('search', searchQuery);
 
-      const res = await fetch(`/api/products/process?${params.toString()}`);
+      const url = `/api/products/process?${params.toString()}`;
+      const res = await fetch(url);
+
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
@@ -101,7 +113,7 @@ export function ProcessViewContainer() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeProcess, selectedProducts, selectedUsers, healthFilter, searchQuery]);
+  }, [activeProcess, productsParam, usersParam, healthFilter, searchQuery]);
 
   // Fetch filter options
   const fetchFilterOptions = useCallback(async () => {
@@ -128,16 +140,25 @@ export function ProcessViewContainer() {
     }
   }, []);
 
-  // Initial load
+  // Track if mounted (for SSR safety)
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Initial load - only after mounting
+  useEffect(() => {
+    if (!isMounted) return;
     fetchProcessStats();
     fetchFilterOptions();
-  }, [fetchProcessStats, fetchFilterOptions]);
+  }, [isMounted, fetchProcessStats, fetchFilterOptions]);
 
   // Fetch data when filters change
   useEffect(() => {
+    if (!isMounted) return;
     fetchData();
-  }, [fetchData]);
+  }, [isMounted, fetchData]);
 
   // Process change handler
   const handleProcessChange = useCallback((process: ProcessType) => {
