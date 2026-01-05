@@ -1316,60 +1316,8 @@ export function ScheduleMeetingModal({
                   Context & Associations
                 </h3>
 
-                {/* Products & Company association */}
+                {/* Company & Products association */}
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Briefcase className="h-4 w-4 inline mr-1" />
-                      Products (optional - select one or more)
-                    </label>
-
-                    {/* Selected products */}
-                    {selectedProductIds.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {selectedProductIds.map(productId => {
-                          const product = companyProducts.find(p => p.id === productId);
-                          return product ? (
-                            <span
-                              key={productId}
-                              className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm text-blue-700"
-                            >
-                              {product.product_name} - {product.company_name}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedProductIds(selectedProductIds.filter(id => id !== productId))}
-                                className="text-blue-400 hover:text-blue-600"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-
-                    {/* Product selector */}
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value && !selectedProductIds.includes(e.target.value)) {
-                          setSelectedProductIds([...selectedProductIds, e.target.value]);
-                        }
-                        e.target.value = '';
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Select a product...</option>
-                      {companyProducts
-                        .filter(p => !selectedProductIds.includes(p.id))
-                        .map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.product_name} - {product.company_name} ({product.status})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       <Building2 className="h-4 w-4 inline mr-1" />
@@ -1377,7 +1325,11 @@ export function ScheduleMeetingModal({
                     </label>
                     <select
                       value={companyId}
-                      onChange={(e) => setCompanyId(e.target.value)}
+                      onChange={(e) => {
+                        setCompanyId(e.target.value);
+                        // Clear product selections when company changes
+                        setSelectedProductIds([]);
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
                     >
                       <option value="">None</option>
@@ -1386,6 +1338,68 @@ export function ScheduleMeetingModal({
                       ))}
                     </select>
                   </div>
+
+                  {/* Products - only show when company is selected */}
+                  {companyId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <Briefcase className="h-4 w-4 inline mr-1" />
+                        Products (optional)
+                      </label>
+
+                      {/* Selected products */}
+                      {selectedProductIds.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {selectedProductIds.map(productId => {
+                            const product = companyProducts.find(p => p.id === productId);
+                            return product ? (
+                              <span
+                                key={productId}
+                                className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm text-blue-700"
+                              >
+                                {product.product_name}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProductIds(selectedProductIds.filter(id => id !== productId))}
+                                  className="text-blue-400 hover:text-blue-600"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      )}
+
+                      {/* Product selector - filtered by selected company */}
+                      {(() => {
+                        const availableProducts = companyProducts.filter(
+                          p => p.company_id === companyId && !selectedProductIds.includes(p.id)
+                        );
+                        return availableProducts.length > 0 ? (
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value && !selectedProductIds.includes(e.target.value)) {
+                                setSelectedProductIds([...selectedProductIds, e.target.value]);
+                              }
+                              e.target.value = '';
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
+                            defaultValue=""
+                          >
+                            <option value="" disabled>Select a product...</option>
+                            {availableProducts.map((product) => (
+                              <option key={product.id} value={product.id}>
+                                {product.product_name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="text-sm text-gray-500">No products available for this company</p>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
 
                 {/* Context for AI */}
