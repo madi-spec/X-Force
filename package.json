@@ -36,7 +36,6 @@
     "next": "16.0.10",
     "openai": "^6.15.0",
     "papaparse": "^5.5.3",
-    "playwright": "^1.57.0",
     "pst-extractor": "^1.11.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
@@ -47,6 +46,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
@@ -61,6 +61,7 @@
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "pg": "^8.16.3",
+    "playwright": "^1.57.0",
     "postgres": "^3.4.7",
     "tailwindcss": "^4",
     "typescript": "^5"
